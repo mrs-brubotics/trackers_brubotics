@@ -854,7 +854,7 @@ const mrs_msgs::PositionCommand::ConstPtr MpcTrackerInterns::update(const mrs_ms
   if (!is_active_) {
     return mrs_msgs::PositionCommand::Ptr();
   }
-
+  ROS_INFO("Using the tracker from the trackers_brubotics package!")
   mrs_msgs::PositionCommand position_cmd;
 
   if (!mpc_computed_ || mpc_result_invalid_) {
@@ -3226,4 +3226,4 @@ void MpcTrackerInterns::timerHover(const ros::TimerEvent& event) {
 }  // namespace brubotics_trackers
 
 #include <pluginlib/class_list_macros.h>
-PLUGINLIB_EXPORT_CLASS(brubotics_trackers::mpc_tracker_interns::MpcTrackerInterns, mrs_uav_managers::Tracker)
+PLUGINLIB_EXPORT_CLASS(trackers_brubotics::mpc_tracker_interns::MpcTrackerInterns, mrs_uav_managers::Tracker)
