@@ -20,6 +20,7 @@
   <depend>mrs_lib</depend>
   <depend>mrs_cvxy</depend>
   <depend>mrs_uav_managers</depend>
+  <depend>mrs_uav_trackers</depend>
   <depend>dynamic_reconfigure</depend>
 
   <export>

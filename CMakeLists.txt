@@ -11,10 +11,15 @@ find_package(catkin REQUIRED COMPONENTS
   mrs_lib
   mrs_msgs
   mrs_uav_managers
+  mrs_uav_trackers
   dynamic_reconfigure
   )
+
+generate_dynamic_reconfigure_options(
+    cfg/mpc_tracker_interns.cfg
+    )
+
 include_directories(${catkin_INCLUDE_DIRS})
-# set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -fno-diagnostics-color")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -fno-diagnostics-color -O0 -g")
 
 # include Eigen3
@@ -25,7 +30,7 @@ set(Eigen_LIBRARIES ${EIGEN3_LIBRARIES})
 catkin_package(
   INCLUDE_DIRS include
   LIBRARIES MpcTrackerCvxgen
-  CATKIN_DEPENDS geometry_msgs tf mrs_lib mrs_uav_managers mrs_msgs
+  CATKIN_DEPENDS geometry_msgs tf mrs_lib mrs_uav_managers mrs_msgs mrs_uav_trackers
   DEPENDS Eigen
   )
 
@@ -46,12 +51,26 @@ target_link_libraries(LineTrackerInterns
   ${catkin_LIBRARIES}
   )
 
+  # MPC tracker
+
+  add_library(MpcTrackerInterns
+    src/mpc_tracker_interns/mpc_tracker_interns.cpp
+    )
+  add_dependencies(MpcTrackerInterns
+    ${catkin_EXPORTED_TARGETS}
+    ${${PROJECT_NAME}_EXPORTED_TARGETS}
+    )
+  target_link_libraries(MpcTrackerInterns
+    ${catkin_LIBRARIES}
+    )
+
 #############
 ## Install ##
 #############
 
 install(TARGETS
   LineTrackerInterns
+  MpcTrackerInterns
   ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
   LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
   RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}

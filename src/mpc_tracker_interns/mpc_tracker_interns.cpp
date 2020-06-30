@@ -11,7 +11,7 @@
 
 #include <mrs_msgs/FuturePoint.h>
 #include <mrs_msgs/FutureTrajectory.h>
-#include <mrs_msgs/MpcTrackerInternsDiagnostics.h>
+#include <mrs_msgs/MpcTrackerDiagnostics.h>
 #include <mrs_msgs/EstimatorType.h>
 
 #include <std_msgs/String.h>
@@ -25,9 +25,9 @@
 #include <mrs_lib/subscribe_handler.h>
 
 #include <dynamic_reconfigure/server.h>
-#include <brubotics_trackers/cvx_wrapper.h>
+#include <mrs_uav_trackers/cvx_wrapper.h>
 
-#include <brubotics_trackers/mpc_tracker_internsConfig.h>
+#include <trackers_brubotics/mpc_tracker_internsConfig.h>
 
 #include <visualization_msgs/Marker.h>
 #include <visualization_msgs/MarkerArray.h>
@@ -42,7 +42,7 @@ using quat_t = Eigen::Quaterniond;
 
 using namespace Eigen;
 
-namespace brubotics_trackers
+namespace mrs_uav_trackers
 {
 
 namespace mpc_tracker_interns
@@ -254,10 +254,10 @@ private:
   std::mutex                                                         mutex_other_uav_avoidance_trajectories_;
 
   // subscribing to the other UAV diagnostics'
-  void callbackOtherMavDiagnostics(mrs_lib::SubscribeHandler<mrs_msgs::MpcTrackerInternsDiagnostics>& sh_ptr);
+  void callbackOtherMavDiagnostics(mrs_lib::SubscribeHandler<mrs_msgs::MpcTrackerDiagnostics>& sh_ptr);
 
-  std::vector<mrs_lib::SubscribeHandler<mrs_msgs::MpcTrackerInternsDiagnostics>> other_uav_diag_subscribers_;
-  std::map<std::string, mrs_msgs::MpcTrackerInternsDiagnostics>                  other_uav_diagnostics_;
+  std::vector<mrs_lib::SubscribeHandler<mrs_msgs::MpcTrackerDiagnostics>> other_uav_diag_subscribers_;
+  std::map<std::string, mrs_msgs::MpcTrackerDiagnostics>                  other_uav_diagnostics_;
   std::mutex                                                              mutex_other_uav_diagnostics_;
 
   double checkCollision(const double ax, const double ay, const double az, const double bx, const double by, const double bz);
@@ -342,14 +342,14 @@ private:
 
   // | --------------- dynamic reconfigure server --------------- |
 
-  void dynamicReconfigureCallback(brubotics_trackers::mpc_tracker_internsConfig& config, uint32_t level);
+  void dynamicReconfigureCallback(trackers_brubotics::mpc_tracker_internsConfig& config, uint32_t level);
 
   boost::recursive_mutex                      config_mutex_;
-  typedef brubotics_trackers::mpc_tracker_internsConfig Config;
+  typedef trackers_brubotics::mpc_tracker_internsConfig Config;
   typedef dynamic_reconfigure::Server<Config> ReconfigureServer;
   boost::shared_ptr<ReconfigureServer>        reconfigure_server_;
-  void                                        drs_callback(brubotics_trackers::mpc_tracker_internsConfig& config, uint32_t level);
-  brubotics_trackers::mpc_tracker_internsConfig         drs_params;
+  void                                        drs_callback(trackers_brubotics::mpc_tracker_internsConfig& config, uint32_t level);
+  trackers_brubotics::mpc_tracker_internsConfig         drs_params;
 };
 
 //}
@@ -361,7 +361,7 @@ private:
 void MpcTrackerInterns::initialize(const ros::NodeHandle& parent_nh, [[maybe_unused]] const std::string uav_name,
                             [[maybe_unused]] std::shared_ptr<mrs_uav_managers::CommonHandlers_t> common_handlers) {
 
-  ros::NodeHandle nh_(parent_nh, "mpc_tracker_interns");
+  ros::NodeHandle nh_(parent_nh, "mpc_tracker");
 
   _uav_name_       = uav_name;
   common_handlers_ = common_handlers;
@@ -472,7 +472,7 @@ void MpcTrackerInterns::initialize(const ros::NodeHandle& parent_nh, [[maybe_unu
 
   service_client_wiggle_ = nh_.advertiseService("wiggle_in", &MpcTrackerInterns::callbackWiggle, this);
 
-  pub_diagnostics_   = nh_.advertise<mrs_msgs::MpcTrackerInternsDiagnostics>("diagnostics_out", 1);
+  pub_diagnostics_   = nh_.advertise<mrs_msgs::MpcTrackerDiagnostics>("diagnostics_out", 1);
   pub_status_string_ = nh_.advertise<std_msgs::String>("string_out", 1);
 
   // extract the numerical name
@@ -538,7 +538,7 @@ void MpcTrackerInterns::initialize(const ros::NodeHandle& parent_nh, [[maybe_unu
     ROS_INFO("[MpcTrackerInterns]: subscribing to %s", diag_topic_name.c_str());
 
     other_uav_diag_subscribers_.push_back(
-        mrs_lib::SubscribeHandler<mrs_msgs::MpcTrackerInternsDiagnostics>(shopts, diag_topic_name, &MpcTrackerInterns::callbackOtherMavDiagnostics, this));
+        mrs_lib::SubscribeHandler<mrs_msgs::MpcTrackerDiagnostics>(shopts, diag_topic_name, &MpcTrackerInterns::callbackOtherMavDiagnostics, this));
   }
 
   // | --------------- dynamic reconfigure server --------------- |
@@ -854,7 +854,7 @@ const mrs_msgs::PositionCommand::ConstPtr MpcTrackerInterns::update(const mrs_ms
   if (!is_active_) {
     return mrs_msgs::PositionCommand::Ptr();
   }
-  ROS_INFO("Using the tracker from the trackers_brubotics package!")
+  ROS_INFO("Using the tracker from the trackers_brubotics package!");
   mrs_msgs::PositionCommand position_cmd;
 
   if (!mpc_computed_ || mpc_result_invalid_) {
@@ -1423,13 +1423,13 @@ void MpcTrackerInterns::callbackOtherMavTrajectory(mrs_lib::SubscribeHandler<mrs
 
 /* //{ callbackOtherMavDiagnostics() */
 
-void MpcTrackerInterns::callbackOtherMavDiagnostics(mrs_lib::SubscribeHandler<mrs_msgs::MpcTrackerInternsDiagnostics>& sh_ptr) {
+void MpcTrackerInterns::callbackOtherMavDiagnostics(mrs_lib::SubscribeHandler<mrs_msgs::MpcTrackerDiagnostics>& sh_ptr) {
 
   mrs_lib::Routine profiler_routine = profiler.createRoutine("callbackOtherMavDiagnostics");
 
   std::scoped_lock lock(mutex_other_uav_diagnostics_);
 
-  mrs_msgs::MpcTrackerInternsDiagnostics diagnostics = *sh_ptr.getMsg();
+  mrs_msgs::MpcTrackerDiagnostics diagnostics = *sh_ptr.getMsg();
 
   // fill in the current time
   // the other uav's time might not be synchronized with ours
@@ -1481,7 +1481,7 @@ bool MpcTrackerInterns::callbackWiggle(std_srvs::SetBool::Request& req, std_srvs
 
 /* //{ dynamicReconfigureCallback() */
 
-void MpcTrackerInterns::dynamicReconfigureCallback(brubotics_trackers::mpc_tracker_internsConfig& config, [[maybe_unused]] uint32_t level) {
+void MpcTrackerInterns::dynamicReconfigureCallback(trackers_brubotics::mpc_tracker_internsConfig& config, [[maybe_unused]] uint32_t level) {
 
   std::scoped_lock lock(mutex_wiggle_);
 
@@ -2768,7 +2768,7 @@ std::tuple<bool, std::string> MpcTrackerInterns::gotoTrajectoryStartImpl(void) {
 
 void MpcTrackerInterns::publishDiagnostics(void) {
 
-  mrs_msgs::MpcTrackerInternsDiagnostics diagnostics;
+  mrs_msgs::MpcTrackerDiagnostics diagnostics;
 
   diagnostics.header.stamp    = ros::Time::now();
   diagnostics.header.frame_id = uav_state_.header.frame_id;
@@ -2790,7 +2790,7 @@ void MpcTrackerInterns::publishDiagnostics(void) {
     std::scoped_lock lock(mutex_other_uav_diagnostics_);
 
     // fill in if other UAVs are sending their trajectories
-    std::map<std::string, mrs_msgs::MpcTrackerInternsDiagnostics>::iterator u = other_uav_diagnostics_.begin();
+    std::map<std::string, mrs_msgs::MpcTrackerDiagnostics>::iterator u = other_uav_diagnostics_.begin();
 
     while (u != other_uav_diagnostics_.end()) {
 
@@ -3223,7 +3223,7 @@ void MpcTrackerInterns::timerHover(const ros::TimerEvent& event) {
 
 }  // namespace mpc_tracker_interns
 
-}  // namespace brubotics_trackers
+}  // namespace trackers_brubotics
 
 #include <pluginlib/class_list_macros.h>
-PLUGINLIB_EXPORT_CLASS(trackers_brubotics::mpc_tracker_interns::MpcTrackerInterns, mrs_uav_managers::Tracker)
+PLUGINLIB_EXPORT_CLASS(mrs_uav_trackers::mpc_tracker_interns::MpcTrackerInterns, mrs_uav_managers::Tracker)
