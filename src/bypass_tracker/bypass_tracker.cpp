@@ -1,6 +1,4 @@
-#define VERSION "0.0.5.1"
-
-/* includes //{ */
+#define VERSION "0.0.0.0"
 
 #include <ros/ros.h>
 #include <mrs_uav_managers/tracker.h>
@@ -12,8 +10,6 @@ namespace mrs_uav_trackers
 
 namespace bypass_tracker
 {
-
-/* //{ class BypassTracker */
 
 class BypassTracker : public mrs_uav_managers::Tracker {
 public:
@@ -64,7 +60,6 @@ private:
 void BypassTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unused]] const std::string uav_name,
                              [[maybe_unused]] std::shared_ptr<mrs_uav_managers::CommonHandlers_t> common_handlers) {
   ros::Time::waitForValid();
-
   is_initialized_ = true;
 
   ROS_INFO("[BypassTracker]: initialized");
@@ -174,7 +169,6 @@ const mrs_msgs::PositionCommand::ConstPtr BypassTracker::update(const mrs_msgs::
 const mrs_msgs::TrackerStatus BypassTracker::getStatus() {
   mrs_msgs::TrackerStatus tracker_status;
   tracker_status.active = is_active_;
-
   return tracker_status;
 }
 
