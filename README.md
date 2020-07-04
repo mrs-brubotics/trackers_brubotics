@@ -1,8 +1,18 @@
 # trackers_brubotics
-# trackers_brubotics
 Trackers developed by the summer 2020 Brubotics interns.
 
 ## How to create a new tracker in this package?
+There is now an automatic way to do this. Just run the script:
+
+```
+sh create_tracker.sh [TRACKER NAMESPACE] [TRACKER NAME] -options
+```
+As options, you have:
+```
+-nc or --noconfig: Does not create config files
+-c or --config: Creates config files (default)"
+```
+
 ### Convention
 
 when I write "tracker name", I mean the name of the class. It should be written without underscores, with caps, like this:
