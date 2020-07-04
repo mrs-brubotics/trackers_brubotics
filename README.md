@@ -10,7 +10,7 @@ sh create_tracker.sh [TRACKER NAMESPACE] [TRACKER NAME] -options
 As options, you have:
 ```
 -nc or --noconfig: Does not create config files
--c or --config: Creates config files (default)"
+-c or --config: Creates config files (default)
 ```
 
 ### Convention
