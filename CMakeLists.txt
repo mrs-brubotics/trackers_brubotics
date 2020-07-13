@@ -77,6 +77,20 @@ target_link_libraries(LineTrackerInterns
     ${catkin_LIBRARIES}
     )
 
+
+  # AlphaDrg
+
+  add_library(AlphaDrg
+    src/alpha_drg/alpha_drg.cpp
+    )
+  add_dependencies(AlphaDrg
+    ${catkin_EXPORTED_TARGETS}
+    ${${PROJECT_NAME}_EXPORTED_TARGETS}
+    )
+  target_link_libraries(AlphaDrg
+    ${catkin_LIBRARIES}
+    )
+    
 #############
 ## Install ##
 #############
@@ -85,6 +99,7 @@ install(TARGETS
   LineTrackerInterns
   MpcTrackerInterns
   BypassTracker
+AlphaDrg
   ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
   LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
   RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}

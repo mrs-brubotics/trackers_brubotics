@@ -6,3 +6,7 @@ MpcTrackerInterns:
 
 BypassTracker:
   address: "trackers_brubotics/BypassTracker"
+
+AlphaDrg:
+  address: "trackers_brubotics/AlphaDrg"
+
