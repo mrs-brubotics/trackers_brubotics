@@ -1,5 +1,2 @@
-LineTrackerInterns:
-  address: "trackers_brubotics/LineTrackerInterns"
-
 MpcTrackerInterns:
   address: "trackers_brubotics/MpcTrackerInterns"
