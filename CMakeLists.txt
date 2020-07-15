@@ -24,8 +24,8 @@ set(Eigen_INCLUDE_DIRS ${EIGEN3_INCLUDE_DIRS})
 set(Eigen_LIBRARIES ${EIGEN3_LIBRARIES})
 
 catkin_package(
-  INCLUDE_DIRS include
-  LIBRARIES MpcTrackerCvxgen
+  INCLUDE_DIRS
+  LIBRARIES
   CATKIN_DEPENDS geometry_msgs tf mrs_lib mrs_uav_managers mrs_msgs mrs_uav_trackers
   DEPENDS Eigen
   )
