@@ -14,11 +14,7 @@ find_package(catkin REQUIRED COMPONENTS
   mrs_uav_trackers
   dynamic_reconfigure
   )
-
-generate_dynamic_reconfigure_options(
-    cfg/mpc_tracker_interns.cfg
-    )
-
+  
 include_directories(${catkin_INCLUDE_DIRS})
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -fno-diagnostics-color -O0 -g")
 
