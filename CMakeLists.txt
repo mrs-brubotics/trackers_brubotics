@@ -38,19 +38,6 @@ catkin_package(
 ## Build ##
 ###########
 
-# Line tracker
-
-add_library(LineTrackerInterns
-  src/line_tracker_interns/line_tracker_interns.cpp
-  )
-add_dependencies(LineTrackerInterns
-  ${catkin_EXPORTED_TARGETS}
-  ${${PROJECT_NAME}_EXPORTED_TARGETS}
-  )
-target_link_libraries(LineTrackerInterns
-  ${catkin_LIBRARIES}
-  )
-
   # MPC tracker
 
   add_library(MpcTrackerInterns
@@ -69,7 +56,6 @@ target_link_libraries(LineTrackerInterns
 #############
 
 install(TARGETS
-  LineTrackerInterns
   MpcTrackerInterns
   ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
   LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}

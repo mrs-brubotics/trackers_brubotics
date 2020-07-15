@@ -1,9 +1,3 @@
-<library path="lib/libLineTrackerInterns">
-  <class name="trackers_brubotics/LineTrackerInterns" type="mrs_uav_trackers::line_tracker_interns::LineTrackerInterns" base_class_type="mrs_uav_managers::Tracker">
-    <description>This is the joystick tracker with bumper.</description>
-  </class>
-</library>
-
 <library path="lib/libMpcTrackerInterns">
   <class name="trackers_brubotics/MpcTrackerInterns" type="mrs_uav_trackers::mpc_tracker_interns::MpcTrackerInterns" base_class_type="mrs_uav_managers::Tracker">
     <description>This is the joystick tracker with bumper.</description>
