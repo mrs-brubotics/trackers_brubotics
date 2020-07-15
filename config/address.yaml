@@ -1,2 +1,5 @@
 MpcTrackerInterns:
   address: "trackers_brubotics/MpcTrackerInterns"
+
+BypassTracker:
+  address: "trackers_brubotics/BypassTracker"

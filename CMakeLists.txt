@@ -47,12 +47,28 @@ catkin_package(
     ${catkin_LIBRARIES}
     )
 
+  # Bypass tracker
+  
+  add_library(BypassTracker
+    src/bypass_tracker/bypass_tracker.cpp
+    )
+  
+  add_dependencies(BypassTracker
+    ${catkin_EXPORTED_TARGETS}
+    ${${PROJECT_NAME}_EXPORTED_TARGETS}
+    )
+  
+  target_link_libraries(BypassTracker
+    ${catkin_LIBRARIES}
+    )
+
 #############
 ## Install ##
 #############
 
 install(TARGETS
   MpcTrackerInterns
+  BypassTracker
   ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
   LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
   RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
