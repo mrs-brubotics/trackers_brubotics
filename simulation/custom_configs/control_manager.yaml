@@ -6,4 +6,5 @@ trackers : [
   "NullTracker",
   "SpeedTracker",
   "MpcTrackerInterns",
+  "BypassTracker",
 ]
