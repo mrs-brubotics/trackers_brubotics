@@ -4,5 +4,6 @@ trackers : [
   "LandoffTracker",
   "JoyTracker",
   "NullTracker",
-  "MpcTrackerInterns",
+  "SpeedTracker",
+  "MpcTrackerInterns"
 ]
