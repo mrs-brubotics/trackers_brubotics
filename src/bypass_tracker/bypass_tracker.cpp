@@ -129,7 +129,7 @@ const mrs_msgs::PositionCommand::ConstPtr BypassTracker::update(const mrs_msgs::
 
     position_cmd.use_position_vertical   = 1;
     position_cmd.use_position_horizontal = 1;
-    position_cmd.use_heading             = 0;
+    position_cmd.use_heading             = 1;
     position_cmd.use_heading_rate        = 0;
     position_cmd.use_velocity_vertical   = 0;
     position_cmd.use_velocity_horizontal = 0;
@@ -155,7 +155,7 @@ const mrs_msgs::PositionCommand::ConstPtr BypassTracker::update(const mrs_msgs::
 
     position_cmd.use_position_vertical   = 1;
     position_cmd.use_position_horizontal = 1;
-    position_cmd.use_heading             = 0;
+    position_cmd.use_heading             = 1;
     position_cmd.use_heading_rate        = 0;
     position_cmd.use_velocity_vertical   = 0;
     position_cmd.use_velocity_horizontal = 0;
@@ -273,4 +273,3 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr BypassTracker::setTraje
 
 #include <pluginlib/class_list_macros.h>
 PLUGINLIB_EXPORT_CLASS(mrs_uav_trackers::bypass_tracker::BypassTracker, mrs_uav_managers::Tracker)
-
