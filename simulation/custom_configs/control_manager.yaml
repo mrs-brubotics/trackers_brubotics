@@ -5,5 +5,5 @@ trackers : [
   "JoyTracker",
   "NullTracker",
   "SpeedTracker",
-  "MpcTrackerInterns"
+  "MpcTrackerInterns",
 ]
