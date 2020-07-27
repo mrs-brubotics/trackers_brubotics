@@ -1,9 +1,48 @@
 #define VERSION "0.0.0.0"
 
+
 #include <ros/ros.h>
+
+#include <math.h>
+#include <cmath>
+#include <mutex>
+#include <tf/transform_datatypes.h>
+#include <Eigen/Eigen>
+
+#include <geometry_msgs/Pose.h>
+#include <geometry_msgs/PoseArray.h>
+#include <nav_msgs/Odometry.h>
+
+#include <mrs_msgs/FuturePoint.h>
+#include <mrs_msgs/FutureTrajectory.h>
+#include <mrs_msgs/MpcTrackerDiagnostics.h>
+#include <mrs_msgs/OdometryDiag.h>
+#include <mrs_msgs/UavState.h>
+
 #include <mrs_uav_managers/tracker.h>
+
 #include <mrs_lib/profiler.h>
+#include <mrs_lib/utils.h>
+#include <mrs_lib/param_loader.h>
 #include <mrs_lib/mutex.h>
+#include <mrs_lib/geometry_utils.h>
+
+#include <dynamic_reconfigure/server.h>
+
+#include <mrs_uav_trackers/mpc_trackerConfig.h>
+
+#include <mrs_msgs/TrajectoryReferenceSrv.h>
+#include <mrs_msgs/String.h>
+
+#include <mrs_msgs/Float64Stamped.h>
+
+#include <fstream>
+#include <iostream>
+
+#include <visualization_msgs/Marker.h>
+#include <visualization_msgs/MarkerArray.h>
+
+using namespace Eigen;
 
 using namespace Eigen;
 
@@ -57,15 +96,10 @@ private:
   double global_goal_z = 2;
   double global_goal_heading = 0;
 
-    /////////////////////////// Pedro ////////////////////////////
-  // gain parameters
-
   float kpxy = 15;
   float kpz= 15;
   float kvxy=8;
   float kvz=8;
-
-
 
   // initial conditions
   //outputTrajectory = MatrixXd::Zero(horizon_len_ * n, 1);
