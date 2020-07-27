@@ -1,9 +1,48 @@
 #define VERSION "0.0.0.0"
 
+
 #include <ros/ros.h>
+
+#include <math.h>
+#include <cmath>
+#include <mutex>
+#include <tf/transform_datatypes.h>
+#include <Eigen/Eigen>
+
+#include <geometry_msgs/Pose.h>
+#include <geometry_msgs/PoseArray.h>
+#include <nav_msgs/Odometry.h>
+
+#include <mrs_msgs/FuturePoint.h>
+#include <mrs_msgs/FutureTrajectory.h>
+#include <mrs_msgs/MpcTrackerDiagnostics.h>
+#include <mrs_msgs/OdometryDiag.h>
+#include <mrs_msgs/UavState.h>
+
 #include <mrs_uav_managers/tracker.h>
+
 #include <mrs_lib/profiler.h>
+#include <mrs_lib/utils.h>
+#include <mrs_lib/param_loader.h>
 #include <mrs_lib/mutex.h>
+#include <mrs_lib/geometry_utils.h>
+
+#include <dynamic_reconfigure/server.h>
+
+#include <mrs_uav_trackers/mpc_trackerConfig.h>
+
+#include <mrs_msgs/TrajectoryReferenceSrv.h>
+#include <mrs_msgs/String.h>
+
+#include <mrs_msgs/Float64Stamped.h>
+
+#include <fstream>
+#include <iostream>
+
+#include <visualization_msgs/Marker.h>
+#include <visualization_msgs/MarkerArray.h>
+
+using namespace Eigen;
 
 namespace mrs_uav_trackers
 {
@@ -54,6 +93,41 @@ private:
   double global_goal_y = 0;
   double global_goal_z = 2;
   double global_goal_heading = 0;
+
+  float kpxy = 15;
+  float kpz= 15;
+  float kvxy=8;
+  float kvz=8;
+
+  // initial conditions
+  //outputTrajectory = MatrixXd::Zero(horizon_len_ * n, 1);
+  MatrixXd init_pos = MatrixXd::Zero(3, 1);
+  MatrixXd init_vel = MatrixXd::Zero(3, 1);
+
+
+  // prediction Parameters
+  float g=9.81;
+
+  float C1_x;
+  float C2_x;
+  float C1_y;
+  float C2_y;
+  float C1_z;
+  float C2_z;
+
+  float var_xy=sqrt(4*kpxy*kpxy-kvxy*kvxy)/2; // sqrt of - delta
+  float var_z=sqrt(4*kpz*kpz-kvz*kvz)/2;
+
+  float const_den_xy= 1 + (var_xy-(kvxy/2))/(var_xy+(kvxy/2));
+  float const_den_z= 1 + (var_z-(kvz/2))/(var_z+(kvz/2));
+
+  float custom_dt=0.01; // time interval (in seconds)
+  float custom_hor=1.5; // prediction horizon (in seconds)
+  float sample_hor=custom_hor/custom_dt; // prediction horion ( in time samples)
+  // predicted trajectory
+  MatrixXd custom_predicted_traj_x = MatrixXd::Zero(sample_hor, 1);
+  MatrixXd custom_predicted_traj_y = MatrixXd::Zero(sample_hor, 1);
+  MatrixXd custom_predicted_traj_z = MatrixXd::Zero(sample_hor, 1);
 
 };
 
