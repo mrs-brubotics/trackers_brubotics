@@ -15,9 +15,3 @@
     <description>This is the bypass tracker.</description>
   </class>
 </library>
-
-<library path="lib/libAlphaDrg">
-  <class name="trackers_brubotics/AlphaDrg" type="mrs_uav_trackers::alpha_drg::AlphaDrg" base_class_type="mrs_uav_managers::Tracker">
-    <description>This is the AlphaDrg</description>
-  </class>
-</library>

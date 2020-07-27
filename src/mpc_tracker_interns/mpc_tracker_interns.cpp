@@ -71,8 +71,6 @@ public:
   const std_srvs::TriggerResponse::ConstPtr resumeTrajectoryTracking(const std_srvs::TriggerRequest::ConstPtr& cmd);
   const std_srvs::TriggerResponse::ConstPtr gotoTrajectoryStart(const std_srvs::TriggerRequest::ConstPtr& cmd);
 
-  const mrs_msgs::TrackerConstraintsSrvResponse::ConstPtr setConstraints(const mrs_msgs::TrackerConstraintsSrvRequest::ConstPtr& cmd);
-
 private:
   ros::NodeHandle                                     nh_;
   std::shared_ptr<mrs_uav_managers::CommonHandlers_t> common_handlers_;
@@ -105,10 +103,10 @@ private:
 
   // | ----------------------- constraints ---------------------- |
 
-  mrs_msgs::TrackerConstraints constraints_;
+  mrs_msgs::DynamicsConstraints constraints_;
   std::mutex                   mutex_constraints_;
 
-  mrs_msgs::TrackerConstraints constraints_filtered_;
+  mrs_msgs::DynamicsConstraints constraints_filtered_;
   std::mutex                   mutex_constraints_filtered_;
 
   bool got_constraints_     = false;
@@ -320,6 +318,8 @@ private:
   void manageConstraints();
 
   void calculateMPC();
+
+  const mrs_msgs::DynamicsConstraintsSrvResponse::ConstPtr setConstraints(const mrs_msgs::DynamicsConstraintsSrvRequest::ConstPtr &constraints);
 
   // | ------------------------ profiler ------------------------ |
 
@@ -1287,10 +1287,10 @@ const std_srvs::TriggerResponse::ConstPtr MpcTrackerInterns::gotoTrajectoryStart
 
 /* //{ setConstraints() */
 
-const mrs_msgs::TrackerConstraintsSrvResponse::ConstPtr MpcTrackerInterns::setConstraints(const mrs_msgs::TrackerConstraintsSrvRequest::ConstPtr& constraints) {
+const mrs_msgs::DynamicsConstraintsSrvResponse::ConstPtr MpcTrackerInterns::setConstraints(const mrs_msgs::DynamicsConstraintsSrvRequest::ConstPtr& constraints) {
 
   if (!is_initialized_) {
-    return mrs_msgs::TrackerConstraintsSrvResponse::ConstPtr(new mrs_msgs::TrackerConstraintsSrvResponse());
+    return mrs_msgs::DynamicsConstraintsSrvResponse::ConstPtr(new mrs_msgs::DynamicsConstraintsSrvResponse());
   }
 
   mrs_lib::set_mutexed(mutex_constraints_, constraints->constraints, constraints_);
@@ -1314,11 +1314,11 @@ const mrs_msgs::TrackerConstraintsSrvResponse::ConstPtr MpcTrackerInterns::setCo
 
   ROS_INFO("[MpcTrackerInterns]: updating constraints");
 
-  mrs_msgs::TrackerConstraintsSrvResponse res;
+  mrs_msgs::DynamicsConstraintsSrvResponse res;
   res.success = true;
   res.message = "constraints updated";
 
-  return mrs_msgs::TrackerConstraintsSrvResponse::ConstPtr(new mrs_msgs::TrackerConstraintsSrvResponse(res));
+  return mrs_msgs::DynamicsConstraintsSrvResponse::ConstPtr(new mrs_msgs::DynamicsConstraintsSrvResponse  (res));
 }
 
 //}
@@ -3305,6 +3305,7 @@ void MpcTrackerInterns::timerHover(const ros::TimerEvent& event) {
     ROS_INFO("[MpcTrackerInterns]: timerHover: speed is low, stopping hover timer");
   }
 }
+
 
 //}
 

@@ -5,6 +5,8 @@
 #include <mrs_lib/profiler.h>
 #include <mrs_lib/mutex.h>
 
+using namespace Eigen;
+
 namespace mrs_uav_trackers
 {
 
@@ -26,7 +28,7 @@ public:
   const mrs_msgs::ReferenceSrvResponse::ConstPtr           setReference(const mrs_msgs::ReferenceSrvRequest::ConstPtr &cmd);
   const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr setTrajectoryReference(const mrs_msgs::TrajectoryReferenceSrvRequest::ConstPtr &cmd);
 
-  const mrs_msgs::TrackerConstraintsSrvResponse::ConstPtr setConstraints(const mrs_msgs::TrackerConstraintsSrvRequest::ConstPtr &cmd);
+  const mrs_msgs::DynamicsConstraintsSrvResponse::ConstPtr setConstraints(const mrs_msgs::DynamicsConstraintsSrvRequest::ConstPtr &cmd);
 
   const std_srvs::TriggerResponse::ConstPtr hover(const std_srvs::TriggerRequest::ConstPtr &cmd);
   const std_srvs::TriggerResponse::ConstPtr startTrajectoryTracking(const std_srvs::TriggerRequest::ConstPtr &cmd);
@@ -54,6 +56,46 @@ private:
   double global_goal_y = 0;
   double global_goal_z = 2;
   double global_goal_heading = 0;
+
+    /////////////////////////// Pedro ////////////////////////////
+  // gain parameters
+
+  float kpxy = 15;
+  float kpz= 15;
+  float kvxy=8;
+  float kvz=8;
+
+
+
+  // initial conditions
+  //outputTrajectory = MatrixXd::Zero(horizon_len_ * n, 1);
+  MatrixXd init_pos = MatrixXd::Zero(3, 1);
+  MatrixXd init_vel = MatrixXd::Zero(3, 1);
+
+
+  // prediction Parameters
+  float g=9.81;
+
+  float C1_x;
+  float C2_x;
+  float C1_y;
+  float C2_y;
+  float C1_z;
+  float C2_z;
+
+  float var_xy=sqrt(4*kpxy*kpxy-kvxy*kvxy)/2; // sqrt of - delta
+  float var_z=sqrt(4*kpz*kpz-kvz*kvz)/2;
+
+  float const_den_xy= 1 + (var_xy-(kvxy/2))/(var_xy+(kvxy/2));
+  float const_den_z= 1 + (var_z-(kvz/2))/(var_z+(kvz/2));
+
+  float custom_dt=0.01; // time interval (in seconds)
+  float custom_hor=1.5; // prediction horizon (in seconds)
+  float sample_hor=custom_hor/custom_dt; // prediction horion ( in time samples)
+  // predicted trajectory
+  MatrixXd custom_predicted_traj_x = MatrixXd::Zero(sample_hor, 1);
+  MatrixXd custom_predicted_traj_y = MatrixXd::Zero(sample_hor, 1);
+  MatrixXd custom_predicted_traj_z = MatrixXd::Zero(sample_hor, 1);
 
 };
 
@@ -229,14 +271,14 @@ const std_srvs::TriggerResponse::ConstPtr BypassTracker::gotoTrajectoryStart([[m
 }
 
 
-const mrs_msgs::TrackerConstraintsSrvResponse::ConstPtr BypassTracker::setConstraints(const mrs_msgs::TrackerConstraintsSrvRequest::ConstPtr &cmd) {
+const mrs_msgs::DynamicsConstraintsSrvResponse::ConstPtr BypassTracker::setConstraints(const mrs_msgs::DynamicsConstraintsSrvRequest::ConstPtr &cmd) {
 
-  mrs_msgs::TrackerConstraintsSrvResponse res;
+  mrs_msgs::DynamicsConstraintsSrvResponse res;
 
   res.success = true;
   res.message = "No constraints to update";
 
-  return mrs_msgs::TrackerConstraintsSrvResponse::ConstPtr(new mrs_msgs::TrackerConstraintsSrvResponse(res));
+  return mrs_msgs::DynamicsConstraintsSrvResponse::ConstPtr(new mrs_msgs::DynamicsConstraintsSrvResponse(res));
 }
 
 
@@ -267,6 +309,7 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr BypassTracker::setTraje
     [maybe_unused]] const mrs_msgs::TrajectoryReferenceSrvRequest::ConstPtr &cmd) {
   return mrs_msgs::TrajectoryReferenceSrvResponse::Ptr();
 }
+
 
 }  // namespace bypass_tracker
 }  // namespace mrs_uav_trackers
