@@ -44,8 +44,6 @@
 
 using namespace Eigen;
 
-using namespace Eigen;
-
 namespace mrs_uav_trackers
 {
 
@@ -74,6 +72,8 @@ public:
   const std_srvs::TriggerResponse::ConstPtr stopTrajectoryTracking(const std_srvs::TriggerRequest::ConstPtr &cmd);
   const std_srvs::TriggerResponse::ConstPtr resumeTrajectoryTracking(const std_srvs::TriggerRequest::ConstPtr &cmd);
   const std_srvs::TriggerResponse::ConstPtr gotoTrajectoryStart(const std_srvs::TriggerRequest::ConstPtr &cmd);
+
+  void trajectory_prediction(void);
 
 private:
   mrs_msgs::UavState uav_state_;
@@ -117,19 +117,23 @@ private:
   float C1_z;
   float C2_z;
 
-  float var_xy=sqrt(4*kpxy*kpxy-kvxy*kvxy)/2; // sqrt of - delta
-  float var_z=sqrt(4*kpz*kpz-kvz*kvz)/2;
+  float delta_xy=kvxy*kvxy-4*kpxy;
+  float delta_z=kvz*kvz-4*kpz;
 
-  float const_den_xy= 1 + (var_xy-(kvxy/2))/(var_xy+(kvxy/2));
-  float const_den_z= 1 + (var_z-(kvz/2))/(var_z+(kvz/2));
+  float lambda1_xy=(-kvxy-sqrt(delta_xy))/2;
+  float lambda2_xy=(-kvxy+sqrt(delta_xy))/2;
+  float lambda1_z=(-kvz-sqrt(delta_z))/2;
+  float lambda2_z=(-kvz+sqrt(delta_z))/2;
 
-  float custom_dt=0.01; // time interval (in seconds)
-  float custom_hor=1.5; // prediction horizon (in seconds)
+  float custom_dt=0.1; // time interval (in seconds)
+  float custom_hor=1; // prediction horizon (in seconds)
   float sample_hor=custom_hor/custom_dt; // prediction horion ( in time samples)
   // predicted trajectory
   MatrixXd custom_predicted_traj_x = MatrixXd::Zero(sample_hor, 1);
   MatrixXd custom_predicted_traj_y = MatrixXd::Zero(sample_hor, 1);
   MatrixXd custom_predicted_traj_z = MatrixXd::Zero(sample_hor, 1);
+
+  ros::Publisher custom_predicted_traj_publisher;
 
 };
 
@@ -138,7 +142,11 @@ void BypassTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unused]
   ros::Time::waitForValid();
   is_initialized_ = true;
 
+  ros::NodeHandle nh_(parent_nh, "derg_tracker");
+
   ROS_INFO("[BypassTracker]: initialized");
+
+  custom_predicted_traj_publisher = nh_.advertise<geometry_msgs::PoseArray>("custom_predicted_traj", 1);
 }
 
 
@@ -237,8 +245,58 @@ const mrs_msgs::PositionCommand::ConstPtr BypassTracker::update(const mrs_msgs::
     position_cmd.use_velocity_horizontal = 0;
     position_cmd.use_acceleration        = 0;
   }
+  init_pos(0,0)=uav_state->pose.position.x;
+  init_pos(1,0)=uav_state->pose.position.y;
+  init_pos(2,0)=uav_state->pose.position.z;
+
+  init_vel(0,0)=uav_state->velocity.linear.x;
+  init_vel(1,0)=uav_state->velocity.linear.x;
+  init_vel(2,0)=uav_state->velocity.linear.x;
+
+  trajectory_prediction();
 
   return mrs_msgs::PositionCommand::ConstPtr(new mrs_msgs::PositionCommand(position_cmd));
+}
+
+void BypassTracker::trajectory_prediction(){
+
+    // compute the C2 parameter for each coordinate
+    C2_x= (-(init_vel(0,0)/lambda1_xy)-global_goal_x+init_pos(0,0))/(1-(lambda2_xy/lambda1_xy));
+    C2_y= (-(init_vel(1,0)/lambda1_xy)-global_goal_y+init_pos(1,0))/(1-(lambda2_xy/lambda1_xy));
+    C2_z= (-(init_vel(2,0)/lambda1_z)-global_goal_z+init_pos(2,0))/(1-(lambda2_z/lambda1_z));
+
+    C1_x = (-lambda2_xy*C2_x+init_vel(0,0))/lambda1_xy;
+    C1_y = (-lambda2_xy*C2_y+init_vel(1,0))/lambda1_xy;
+    C1_z = (-lambda2_z*C2_z+init_vel(2,0))/lambda1_z;
+
+    geometry_msgs::PoseArray custom_trajectory_out;
+    custom_trajectory_out.header.stamp    = ros::Time::now();
+    custom_trajectory_out.header.frame_id = uav_state_.header.frame_id;
+
+    float t;
+
+    {
+      for (size_t i = 0; i < sample_hor; i++) {
+        t=i*custom_dt;
+        geometry_msgs::Pose custom_pose;
+
+        custom_pose.position.x = C1_x*exp(lambda1_xy*t)+C2_x*exp(lambda2_xy*t)+global_goal_x;
+        custom_pose.position.y = C1_y*exp(lambda1_xy*t)+C2_y*exp(lambda2_xy*t)+global_goal_y;
+        custom_pose.position.z = C1_z*exp(lambda1_z*t)+C2_z*exp(lambda2_z*t)+global_goal_z;
+        //ROS_INFO("[MpcTracker- prediction]: %.2f", custom_pose.position.x);
+
+        custom_trajectory_out.poses.push_back(custom_pose);
+      }
+    }
+
+    try {
+      custom_predicted_traj_publisher.publish(custom_trajectory_out);
+    }
+    catch (...) {
+      ROS_ERROR("[MpcTracker]: Exception caught during publishing topic %s.", custom_predicted_traj_publisher.getTopic().c_str());
+    }
+
+    custom_trajectory_out.poses.clear();
 }
 
 
