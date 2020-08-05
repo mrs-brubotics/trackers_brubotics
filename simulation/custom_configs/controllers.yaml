@@ -1,30 +1,30 @@
 So3Controller:
   address: "mrs_uav_controllers/So3Controller"
   namespace: "se3_controller"
-  eland_threshold: 300 # [m], position error triggering eland
-  failsafe_threshold: 300 # [m], position error triggering failsafe land
-  odometry_innovation_threshold: 300 # [m], position odometry innovation threshold
+  eland_threshold: 300000 # [m], position error triggering eland
+  failsafe_threshold: 300000 # [m], position error triggering failsafe land
+  odometry_innovation_threshold: 300000 # [m], position odometry innovation threshold
 
 MpcController:
   address: "mrs_uav_controllers/MpcController"
   namespace: "mpc_controller"
-  eland_threshold: 300 # [m], position error triggering eland
-  failsafe_threshold: 300 # [m], position error triggering failsafe land
-  odometry_innovation_threshold: 300 # [m], position odometry innovation threshold
+  eland_threshold: 300000 # [m], position error triggering eland
+  failsafe_threshold: 3000000 # [m], position error triggering failsafe land
+  odometry_innovation_threshold: 3000000 # [m], position odometry innovation threshold
 
 FailsafeController:
   address: "mrs_uav_controllers/FailsafeController"
   namespace: "failsafe_controller"
-  eland_threshold: 300 # [m], position error triggering eland
-  failsafe_threshold: 300 # [m], position error triggering failsafe land
-  odometry_innovation_threshold: 300 # [m], position odometry innovation threshold
+  eland_threshold: 3000000 # [m], position error triggering eland
+  failsafe_threshold: 3000000 # [m], position error triggering failsafe land
+  odometry_innovation_threshold: 3000000 # [m], position odometry innovation threshold
 
 EmergencyController:
   address: "mrs_uav_controllers/MpcController"
   namespace: "emergency_controller"
-  eland_threshold: 300 # [m], position error triggering eland
-  failsafe_threshold: 300 # [m], position error triggering failsafe land
-  odometry_innovation_threshold: 300 # [m], position odometry innovation threshold
+  eland_threshold: 3000000 # [m], position error triggering eland
+  failsafe_threshold: 3000000 # [m], position error triggering failsafe land
+  odometry_innovation_threshold: 3000000 # [m], position odometry innovation threshold
 
 ## ############### here starts the non-conventional stuff ###############
 
@@ -35,13 +35,13 @@ EmergencyController:
 NsfController:
   address: "mrs_uav_controllers/NsfController"
   namespace: "nsf_controller"
-  eland_threshold: 300 # [m], position error triggering eland
-  failsafe_threshold: 300 # [m], position error triggering failsafe land
-  odometry_innovation_threshold: 300 # [m], position odometry innovation threshold
+  eland_threshold: 3000000 # [m], position error triggering eland
+  failsafe_threshold: 3000000 # [m], position error triggering failsafe land
+  odometry_innovation_threshold: 3000000 # [m], position odometry innovation threshold
 
 So3ControllerInterns:
   address: "controllers_brubotics/So3ControllerInterns"
   namespace: "so3_controller_interns"
-  eland_threshold: 300 # [m], position error triggering eland
-  failsafe_threshold: 300 # [m], position error triggering failsafe land
-  odometry_innovation_threshold: 300 # [m], position odometry innovation threshold
+  eland_threshold: 3000000 # [m], position error triggering eland
+  failsafe_threshold: 3000000 # [m], position error triggering failsafe land
+  odometry_innovation_threshold: 3000000 # [m], position odometry innovation threshold

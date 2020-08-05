@@ -8,6 +8,7 @@ trackers : [
   "SpeedTracker",
   "NullTracker",
   "LineTrackerInterns",
+  "BypassTracker",
 ]
 
 # - list of names of dynamically loaded controllers
@@ -20,10 +21,14 @@ controllers : [
   "So3ControllerInterns",
 ]
 
+#disable safety area
 safety:
+  tilt_limit_eland : 300000
+  yaw_limit_enabled : 300000
+  tilt_limit_disarm : 300000
+  tilt_error_disarm :
+    enabled : false
 
-  min_thrust_null_tracker: 0.15 # [] minimum thrust when not flying
-
-  # when the active tracker returns empty command
-  tracker_error_action: "ehover" # {eland, ehover}
+safety_area:
+  use_safety_area : false 
 
