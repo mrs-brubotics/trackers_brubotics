@@ -21,6 +21,7 @@ controllers : [
   "So3ControllerInterns",
 ]
 
+
 #disable safety area
 safety:
   tilt_limit_eland : 300000
@@ -31,4 +32,6 @@ safety:
 
 safety_area:
   use_safety_area : false 
+  min_height_ : 0
+  max_height_ : 300000
 
