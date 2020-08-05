@@ -1,0 +1,12 @@
+LineTrackerInterns:
+  address: "trackers_brubotics/LineTrackerInterns"
+
+MpcTrackerInterns:
+  address: "trackers_brubotics/MpcTrackerInterns"
+
+BypassTracker:
+  address: "trackers_brubotics/BypassTracker"
+
+DergTracker:
+  address: "trackers_brubotics/DergTracker"
+
