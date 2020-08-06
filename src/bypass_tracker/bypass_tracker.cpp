@@ -1,9 +1,36 @@
 #define VERSION "0.0.0.0"
 
 #include <ros/ros.h>
+
 #include <mrs_uav_managers/tracker.h>
+
+#include <geometry_msgs/Pose.h>
+#include <geometry_msgs/PoseArray.h>
+
+#include <mrs_msgs/FuturePoint.h>
+#include <mrs_msgs/FutureTrajectory.h>
+#include <mrs_msgs/MpcTrackerDiagnostics.h>
+#include <mrs_msgs/EstimatorType.h>
+
+#include <std_msgs/String.h>
+
 #include <mrs_lib/profiler.h>
+#include <mrs_lib/utils.h>
+#include <mrs_lib/param_loader.h>
 #include <mrs_lib/mutex.h>
+#include <mrs_lib/geometry_utils.h>
+#include <mrs_lib/attitude_converter.h>
+#include <mrs_lib/subscribe_handler.h>
+
+#include <dynamic_reconfigure/server.h>
+#include <mpc_tracker_solver.h>
+
+#include <mrs_uav_trackers/mpc_trackerConfig.h>
+
+#include <visualization_msgs/Marker.h>
+#include <visualization_msgs/MarkerArray.h>
+
+using namespace Eigen;
 
 namespace mrs_uav_trackers
 {
@@ -33,12 +60,14 @@ public:
   const std_srvs::TriggerResponse::ConstPtr stopTrajectoryTracking(const std_srvs::TriggerRequest::ConstPtr &cmd);
   const std_srvs::TriggerResponse::ConstPtr resumeTrajectoryTracking(const std_srvs::TriggerRequest::ConstPtr &cmd);
   const std_srvs::TriggerResponse::ConstPtr gotoTrajectoryStart(const std_srvs::TriggerRequest::ConstPtr &cmd);
-
+  void trajectory_prediction(void);
 private:
+  ros::NodeHandle                                    nh_;
   mrs_msgs::UavState uav_state_;
   std::mutex         mutex_uav_state_;
   std::mutex         mutex_state_;
   std::mutex         mutex_goal_;
+
 
   mrs_lib::Profiler profiler_;
 
@@ -56,6 +85,54 @@ private:
   float goto_ref_y=0;
   float goto_ref_z=0;
 
+  /////////////////////////// Pedro ////////////////////////////
+// gain parameters
+
+float kpxy = 15;
+float kpz= 15;
+float kvxy=8;
+float kvz=8;
+
+// initial conditions
+MatrixXd init_pos = MatrixXd::Zero(3, 1);
+MatrixXd init_vel = MatrixXd::Zero(3, 1);
+
+
+// prediction Parameters
+float g=9.8066;
+float mass=3.5;//0.7;
+
+float C1_x;
+float C2_x;
+float C1_y;
+float C2_y;
+float C1_z;
+float C2_z;
+
+float delta_xy=kvxy*kvxy-4*kpxy;
+float delta_z=kvz*kvz-4*kpz;
+
+float lambda1_xy=(-kvxy-sqrt(delta_xy))/2;
+float lambda2_xy=(-kvxy+sqrt(delta_xy))/2;
+float lambda1_z=(-kvz-sqrt(delta_z))/2;
+float lambda2_z=(-kvz+sqrt(delta_z))/2;
+
+
+float custom_dt=0.002; // sampling time (in seconds)
+float custom_hor=0.4; // prediction horizon (in seconds)
+float sample_hor=custom_hor/custom_dt; // prediction horion ( in samples)
+
+geometry_msgs::PoseArray predicted_thrust_out; // array of thrust predictions
+geometry_msgs::PoseArray custom_trajectory_out;
+
+ros::Publisher custom_predicted_traj_publisher;
+ros::Publisher custom_predicted_thrust_publisher;
+ros::Publisher custom_predicted_velocity_publisher;
+
+
+/////////////////////////////////////////////////////////////////
+
+
 };
 
 void BypassTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unused]] const std::string uav_name,
@@ -63,6 +140,11 @@ void BypassTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unused]
   ros::Time::waitForValid();
   is_initialized_ = true;
 
+  ros::NodeHandle nh_(parent_nh, "derg_tracker");
+
+  custom_predicted_traj_publisher = nh_.advertise<geometry_msgs::PoseArray>("custom_predicted_traj", 1);
+  custom_predicted_thrust_publisher = nh_.advertise<geometry_msgs::PoseArray>("custom_predicted_thrust", 1);
+  custom_predicted_velocity_publisher = nh_.advertise<geometry_msgs::PoseArray>("custom_predicted_vel", 1);
   ROS_INFO("[BypassTracker]: initialized");
 }
 
@@ -86,6 +168,77 @@ bool BypassTracker::resetStatic(void) {
   return true;
 }
 
+void BypassTracker::trajectory_prediction(){
+
+  // compute the C2 parameter for each coordinate
+  C2_x= (-(init_vel(0,0)/lambda1_xy)-goto_ref_x+init_pos(0,0))/(1-(lambda2_xy/lambda1_xy));
+  C2_y= (-(init_vel(1,0)/lambda1_xy)-goto_ref_y+init_pos(1,0))/(1-(lambda2_xy/lambda1_xy));
+  C2_z= (-(init_vel(2,0)/lambda1_z)-goto_ref_z+init_pos(2,0))/(1-(lambda2_z/lambda1_z));
+
+  C1_x = (-lambda2_xy*C2_x+init_vel(0,0))/lambda1_xy;
+  C1_y = (-lambda2_xy*C2_y+init_vel(1,0))/lambda1_xy;
+  C1_z = (-lambda2_z*C2_z+init_vel(2,0))/lambda1_z;
+
+
+  custom_trajectory_out.header.stamp    = ros::Time::now();
+  custom_trajectory_out.header.frame_id = uav_state_.header.frame_id;
+
+
+  predicted_thrust_out.header.stamp    = ros::Time::now();
+  predicted_thrust_out.header.frame_id = uav_state_.header.frame_id;
+
+  /*
+  geometry_msgs::PoseArray custom_vel_out;
+  custom_vel_out.header.stamp    = ros::Time::now();
+  custom_vel_out.header.frame_id = uav_state_.header.frame_id;
+  */
+  float t;
+
+  {
+    for (size_t i = 0; i < sample_hor; i++) {
+      t=i*custom_dt;
+      geometry_msgs::Pose custom_pose;
+      geometry_msgs::Pose custom_vel;
+      geometry_msgs::Pose predicted_thrust; // not physically correct of course. We just had problems publishing other types of arrays that weren't custom
+      geometry_msgs::Pose predicted_thrust_norm;  // predicted thrust norm
+
+      custom_pose.position.x = C1_x*exp(lambda1_xy*t)+C2_x*exp(lambda2_xy*t)+goto_ref_x;
+      custom_pose.position.y = C1_y*exp(lambda1_xy*t)+C2_y*exp(lambda2_xy*t)+goto_ref_y;
+      custom_pose.position.z = C1_z*exp(lambda1_z*t)+C2_z*exp(lambda2_z*t)+goto_ref_z;
+      //ROS_INFO("[MpcTracker- prediction]: %.2f", custom_pose.position.x);
+      /*
+      custom_vel.position.x = lambda1_xy*C1_x*exp(lambda1_xy*t)+lambda2_xy*C2_x*exp(lambda2_xy*t);
+      custom_vel.position.y = lambda1_xy*C1_y*exp(lambda1_xy*t)+lambda2_xy*C2_y*exp(lambda2_xy*t);
+      custom_vel.position.z = lambda1_z*C1_z*exp(lambda1_z*t)+lambda2_z*C2_z*exp(lambda2_z*t);
+      */
+
+      predicted_thrust.position.x = mass*(lambda1_xy*lambda1_xy*C1_x*exp(lambda1_xy*t)+lambda2_xy*lambda2_xy*C2_x*exp(lambda2_xy*t)); //mass*(kpxy*(goto_ref_x-custom_pose.position.x)-kvxy*custom_vel.position.x);//  // thrust x
+      predicted_thrust.position.y = mass*(lambda1_xy*lambda1_xy*C1_y*exp(lambda1_xy*t)+lambda2_xy*lambda2_xy*C2_y*exp(lambda2_xy*t));//mass*(kpxy*(goto_ref_y-custom_pose.position.y)-kvxy*custom_vel.position.y);  // thrust y
+      predicted_thrust.position.z = mass*(lambda1_z*lambda1_z*C1_z*exp(lambda1_z*t)+lambda2_z*lambda2_z*C2_z*exp(lambda2_z*t)+g);//mass*(kpz*(goto_ref_z-custom_pose.position.z)-kvz*custom_vel.position.z) + mass*g;  // thrust z
+
+      predicted_thrust_norm.position.x= sqrt(predicted_thrust.position.x*predicted_thrust.position.x+predicted_thrust.position.y*predicted_thrust.position.y+predicted_thrust.position.z*predicted_thrust.position.z);
+
+      custom_trajectory_out.poses.push_back(custom_pose);
+      //ROS_INFO("[MpcTracker]: custom pose x =  [%.2f]",custom_pose.position.x);
+      //custom_vel_out.poses.push_back(custom_vel);
+      predicted_thrust_out.poses.push_back(predicted_thrust_norm);
+    }
+  }
+
+  try {
+    custom_predicted_traj_publisher.publish(custom_trajectory_out);
+    custom_predicted_thrust_publisher.publish(predicted_thrust_out);
+    //custom_predicted_velocity_publisher.publish(custom_vel_out);
+  }
+  catch (...) {
+    ROS_ERROR("[MpcTracker]: Exception caught during publishing topic %s.", custom_predicted_traj_publisher.getTopic().c_str());
+  }
+
+  custom_trajectory_out.poses.clear();
+  predicted_thrust_out.poses.clear();
+
+}
+
 
 const mrs_msgs::PositionCommand::ConstPtr BypassTracker::update(const mrs_msgs::UavState::ConstPtr &                        uav_state,
                                                               [[maybe_unused]] const mrs_msgs::AttitudeCommand::ConstPtr &last_attitude_cmd) {
@@ -107,6 +260,17 @@ const mrs_msgs::PositionCommand::ConstPtr BypassTracker::update(const mrs_msgs::
     return mrs_msgs::PositionCommand::Ptr();
   }
   mrs_msgs::PositionCommand position_cmd;
+
+
+  init_pos(0,0)=uav_state->pose.position.x;
+  init_pos(1,0)=uav_state->pose.position.y;
+  init_pos(2,0)=uav_state->pose.position.z;
+
+  init_vel(0,0)=uav_state->velocity.linear.x;
+  init_vel(1,0)=uav_state->velocity.linear.y;
+  init_vel(2,0)=uav_state->velocity.linear.z;
+
+  trajectory_prediction();
 
   position_cmd.header.stamp    = ros::Time::now();
   position_cmd.header.frame_id = uav_state->header.frame_id;
@@ -133,13 +297,14 @@ const mrs_msgs::PositionCommand::ConstPtr BypassTracker::update(const mrs_msgs::
 
     ROS_INFO(
         "[MPC tracker - odom]: [goto_ref_x=%.2f],[goto_ref_y=%.2f],[goto_ref_z=%.2f]",goto_ref_x,goto_ref_y,goto_ref_z);
- 
+
   return mrs_msgs::PositionCommand::ConstPtr(new mrs_msgs::PositionCommand(position_cmd));
 }
 
     std::scoped_lock lock(mutex_uav_state_);
 
  // set the desired states from the input of the goto function
+
   position_cmd.position.x     = goto_ref_x;
   position_cmd.position.y     = goto_ref_y;
   position_cmd.position.z     = goto_ref_z;
