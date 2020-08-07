@@ -6,3 +6,7 @@ MpcTrackerInterns:
 
 BypassTracker:
   address: "trackers_brubotics/BypassTracker"
+
+DistributedERGTracker:
+  address: "trackers_brubotics/DistributedERGTracker"
+

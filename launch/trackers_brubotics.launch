@@ -4,6 +4,7 @@
 <arg name="UAV_TYPE" default="$(env UAV_TYPE)" />
 <arg name="custom_config_line_tracker_interns" default="" />
 <arg name="PROFILER" default="$(optenv PROFILER false)" />
+<arg name="custom_config_distributed_erg_tracker" default="" />
 
 <!-- Parameter loading -->
 <rosparam ns="$(env UAV_NAME)/control_manager/line_tracker_interns" file="$(find trackers_brubotics)/config/default/line_tracker_interns.yaml" />
@@ -11,6 +12,12 @@
 <rosparam if="$(eval not arg('custom_config_line_tracker_interns') == '')" ns="$(env UAV_NAME)/control_manager/line_tracker_interns" file="$(arg custom_config_line_tracker_interns)" />
 <param name="$(env UAV_NAME)/control_manager/line_tracker_interns/enable_profiler" type="bool" value="$(arg PROFILER)" />
 <remap from="~$(env UAV_NAME)/control_manager/line_tracker_interns/profiler" to="profiler" />
+
+<rosparam ns="$(env UAV_NAME)/control_manager/distributed_erg_tracker" file="$(find trackers_brubotics)/config/default/distributed_erg_tracker.yaml" />
+<rosparam ns="$(env UAV_NAME)/control_manager/distributed_erg_tracker" file="$(find trackers_brubotics)/config/$(arg RUN_TYPE)/$(arg UAV_TYPE)/distributed_erg_tracker.yaml" />
+<rosparam if="$(eval not arg('custom_config_distributed_erg_tracker') == '')" ns="$(env UAV_NAME)/control_manager/distributed_erg_tracker" file="$(arg custom_config_distributed_erg_tracker)" />
+<param name="$(env UAV_NAME)/control_manager/distributed_erg_tracker/enable_profiler" type="bool" value="$(arg PROFILER)" />
+<remap from="~$(env UAV_NAME)/control_manager/distributed_erg_tracker/profiler" to="profiler" />
 
 <!-- Address loading -->
 <rosparam ns="$(env UAV_NAME)/control_manager" file="$(find trackers_brubotics)/config/address.yaml" />
