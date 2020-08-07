@@ -100,7 +100,7 @@ MatrixXd init_vel = MatrixXd::Zero(3, 1);
 
 // prediction Parameters
 float g=9.8066;
-float mass=3.5;//0.7;
+float mass=2.0;
 
 float C1_x;
 float C2_x;
@@ -212,12 +212,12 @@ void BypassTracker::trajectory_prediction(){
       custom_vel.position.z = lambda1_z*C1_z*exp(lambda1_z*t)+lambda2_z*C2_z*exp(lambda2_z*t);
       */
 
-      predicted_thrust.position.x = mass*(lambda1_xy*lambda1_xy*C1_x*exp(lambda1_xy*t)+lambda2_xy*lambda2_xy*C2_x*exp(lambda2_xy*t)); //mass*(kpxy*(goto_ref_x-custom_pose.position.x)-kvxy*custom_vel.position.x);//  // thrust x
-      predicted_thrust.position.y = mass*(lambda1_xy*lambda1_xy*C1_y*exp(lambda1_xy*t)+lambda2_xy*lambda2_xy*C2_y*exp(lambda2_xy*t));//mass*(kpxy*(goto_ref_y-custom_pose.position.y)-kvxy*custom_vel.position.y);  // thrust y
-      predicted_thrust.position.z = mass*(lambda1_z*lambda1_z*C1_z*exp(lambda1_z*t)+lambda2_z*lambda2_z*C2_z*exp(lambda2_z*t)+g);//mass*(kpz*(goto_ref_z-custom_pose.position.z)-kvz*custom_vel.position.z) + mass*g;  // thrust z
+      predicted_thrust.position.x = mass*(lambda1_xy*lambda1_xy*C1_x*exp(lambda1_xy*t)+lambda2_xy*lambda2_xy*C2_x*exp(lambda2_xy*t)); //mass*(kpxy*(applied_ref_x-custom_pose.position.x)-kvxy*custom_vel.position.x);//  // thrust x
+      predicted_thrust.position.y = mass*(lambda1_xy*lambda1_xy*C1_y*exp(lambda1_xy*t)+lambda2_xy*lambda2_xy*C2_y*exp(lambda2_xy*t));//mass*(kpxy*(applied_ref_y-custom_pose.position.y)-kvxy*custom_vel.position.y);  // thrust y
+      predicted_thrust.position.z = mass*(lambda1_z*lambda1_z*C1_z*exp(lambda1_z*t)+lambda2_z*lambda2_z*C2_z*exp(lambda2_z*t)+g);//mass*(kpz*(applied_ref_z-custom_pose.position.z)-kvz*custom_vel.position.z) + mass*g;  // thrust z
 
       predicted_thrust_norm.position.x= sqrt(predicted_thrust.position.x*predicted_thrust.position.x+predicted_thrust.position.y*predicted_thrust.position.y+predicted_thrust.position.z*predicted_thrust.position.z);
-
+      
       custom_trajectory_out.poses.push_back(custom_pose);
       //ROS_INFO("[MpcTracker]: custom pose x =  [%.2f]",custom_pose.position.x);
       //custom_vel_out.poses.push_back(custom_vel);
