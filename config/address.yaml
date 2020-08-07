@@ -11,3 +11,7 @@ BypassTracker:
 ModifiedMpc:
   address: "trackers_brubotics/ModifiedMpc"
 
+
+DergTracker:
+  address: "trackers_brubotics/DergTracker"
+
