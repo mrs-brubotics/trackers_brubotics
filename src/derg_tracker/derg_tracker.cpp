@@ -35,10 +35,10 @@ using namespace Eigen;
 namespace mrs_uav_trackers
 {
 
-namespace bypass_tracker
+namespace derg_tracker
 {
 
-class BypassTracker : public mrs_uav_managers::Tracker {
+class DergTracker : public mrs_uav_managers::Tracker {
 public:
   void                          initialize(const ros::NodeHandle &parent_nh, const std::string uav_name, std::shared_ptr<mrs_uav_managers::CommonHandlers_t> common_handlers);
   std::tuple<bool, std::string> activate(const mrs_msgs::PositionCommand::ConstPtr &last_position_cmd);
@@ -135,7 +135,7 @@ ros::Publisher custom_predicted_velocity_publisher;
 
 };
 
-void BypassTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unused]] const std::string uav_name,
+void DergTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unused]] const std::string uav_name,
                              [[maybe_unused]] std::shared_ptr<mrs_uav_managers::CommonHandlers_t> common_handlers) {
   ros::Time::waitForValid();
   is_initialized_ = true;
@@ -145,30 +145,30 @@ void BypassTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unused]
   custom_predicted_traj_publisher = nh_.advertise<geometry_msgs::PoseArray>("custom_predicted_traj", 1);
   custom_predicted_thrust_publisher = nh_.advertise<geometry_msgs::PoseArray>("custom_predicted_thrust", 1);
   custom_predicted_velocity_publisher = nh_.advertise<geometry_msgs::PoseArray>("custom_predicted_vel", 1);
-  ROS_INFO("[BypassTracker]: initialized");
+  ROS_INFO("[DergTracker]: initialized");
 }
 
 
-std::tuple<bool, std::string> BypassTracker::activate(const mrs_msgs::PositionCommand::ConstPtr &last_position_cmd) {
+std::tuple<bool, std::string> DergTracker::activate(const mrs_msgs::PositionCommand::ConstPtr &last_position_cmd) {
   std::stringstream ss;
   ss << "Activated";
   is_active_ = true;
-  ROS_INFO("[BypassTracker]: activated");
+  ROS_INFO("[DergTracker]: activated");
   return std::tuple(true, ss.str());
 }
 
 
-void BypassTracker::deactivate(void) {
+void DergTracker::deactivate(void) {
   is_active_ = false;
-  ROS_INFO("[BypassTracker]: deactivated");
+  ROS_INFO("[DergTracker]: deactivated");
 }
 
 
-bool BypassTracker::resetStatic(void) {
+bool DergTracker::resetStatic(void) {
   return true;
 }
 
-void BypassTracker::trajectory_prediction(){
+void DergTracker::trajectory_prediction(){
 
   // compute the C2 parameter for each coordinate
   C2_x= (-(init_vel(0,0)/lambda1_xy)-goto_ref_x+init_pos(0,0))/(1-(lambda2_xy/lambda1_xy));
@@ -240,7 +240,7 @@ void BypassTracker::trajectory_prediction(){
 }
 
 
-const mrs_msgs::PositionCommand::ConstPtr BypassTracker::update(const mrs_msgs::UavState::ConstPtr &                        uav_state,
+const mrs_msgs::PositionCommand::ConstPtr DergTracker::update(const mrs_msgs::UavState::ConstPtr &                        uav_state,
                                                               [[maybe_unused]] const mrs_msgs::AttitudeCommand::ConstPtr &last_attitude_cmd) {
 
   mrs_lib::Routine profiler_routine = profiler_.createRoutine("update");
@@ -328,14 +328,14 @@ const mrs_msgs::PositionCommand::ConstPtr BypassTracker::update(const mrs_msgs::
 }
 
 
-const mrs_msgs::TrackerStatus BypassTracker::getStatus() {
+const mrs_msgs::TrackerStatus DergTracker::getStatus() {
   mrs_msgs::TrackerStatus tracker_status;
   tracker_status.active = is_active_;
   return tracker_status;
 }
 
 
-const std_srvs::SetBoolResponse::ConstPtr BypassTracker::enableCallbacks(const std_srvs::SetBoolRequest::ConstPtr &cmd) {
+const std_srvs::SetBoolResponse::ConstPtr DergTracker::enableCallbacks(const std_srvs::SetBoolRequest::ConstPtr &cmd) {
 
   std_srvs::SetBoolResponse res;
 
@@ -346,7 +346,7 @@ const std_srvs::SetBoolResponse::ConstPtr BypassTracker::enableCallbacks(const s
 }
 
 
-const std_srvs::TriggerResponse::ConstPtr BypassTracker::switchOdometrySource(const mrs_msgs::UavState::ConstPtr &new_uav_state) {
+const std_srvs::TriggerResponse::ConstPtr DergTracker::switchOdometrySource(const mrs_msgs::UavState::ConstPtr &new_uav_state) {
 
   std_srvs::TriggerResponse res;
 
@@ -357,7 +357,7 @@ const std_srvs::TriggerResponse::ConstPtr BypassTracker::switchOdometrySource(co
 }
 
 
-const std_srvs::TriggerResponse::ConstPtr BypassTracker::hover([[maybe_unused]] const std_srvs::TriggerRequest::ConstPtr &cmd) {
+const std_srvs::TriggerResponse::ConstPtr DergTracker::hover([[maybe_unused]] const std_srvs::TriggerRequest::ConstPtr &cmd) {
   std_srvs::TriggerResponse res;
   res.message = "hover initiated";
   res.success = true;
@@ -368,30 +368,30 @@ const std_srvs::TriggerResponse::ConstPtr BypassTracker::hover([[maybe_unused]] 
 }
 
 
-const std_srvs::TriggerResponse::ConstPtr BypassTracker::startTrajectoryTracking([[maybe_unused]] const std_srvs::TriggerRequest::ConstPtr &cmd) {
+const std_srvs::TriggerResponse::ConstPtr DergTracker::startTrajectoryTracking([[maybe_unused]] const std_srvs::TriggerRequest::ConstPtr &cmd) {
   hover_ = false;
   return std_srvs::TriggerResponse::Ptr();
 }
 
 
-const std_srvs::TriggerResponse::ConstPtr BypassTracker::stopTrajectoryTracking([[maybe_unused]] const std_srvs::TriggerRequest::ConstPtr &cmd) {
+const std_srvs::TriggerResponse::ConstPtr DergTracker::stopTrajectoryTracking([[maybe_unused]] const std_srvs::TriggerRequest::ConstPtr &cmd) {
   hover_ = true;
   return std_srvs::TriggerResponse::Ptr();
 }
 
 
-const std_srvs::TriggerResponse::ConstPtr BypassTracker::resumeTrajectoryTracking([[maybe_unused]] const std_srvs::TriggerRequest::ConstPtr &cmd) {
+const std_srvs::TriggerResponse::ConstPtr DergTracker::resumeTrajectoryTracking([[maybe_unused]] const std_srvs::TriggerRequest::ConstPtr &cmd) {
   hover_ = false;
   return std_srvs::TriggerResponse::Ptr();
 }
 
 
-const std_srvs::TriggerResponse::ConstPtr BypassTracker::gotoTrajectoryStart([[maybe_unused]] const std_srvs::TriggerRequest::ConstPtr &cmd) {
+const std_srvs::TriggerResponse::ConstPtr DergTracker::gotoTrajectoryStart([[maybe_unused]] const std_srvs::TriggerRequest::ConstPtr &cmd) {
   return std_srvs::TriggerResponse::Ptr();
 }
 
 
-const mrs_msgs::DynamicsConstraintsSrvResponse::ConstPtr BypassTracker::setConstraints(const mrs_msgs::DynamicsConstraintsSrvRequest::ConstPtr &cmd) {
+const mrs_msgs::DynamicsConstraintsSrvResponse::ConstPtr DergTracker::setConstraints(const mrs_msgs::DynamicsConstraintsSrvRequest::ConstPtr &cmd) {
 
   mrs_msgs::DynamicsConstraintsSrvResponse res;
 
@@ -402,7 +402,7 @@ const mrs_msgs::DynamicsConstraintsSrvResponse::ConstPtr BypassTracker::setConst
 }
 
 
-const mrs_msgs::ReferenceSrvResponse::ConstPtr BypassTracker::setReference(const mrs_msgs::ReferenceSrvRequest::ConstPtr &cmd) {
+const mrs_msgs::ReferenceSrvResponse::ConstPtr DergTracker::setReference(const mrs_msgs::ReferenceSrvRequest::ConstPtr &cmd) {
 
   mrs_msgs::ReferenceSrvResponse res;
 
@@ -424,14 +424,14 @@ const mrs_msgs::ReferenceSrvResponse::ConstPtr BypassTracker::setReference(const
 }
 
 
-const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr BypassTracker::setTrajectoryReference([
+const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergTracker::setTrajectoryReference([
     [maybe_unused]] const mrs_msgs::TrajectoryReferenceSrvRequest::ConstPtr &cmd) {
   return mrs_msgs::TrajectoryReferenceSrvResponse::Ptr();
 }
 
 
-}  // namespace bypass_tracker
+}  // namespace derg_tracker
 }  // namespace mrs_uav_trackers
 
 #include <pluginlib/class_list_macros.h>
-PLUGINLIB_EXPORT_CLASS(mrs_uav_trackers::bypass_tracker::BypassTracker, mrs_uav_managers::Tracker)
+PLUGINLIB_EXPORT_CLASS(mrs_uav_trackers::derg_tracker::DergTracker, mrs_uav_managers::Tracker)

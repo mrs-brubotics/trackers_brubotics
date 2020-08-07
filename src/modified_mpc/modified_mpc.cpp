@@ -1,9 +1,3 @@
-#define VERSION 0.0.0.0
-
-#include <ros/ros.h>
-#include <mrs_uav_managers/tracker.h>
-
-
   #define VERSION "0.0.5.2"
 
   /* includes //{ */
