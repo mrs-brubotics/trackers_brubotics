@@ -351,6 +351,9 @@ private:
   ros::Publisher publisher_current_constraints_;
   ros::Publisher publisher_heading_;
 
+  ros::Publisher custom_publisher_thrust;
+  ros::Publisher custom_publisher_attitude;
+
   // | --------------------- service servers -------------------- |
 
   ros::ServiceServer service_server_switch_tracker_;
@@ -1537,6 +1540,9 @@ void ControlManager::onInit() {
   publisher_heading_                         = nh_.advertise<mrs_msgs::Float64Stamped>("heading_out", 1);
   pub_debug_original_trajectory_poses_       = nh_.advertise<geometry_msgs::PoseArray>("trajectory_original/poses_out", 1, true);
   pub_debug_original_trajectory_markers_     = nh_.advertise<visualization_msgs::MarkerArray>("trajectory_original/markers_out", 1, true);
+
+  custom_publisher_thrust = nh_.advertise<std_msgs::Float64>("custom_thrust",1);
+  custom_publisher_attitude                  = nh_.advertise<nav_msgs::Odometry>("custom_attitude_cmd",1);
 
   // | ----------------------- subscribers ---------------------- |
 
@@ -8298,8 +8304,20 @@ void ControlManager::publish(void) {
     thrust_out.header.stamp = ros::Time::now();
     thrust_out.value        = (pow((last_attitude_cmd->thrust - _motor_params_.B) / _motor_params_.A, 2) / _g_) * 10.0;
 
+    std_msgs::Float64 custom_thrust;
+    custom_thrust.data = (pow((last_attitude_cmd->thrust - _motor_params_.B) / _motor_params_.A, 2) / _g_) * 10.0;
+
+    nav_msgs::Odometry custom_attitude_cmd;
+    custom_attitude_cmd.pose.pose.orientation.w=last_attitude_cmd->attitude.w;
+    custom_attitude_cmd.pose.pose.orientation.x=last_attitude_cmd->attitude.x;
+    custom_attitude_cmd.pose.pose.orientation.y=last_attitude_cmd->attitude.y;
+    custom_attitude_cmd.pose.pose.orientation.z=last_attitude_cmd->attitude.z;
+
     try {
       publisher_thrust_force_.publish(thrust_out);
+
+      custom_publisher_thrust.publish(custom_thrust);
+      custom_publisher_attitude.publish(custom_attitude_cmd);
     }
     catch (...) {
       ROS_ERROR("[ControlManager]: exception caught during publishing topic %s", publisher_thrust_force_.getTopic().c_str());
