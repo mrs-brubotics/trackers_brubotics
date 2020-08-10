@@ -109,7 +109,10 @@ private:
   std::mutex mutex_drs_params_;  // locks the gains that came from the drs
 
 // custom publisher
-ros::Publisher custom_publisher_thrust;
+  ros::Publisher custom_publisher_projected_thrust;
+  ros::Publisher custom_publisher_thrust;
+  ros::NodeHandle                                    nh_;
+  std::shared_ptr<mrs_uav_managers::CommonHandlers_t> common_handlers;
 
   // | ----------------------- gain muting ---------------------- |
 
@@ -273,6 +276,7 @@ void Se3Controller::initialize(const ros::NodeHandle& parent_nh, [[maybe_unused]
   Ib_b_                = Eigen::Vector2d::Zero(2);
 
 // custom publisher
+   custom_publisher_projected_thrust = nh_.advertise<std_msgs::Float64>("custom_projected_thrust",1);
   custom_publisher_thrust                    = nh_.advertise<std_msgs::Float64>("custom_thrust",1);
 
   // | --------------- dynamic reconfigure server --------------- |
@@ -780,6 +784,7 @@ const mrs_msgs::AttitudeCommand::ConstPtr Se3Controller::update(const mrs_msgs::
   double thrust = 0;
 
 //custom publisher
+   custom_publisher_projected_thrust.publish(thrust_force);
   double thrust_norm=sqrt(f(0,0)*f(0,0)+f(1,0)*f(1,0)+f(2,0)*f(2,0)); // norm of f ( not projected on the z axis of the UAV frame)
   custom_publisher_thrust.publish(thrust_norm);
 
