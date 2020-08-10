@@ -635,7 +635,8 @@ const mrs_msgs::AttitudeCommand::ConstPtr Se3Controller::update(const mrs_msgs::
     integral_feedback << Ib_w[0] + Iw_w_[0], Ib_w[1] + Iw_w_[1], 0;
   }
 
-  Eigen::Vector3d f = position_feedback + velocity_feedback + integral_feedback + feed_forward;
+ // Eigen::Vector3d f = position_feedback + velocity_feedback + integral_feedback + feed_forward;
+  Eigen::Vector3d f = position_feedback + velocity_feedback + feed_forward;
 
   // | ----------- limiting the downwards acceleration ---------- |
   // the downwards force produced by the position and the acceleration feedback should not be larger than the gravity
