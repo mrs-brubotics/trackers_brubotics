@@ -1,6 +1,5 @@
 #define VERSION "0.0.0.0"
 
-
 /*includes//{*/
 #include <ros/ros.h>
 #include <mrs_uav_managers/tracker.h>
@@ -105,7 +104,7 @@ const mrs_msgs::PositionCommand::ConstPtr BypassTracker::update(const mrs_msgs::
   }
   mrs_msgs::PositionCommand position_cmd;
 
-  position_cmd.header.stamp    = ros::Time::now();
+  position_cmd.header.stamp    = uav_state->header.stamp;
   position_cmd.header.frame_id = uav_state->header.frame_id;
     if (starting_bool) {
 
@@ -131,8 +130,8 @@ const mrs_msgs::PositionCommand::ConstPtr BypassTracker::update(const mrs_msgs::
     position_cmd.use_velocity_horizontal = 1;
     position_cmd.use_acceleration        = 0;
     position_cmd.use_jerk                = 0;
-    position_cmd.use_heading                 = 1;
-    position_cmd.use_heading_rate            = 0;
+    position_cmd.use_heading             = 1;
+    position_cmd.use_heading_rate        = 1;
 
     starting_bool=false;
 
@@ -143,6 +142,7 @@ const mrs_msgs::PositionCommand::ConstPtr BypassTracker::update(const mrs_msgs::
 }
 
  // set the desired states from the input of the goto function
+
   position_cmd.position.x     = goto_ref_x;
   position_cmd.position.y     = goto_ref_y;
   position_cmd.position.z     = goto_ref_z;
@@ -155,7 +155,7 @@ const mrs_msgs::PositionCommand::ConstPtr BypassTracker::update(const mrs_msgs::
   position_cmd.use_acceleration        = 0;
   position_cmd.use_jerk                = 0;
   position_cmd.use_heading             = 1;
-  position_cmd.use_heading_rate        = 0;
+  position_cmd.use_heading_rate        = 1;
 
   // set the header
   position_cmd.header.stamp    = uav_state->header.stamp;
