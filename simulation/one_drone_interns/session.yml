@@ -15,7 +15,7 @@ windows:
       layout: tiled
       panes:
         - waitForSimulation; roslaunch mrs_uav_status status.launch
-        - 'waitBeforeGoTo; rosservice call /$UAV_NAME/control_manager/goto "goal: [0.00, 0.00, 2.00, 0.00]";sleep 10;rosservice call /$UAV_NAME/control_manager/switch_tracker BypassTracker;  history -s rosbag record -O ~/workspace/src/droneswarm_brubotics/useful_files/matlab_graphs/bagfile.bag /$UAV_NAME/odometry/odom_main /$UAV_NAME/control_manager/custom_thrust /$UAV_NAME/control_manager/se3_controller/custom_projected_thrust /uav1/control_manager/cmd_odom'
+        - 'waitBeforeGoTo; rosservice call /$UAV_NAME/control_manager/goto "goal: [0.00, 0.00, 2.00, 0.00]";sleep 10;rosservice call /$UAV_NAME/control_manager/switch_tracker BypassTracker;rosservice call /$UAV_NAME/control_manager/switch_controller So3ControllerInterns; history -s rosbag info ~/workspace/src/droneswarm_brubotics/useful_files/matlab_graphs/t450/bagfile.bag; history -s rosbag record -O ~/workspace/src/droneswarm_brubotics/useful_files/matlab_graphs/t450/bagfile.bag /$UAV_NAME/odometry/odom_main /$UAV_NAME/control_manager/so3_controller_interns/custom_thrust /$UAV_NAME/control_manager/so3_controller_interns/custom_projected_thrust /uav1/control_manager/cmd_odom'
   - spawn:
       layout: tiled
       panes:
@@ -23,7 +23,7 @@ windows:
   - control:
       layout: tiled
       panes:
-        - waitForOdometry; roslaunch controllers_brubotics controllers_brubotics.launch; roslaunch trackers_brubotics trackers_brubotics.launch; roslaunch mrs_uav_general core.launch config_se3_controller:=../custom_configs/se3.yaml config_control_manager:=../custom_configs/control_manager.yaml
+        - waitForOdometry; roslaunch controllers_brubotics controllers_brubotics.launch; roslaunch trackers_brubotics trackers_brubotics.launch; roslaunch mrs_uav_general core.launch config_control_manager:=../custom_configs/control_manager.yaml
   - automatic_start:
       layout: tiled
       panes:
