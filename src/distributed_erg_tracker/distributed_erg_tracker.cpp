@@ -104,7 +104,7 @@ const mrs_msgs::PositionCommand::ConstPtr DistributedERGTracker::update(const mr
   }
   mrs_msgs::PositionCommand position_cmd;
 
-  position_cmd.header.stamp    = ros::Time::now();
+  position_cmd.header.stamp    = uav_state->header.stamp;
   position_cmd.header.frame_id = uav_state->header.frame_id;
     if (starting_bool) {
 
@@ -130,18 +130,19 @@ const mrs_msgs::PositionCommand::ConstPtr DistributedERGTracker::update(const mr
     position_cmd.use_velocity_horizontal = 1;
     position_cmd.use_acceleration        = 0;
     position_cmd.use_jerk                = 0;
-    position_cmd.use_heading                 = 1;
-    position_cmd.use_heading_rate            = 0;
+    position_cmd.use_heading             = 1;
+    position_cmd.use_heading_rate        = 1;
 
     starting_bool=false;
 
     ROS_INFO(
-        "[DERG tracker - odom]: [goto_ref_x=%.2f],[goto_ref_y=%.2f],[goto_ref_z=%.2f, goto_ref_heading=%.2f]",goto_ref_x,goto_ref_y,goto_ref_z,goto_ref_heading);
+        "[Bypass tracker - odom]: [goto_ref_x=%.2f],[goto_ref_y=%.2f],[goto_ref_z=%.2f, goto_ref_heading=%.2f]",goto_ref_x,goto_ref_y,goto_ref_z,goto_ref_heading);
  
   return mrs_msgs::PositionCommand::ConstPtr(new mrs_msgs::PositionCommand(position_cmd));
 }
 
  // set the desired states from the input of the goto function
+
   position_cmd.position.x     = goto_ref_x;
   position_cmd.position.y     = goto_ref_y;
   position_cmd.position.z     = goto_ref_z;
@@ -154,7 +155,7 @@ const mrs_msgs::PositionCommand::ConstPtr DistributedERGTracker::update(const mr
   position_cmd.use_acceleration        = 0;
   position_cmd.use_jerk                = 0;
   position_cmd.use_heading             = 1;
-  position_cmd.use_heading_rate        = 0;
+  position_cmd.use_heading_rate        = 1;
 
   // set the header
   position_cmd.header.stamp    = uav_state->header.stamp;
