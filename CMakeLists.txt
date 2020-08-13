@@ -78,16 +78,16 @@ target_link_libraries(LineTrackerInterns
     )
 
 
-  # DistributedERGTracker
+  # DERGTracker
 
-  add_library(DistributedERGTracker
-    src/distributed_erg_tracker/distributed_erg_tracker.cpp
+  add_library(DERGTracker
+    src/derg_tracker/derg_tracker.cpp
     )
-  add_dependencies(DistributedERGTracker
+  add_dependencies(DERGTracker
     ${catkin_EXPORTED_TARGETS}
     ${${PROJECT_NAME}_EXPORTED_TARGETS}
     )
-  target_link_libraries(DistributedERGTracker
+  target_link_libraries(DERGTracker
     ${catkin_LIBRARIES}
     )
     
@@ -99,7 +99,7 @@ install(TARGETS
   LineTrackerInterns
   MpcTrackerInterns
   BypassTracker
-DistributedERGTracker
+  DERGTracker
   ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
   LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
   RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}

@@ -19,7 +19,7 @@ controllers : [
   "NsfController",
   "FailsafeController",
   "EmergencyController",
-  "So3ControllerInterns",
+  "Se3ControllerInterns",
 ]
 
 
