@@ -126,9 +126,34 @@ private:
 
   MatrixXd NF_w = MatrixXd::Zero(3, 1); // Wall repulsion navigation field
   float sigma_w=2;
-  float delta_w=0.02;
+  float delta_w=0.01;
   float max_repulsion_wall1;
   float max_repulsion_wall2;
+
+ // Obstacle Constraints
+
+  float kappa_o=10;
+  float N_o=1; //number of obstacles
+  float DSM_o; // Dynamic Safety Margin for obstacle constraints
+  float min_obs_distance; // minimum distance with an obstacle
+
+  // obstacle 1
+  float R_o1= 1+arm_radius; // radius of obstacle 1 + uav radius
+  MatrixXd o_1=MatrixXd::Zero(2, 1); // center of obstacle ( in (x,y))
+
+  MatrixXd NF_o = MatrixXd::Zero(3, 1); // obstacle repulsion navugation field
+  MatrixXd NF_o_co = MatrixXd::Zero(3, 1); // conservative part
+  MatrixXd NF_o_nco = MatrixXd::Zero(3, 1); // non conservative part
+  float sigma_o=2;
+  float delta_o=0.01;
+  float dist_obs_x_1;
+  float dist_obs_y_1;
+  float dist_obs_1;
+  float dist_ref_obs_x_1;
+  float dist_ref_obs_y_1;
+  float dist_ref_obs_1;
+  float max_repulsion_obs1;
+  float alpha_o_1=0.1;
 
 // gain parameters
 
@@ -246,7 +271,7 @@ void DergTracker::DERG_computation(){
   //DSM_w=10;
 
   d_w(0,0) = 10 - arm_radius;
-  d_w(1,0) = 35 - arm_radius;
+  d_w(1,0) = 50 - arm_radius;
 
   c_w(0,0)=1;
   c_w(1,0)=0;
@@ -255,7 +280,7 @@ void DergTracker::DERG_computation(){
   c_w(1,1)=1;
   c_w(2,1)=0;
 
-  min_wall_distance= d_w(0,0) -custom_trajectory_out.poses[0].position.x;
+   min_wall_distance= d_w(1,0) -custom_trajectory_out.poses[0].position.y;
   for (size_t i = 0; i < sample_hor; i++) {
     if (d_w(0,0) -custom_trajectory_out.poses[i].position.x < min_wall_distance){
       min_wall_distance=d_w(0,0) -custom_trajectory_out.poses[i].position.x;
@@ -266,7 +291,29 @@ void DergTracker::DERG_computation(){
   }
   DSM_w=kappa_w*min_wall_distance;
 
+  ////////////////////////////////////////////////////////////////////////
+  ///////////// computation of the Cylindrical Dynamic Safety Margin ////////////
+  ////////////////////////////////////////////////////////////////////////
 
+  o_1(0,0)=0; // x=0
+  o_1(1,0)=40; // y=40;
+
+  dist_obs_x_1=custom_trajectory_out.poses[0].position.x-o_1(0,0);
+  dist_obs_y_1=custom_trajectory_out.poses[0].position.y-o_1(1,0);
+  dist_obs_1=sqrt(dist_obs_x_1*dist_obs_x_1+dist_obs_y_1*dist_obs_y_1);
+
+
+  min_obs_distance=dist_obs_1-R_o1;
+  for (size_t i = 1; i < sample_hor; i++) {
+    dist_obs_x_1=custom_trajectory_out.poses[i].position.x-o_1(0,0);
+    dist_obs_y_1=custom_trajectory_out.poses[i].position.y-o_1(1,0);
+    dist_obs_1=sqrt(dist_obs_x_1*dist_obs_x_1+dist_obs_y_1*dist_obs_y_1);
+    if (dist_obs_1-R_o1<min_obs_distance) {
+      min_obs_distance=dist_obs_1-R_o1;
+    }
+  }
+
+  DSM_o=kappa_o*min_obs_distance;
 
 
   //////////////////////////////////////////////////////////
@@ -306,14 +353,48 @@ void DergTracker::DERG_computation(){
   NF_w(1,0)=-max_repulsion_wall2;
   NF_w(2,0)=0;
 
+
+  /////////////////////////////////////////////////////////////
+  // computation of the obstacle repulsion navigation field ///////
+  /////////////////////////////////////////////////////////////
+
+  // Conservative part
+  dist_ref_obs_x_1=o_1(0,0)-applied_ref_x; // x distance between v and obstacle 1
+  dist_ref_obs_y_1=o_1(1,0)-applied_ref_y; // y distance between v and obstacle 1
+  dist_ref_obs_1=sqrt(dist_ref_obs_x_1*dist_ref_obs_x_1+dist_ref_obs_y_1*dist_ref_obs_y_1);
+  max_repulsion_obs1=(sigma_o-(dist_ref_obs_1-R_o1))/(sigma_o-delta_o);
+  if (0>max_repulsion_obs1) {
+    max_repulsion_obs1=0;
+  }
+  NF_o_co(0,0)=-max_repulsion_obs1*(dist_ref_obs_x_1/dist_ref_obs_1);
+  NF_o_co(1,0)=-max_repulsion_obs1*(dist_ref_obs_y_1/dist_ref_obs_1);
+  NF_o_co(2,0)=0;
+
+  // non conservative part
+  NF_o_nco(2,0)=0;
+  if (sigma_o>=dist_ref_obs_1-R_o1) {
+    NF_o_nco(0,0)=alpha_o_1*dist_ref_obs_y_1;
+    NF_o_nco(1,0)=-alpha_o_1*dist_ref_obs_x_1;
+  }
+  else {
+    NF_o_nco(0,0)=0;
+    NF_o_nco(1,0)=0;
+  }
+
+  // combined
+
+  NF_o(0,0)=NF_o_co(0,0)+NF_o_nco(0,0);
+  NF_o(1,0)=NF_o_co(1,0)+NF_o_nco(1,0);
+  NF_o(2,0)=NF_o_co(2,0)+NF_o_nco(2,0);
+
   ////////////////////////////////////////////////////////////////////
   //// computation of v_dot //////////////////////////////////////////
   ///////////////////////////////////////////////////////////////////
 
   // total navigation field
-  NF_total(0,0)=NF_att(0,0) + NF_w(0,0);
-  NF_total(1,0)=NF_att(1,0) + NF_w(1,0);
-  NF_total(2,0)=NF_att(2,0) + NF_w(2,0);
+  NF_total(0,0)=NF_att(0,0) + NF_w(0,0) + NF_o(0,0);
+  NF_total(1,0)=NF_att(1,0) + NF_w(1,0) + NF_o(1,0);
+  NF_total(2,0)=NF_att(2,0) + NF_w(2,0) + NF_o(2,0);
 
   // total DSM
   DSM_total=DSM_s;
@@ -321,6 +402,13 @@ void DergTracker::DERG_computation(){
     DSM_total=DSM_w;
   }
 
+  if (DSM_o<DSM_total) {
+    DSM_total=DSM_o;
+  }
+  if (DSM_total<0){
+    DSM_total=0;
+  }
+  //DSM_total=10; // for constant DSM
 
   v_dot(0,0)=DSM_total*NF_total(0,0);
   v_dot(1,0)=DSM_total*NF_total(1,0);
