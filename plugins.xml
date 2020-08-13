@@ -16,8 +16,8 @@
   </class>
 </library>
 
-<library path="lib/libDERGTracker">
-  <class name="trackers_brubotics/DistributedERGTracker" type="mrs_uav_trackers::derg_tracker::DERGTracker" base_class_type="mrs_uav_managers::Tracker">
+<library path="lib/libDergTracker">
+  <class name="trackers_brubotics/DergTracker" type="mrs_uav_trackers::derg_tracker::DergTracker" base_class_type="mrs_uav_managers::Tracker">
     <description>This is the DERGTracker</description>
   </class>
 </library>

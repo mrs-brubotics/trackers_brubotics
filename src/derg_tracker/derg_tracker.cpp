@@ -17,8 +17,8 @@ namespace mrs_uav_trackers
 namespace derg_tracker
 {
 
-/*class DERGTracker//{*/
-class DERGTracker : public mrs_uav_managers::Tracker {
+/*class DergTracker//{*/
+class DergTracker : public mrs_uav_managers::Tracker {
 public:
   void                          initialize(const ros::NodeHandle &parent_nh, const std::string uav_name, std::shared_ptr<mrs_uav_managers::CommonHandlers_t> common_handlers);
   std::tuple<bool, std::string> activate(const mrs_msgs::PositionCommand::ConstPtr &last_position_cmd);
@@ -41,6 +41,18 @@ public:
   const std_srvs::TriggerResponse::ConstPtr resumeTrajectoryTracking(const std_srvs::TriggerRequest::ConstPtr &cmd);
   const std_srvs::TriggerResponse::ConstPtr gotoTrajectoryStart(const std_srvs::TriggerRequest::ConstPtr &cmd);
 
+
+  // D erg
+  mrs_msgs::FutureTrajectory uav_applied_ref_out;
+  mrs_msgs::FuturePoint custom_new_point;
+
+  std::map<std::string, mrs_msgs::FutureTrajectory> other_drones_applied_references;
+  std::vector<ros::Subscriber> other_uav_applied_ref_subscriber;
+
+  ros::Publisher uav_applied_ref_message_publisher;
+
+  void callbackOtherUavAppliedRef(const mrs_msgs::FutureTrajectoryConstPtr& msg);
+
 private:
   std::mutex         mutex_goal_;
 
@@ -58,45 +70,47 @@ private:
   float goto_ref_heading = 0;
 
 
+
 };
 //}
 
 /*initialize()//{*/
-void DERGTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unused]] const std::string uav_name,
+void DergTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unused]] const std::string uav_name,
                              [[maybe_unused]] std::shared_ptr<mrs_uav_managers::CommonHandlers_t> common_handlers) {
   ros::Time::waitForValid();
   is_initialized_ = true;
 
-  ROS_INFO("[DERGTracker]: initialized");
+  ROS_INFO("[DergTracker]: initialized");
 
 }
 //}
 
 /*activate()//{*/
-std::tuple<bool, std::string> DERGTracker::activate(const mrs_msgs::PositionCommand::ConstPtr &last_position_cmd) {
+std::tuple<bool, std::string> DergTracker::activate(const mrs_msgs::PositionCommand::ConstPtr &last_position_cmd) {
   std::stringstream ss;
   ss << "Activated";
   is_active_ = true;
-  ROS_INFO("[DERGTracker]: activated");
+  ROS_INFO("[DergTracker]: activated");
   return std::tuple(true, ss.str());
 }
 //}
 
 /*deactivate()//{*/
-void DERGTracker::deactivate(void) {
+void DergTracker::deactivate(void) {
   is_active_ = false;
-  ROS_INFO("[DERGTracker]: deactivated");
+  ROS_INFO("[DergTracker]: deactivated");
 }
 //}
 
 /*resetStatic()//{*/
-bool DERGTracker::resetStatic(void) {
+bool DergTracker::resetStatic(void) {
   return true;
 }
 //}
 
 /*update()//{*/
-const mrs_msgs::PositionCommand::ConstPtr DERGTracker::update(const mrs_msgs::UavState::ConstPtr & uav_state, [[maybe_unused]] const mrs_msgs::AttitudeCommand::ConstPtr &last_attitude_cmd) {
+const mrs_msgs::PositionCommand::ConstPtr DergTracker::update(const mrs_msgs::UavState::ConstPtr &                        uav_state,
+                                                              [[maybe_unused]] const mrs_msgs::AttitudeCommand::ConstPtr &last_attitude_cmd) {
 
   mrs_lib::Routine profiler_routine = profiler_.createRoutine("update");
 
@@ -119,7 +133,7 @@ const mrs_msgs::PositionCommand::ConstPtr DERGTracker::update(const mrs_msgs::Ua
       goto_ref_heading = mrs_lib::AttitudeConverter(uav_state->pose.orientation).getHeading();
     }
     catch (...) {
-      ROS_ERROR_THROTTLE(1.0, "[DERGTracker]: could not calculate the current UAV heading");
+      ROS_ERROR_THROTTLE(1.0, "[DergTracker]: could not calculate the current UAV heading");
     }
 
     position_cmd.position.x     = goto_ref_x;
@@ -171,7 +185,7 @@ const mrs_msgs::PositionCommand::ConstPtr DERGTracker::update(const mrs_msgs::Ua
 //}
 
 /*getStatus()//{*/
-const mrs_msgs::TrackerStatus DERGTracker::getStatus() {
+const mrs_msgs::TrackerStatus DergTracker::getStatus() {
   mrs_msgs::TrackerStatus tracker_status;
   tracker_status.active = is_active_;
   return tracker_status;
@@ -179,7 +193,7 @@ const mrs_msgs::TrackerStatus DERGTracker::getStatus() {
 //}
 
 /*enableCallbacks()//{*/
-const std_srvs::SetBoolResponse::ConstPtr DERGTracker::enableCallbacks(const std_srvs::SetBoolRequest::ConstPtr &cmd) {
+const std_srvs::SetBoolResponse::ConstPtr DergTracker::enableCallbacks(const std_srvs::SetBoolRequest::ConstPtr &cmd) {
 
   std_srvs::SetBoolResponse res;
 
@@ -191,7 +205,7 @@ const std_srvs::SetBoolResponse::ConstPtr DERGTracker::enableCallbacks(const std
 //}
 
 /*switchOdometrySource()//{*/
-const std_srvs::TriggerResponse::ConstPtr DERGTracker::switchOdometrySource(const mrs_msgs::UavState::ConstPtr &new_uav_state) {
+const std_srvs::TriggerResponse::ConstPtr DergTracker::switchOdometrySource(const mrs_msgs::UavState::ConstPtr &new_uav_state) {
 
   std_srvs::TriggerResponse res;
 
@@ -203,7 +217,7 @@ const std_srvs::TriggerResponse::ConstPtr DERGTracker::switchOdometrySource(cons
 //}
 
 /*hover()//{*/
-const std_srvs::TriggerResponse::ConstPtr DERGTracker::hover([[maybe_unused]] const std_srvs::TriggerRequest::ConstPtr &cmd) {
+const std_srvs::TriggerResponse::ConstPtr DergTracker::hover([[maybe_unused]] const std_srvs::TriggerRequest::ConstPtr &cmd) {
   std_srvs::TriggerResponse res;
   res.message = "hover initiated";
   res.success = true;
@@ -215,34 +229,34 @@ const std_srvs::TriggerResponse::ConstPtr DERGTracker::hover([[maybe_unused]] co
 //}
 
 /*startTrajectoryTracking()//{*/
-const std_srvs::TriggerResponse::ConstPtr DERGTracker::startTrajectoryTracking([[maybe_unused]] const std_srvs::TriggerRequest::ConstPtr &cmd) {
+const std_srvs::TriggerResponse::ConstPtr DergTracker::startTrajectoryTracking([[maybe_unused]] const std_srvs::TriggerRequest::ConstPtr &cmd) {
   hover_ = false;
   return std_srvs::TriggerResponse::Ptr();
 }
 //}
 
 /*stopTrajectoryTracking()//{*/
-const std_srvs::TriggerResponse::ConstPtr DERGTracker::stopTrajectoryTracking([[maybe_unused]] const std_srvs::TriggerRequest::ConstPtr &cmd) {
+const std_srvs::TriggerResponse::ConstPtr DergTracker::stopTrajectoryTracking([[maybe_unused]] const std_srvs::TriggerRequest::ConstPtr &cmd) {
   hover_ = true;
   return std_srvs::TriggerResponse::Ptr();
 }
 //}
 
 /*resumeTrajectoryTracking()//{*/
-const std_srvs::TriggerResponse::ConstPtr DERGTracker::resumeTrajectoryTracking([[maybe_unused]] const std_srvs::TriggerRequest::ConstPtr &cmd) {
+const std_srvs::TriggerResponse::ConstPtr DergTracker::resumeTrajectoryTracking([[maybe_unused]] const std_srvs::TriggerRequest::ConstPtr &cmd) {
   hover_ = false;
   return std_srvs::TriggerResponse::Ptr();
 }
 //}
 
 /*gotoTrajectoryStart()//{*/
-const std_srvs::TriggerResponse::ConstPtr DERGTracker::gotoTrajectoryStart([[maybe_unused]] const std_srvs::TriggerRequest::ConstPtr &cmd) {
+const std_srvs::TriggerResponse::ConstPtr DergTracker::gotoTrajectoryStart([[maybe_unused]] const std_srvs::TriggerRequest::ConstPtr &cmd) {
   return std_srvs::TriggerResponse::Ptr();
 }
 //}
 
 /*setConstraints()//{*/
-const mrs_msgs::DynamicsConstraintsSrvResponse::ConstPtr DERGTracker::setConstraints(const mrs_msgs::DynamicsConstraintsSrvRequest::ConstPtr &cmd) {
+const mrs_msgs::DynamicsConstraintsSrvResponse::ConstPtr DergTracker::setConstraints(const mrs_msgs::DynamicsConstraintsSrvRequest::ConstPtr &cmd) {
 
   mrs_msgs::DynamicsConstraintsSrvResponse res;
 
@@ -254,7 +268,7 @@ const mrs_msgs::DynamicsConstraintsSrvResponse::ConstPtr DERGTracker::setConstra
 //}
 
 /*setReference()//{*/
-const mrs_msgs::ReferenceSrvResponse::ConstPtr DERGTracker::setReference(const mrs_msgs::ReferenceSrvRequest::ConstPtr &cmd) {
+const mrs_msgs::ReferenceSrvResponse::ConstPtr DergTracker::setReference(const mrs_msgs::ReferenceSrvRequest::ConstPtr &cmd) {
 
   mrs_msgs::ReferenceSrvResponse res;
 
@@ -278,7 +292,7 @@ const mrs_msgs::ReferenceSrvResponse::ConstPtr DERGTracker::setReference(const m
 //}
 
 /*setTrajectoryReference()//{*/
-const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DERGTracker::setTrajectoryReference([
+const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergTracker::setTrajectoryReference([
     [maybe_unused]] const mrs_msgs::TrajectoryReferenceSrvRequest::ConstPtr &cmd) {
   return mrs_msgs::TrajectoryReferenceSrvResponse::Ptr();
 }
@@ -288,4 +302,4 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DERGTracker::setTraject
 }  // namespace mrs_uav_trackers
 
 #include <pluginlib/class_list_macros.h>
-PLUGINLIB_EXPORT_CLASS(mrs_uav_trackers::derg_tracker::DERGTracker, mrs_uav_managers::Tracker)
+PLUGINLIB_EXPORT_CLASS(mrs_uav_trackers::derg_tracker::DergTracker, mrs_uav_managers::Tracker)

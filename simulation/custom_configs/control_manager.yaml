@@ -9,7 +9,7 @@ trackers : [
   "NullTracker",
   "LineTrackerInterns",
   "BypassTracker",
-  "DistributedERGTracker",
+  "DergTracker",
 ]
 
 # - list of names of dynamically loaded controllers
@@ -19,7 +19,7 @@ controllers : [
   "NsfController",
   "FailsafeController",
   "EmergencyController",
-  "Se3ControllerInterns",
+  "Se3ControllerBrubotics",
 ]
 
 
