@@ -61,6 +61,7 @@ public:
   const std_srvs::TriggerResponse::ConstPtr resumeTrajectoryTracking(const std_srvs::TriggerRequest::ConstPtr &cmd);
   const std_srvs::TriggerResponse::ConstPtr gotoTrajectoryStart(const std_srvs::TriggerRequest::ConstPtr &cmd);
   void trajectory_prediction(void);
+   void DERG_computation();
 private:
   ros::NodeHandle                                    nh_;
   mrs_msgs::UavState uav_state_;
@@ -85,7 +86,21 @@ private:
   float goto_ref_y=0;
   float goto_ref_z=0;
 
-  /////////////////////////// Pedro ////////////////////////////
+   // applied reference
+  float applied_ref_x=0;
+  float applied_ref_y=0;
+  float applied_ref_z=0;
+
+  // ERG parameters
+  MatrixXd v_dot=MatrixXd::Zero(4, 1);// derivative of the applied reference
+  MatrixXd NF=MatrixXd::Zero(4, 1); // Navigation field
+  MatrixXd ref_dist=MatrixXd::Zero(4, 1); // difference between reference r and applied reference v
+  float ref_dist_norm; // norm of res_dist
+  float max_dist; // maximum between ref_dist_norm and eta
+  float eta; // smoothing parameter
+  float DSM; // Dynamic Safety Margin
+  float sampling_time=0.002; // sampling frequency 500 Hz
+
 // gain parameters
 
 float kpxy = 15;
@@ -130,8 +145,6 @@ ros::Publisher custom_predicted_thrust_publisher;
 ros::Publisher custom_predicted_velocity_publisher;
 
 
-/////////////////////////////////////////////////////////////////
-
 
 };
 
@@ -166,6 +179,38 @@ void DergTracker::deactivate(void) {
 
 bool DergTracker::resetStatic(void) {
   return true;
+}
+
+void DergTracker::DERG_computation(){
+  DSM=10;
+
+  // computation of the Dynamic Safety Margin
+
+  //kappa_s=1;
+  //T_max= 36.59; // in Newtons
+  //T_min=0;
+
+  // computation of the navigation field
+  ref_dist(0,0)= goto_ref_x-applied_ref_x;
+  ref_dist(1,0)= goto_ref_y-applied_ref_y;
+  ref_dist(2,0)= goto_ref_z-applied_ref_z;
+  ref_dist_norm= sqrt(pow(ref_dist(0,0), 2) + pow(ref_dist(1,0), 2)+ pow(ref_dist(2,0), 2));
+  eta=0.05;
+  max_dist=eta;
+  if (ref_dist_norm>eta){
+    max_dist=ref_dist_norm;
+  }
+  NF(0,0)=ref_dist(0,0)/max_dist;
+  NF(1,0)=ref_dist(1,0)/max_dist;
+  NF(2,0)=ref_dist(2,0)/max_dist;
+
+  v_dot(0,0)=DSM*NF(0,0);
+  v_dot(1,0)=DSM*NF(1,0);
+  v_dot(2,0)=DSM*NF(2,0);
+
+  applied_ref_x=v_dot(0,0)*sampling_time + applied_ref_x;
+  applied_ref_y=v_dot(1,0)*sampling_time + applied_ref_y;
+  applied_ref_z=v_dot(2,0)*sampling_time + applied_ref_z;
 }
 
 void DergTracker::trajectory_prediction(){
@@ -205,7 +250,7 @@ void DergTracker::trajectory_prediction(){
       custom_pose.position.x = C1_x*exp(lambda1_xy*t)+C2_x*exp(lambda2_xy*t)+goto_ref_x;
       custom_pose.position.y = C1_y*exp(lambda1_xy*t)+C2_y*exp(lambda2_xy*t)+goto_ref_y;
       custom_pose.position.z = C1_z*exp(lambda1_z*t)+C2_z*exp(lambda2_z*t)+goto_ref_z;
-      //ROS_INFO("[MpcTracker- prediction]: %.2f", custom_pose.position.x);
+      //ROS_INFO("[DergTracker- prediction]: %.2f", custom_pose.position.x);
       /*
       custom_vel.position.x = lambda1_xy*C1_x*exp(lambda1_xy*t)+lambda2_xy*C2_x*exp(lambda2_xy*t);
       custom_vel.position.y = lambda1_xy*C1_y*exp(lambda1_xy*t)+lambda2_xy*C2_y*exp(lambda2_xy*t);
@@ -219,7 +264,7 @@ void DergTracker::trajectory_prediction(){
       predicted_thrust_norm.position.x= sqrt(predicted_thrust.position.x*predicted_thrust.position.x+predicted_thrust.position.y*predicted_thrust.position.y+predicted_thrust.position.z*predicted_thrust.position.z);
 
       custom_trajectory_out.poses.push_back(custom_pose);
-      //ROS_INFO("[MpcTracker]: custom pose x =  [%.2f]",custom_pose.position.x);
+      //ROS_INFO("[DergTracker]: custom pose x =  [%.2f]",custom_pose.position.x);
       //custom_vel_out.poses.push_back(custom_vel);
       predicted_thrust_out.poses.push_back(predicted_thrust_norm);
     }
@@ -231,7 +276,7 @@ void DergTracker::trajectory_prediction(){
     //custom_predicted_velocity_publisher.publish(custom_vel_out);
   }
   catch (...) {
-    ROS_ERROR("[MpcTracker]: Exception caught during publishing topic %s.", custom_predicted_traj_publisher.getTopic().c_str());
+    ROS_ERROR("[DergTracker]: Exception caught during publishing topic %s.", custom_predicted_traj_publisher.getTopic().c_str());
   }
 
   custom_trajectory_out.poses.clear();
@@ -280,6 +325,10 @@ const mrs_msgs::PositionCommand::ConstPtr DergTracker::update(const mrs_msgs::Ua
     goto_ref_y= uav_state->pose.position.y;
     goto_ref_z= uav_state->pose.position.z;
 
+    applied_ref_x=goto_ref_x;
+    applied_ref_y=goto_ref_y;
+    applied_ref_z=goto_ref_z;
+
     position_cmd.position.x     = goto_ref_x;
     position_cmd.position.y     = goto_ref_y;
     position_cmd.position.z     = goto_ref_z;
@@ -303,11 +352,19 @@ const mrs_msgs::PositionCommand::ConstPtr DergTracker::update(const mrs_msgs::Ua
 
     std::scoped_lock lock(mutex_uav_state_);
 
+  DERG_computation(); // modifies the applied reference
+  /*
+  // in case the DERG isn't used
+  applied_ref_x=goto_ref_x;
+  applied_ref_y=goto_ref_y;
+  applied_ref_z=goto_ref_z;
+  */
+
  // set the desired states from the input of the goto function
 
-  position_cmd.position.x     = goto_ref_x;
-  position_cmd.position.y     = goto_ref_y;
-  position_cmd.position.z     = goto_ref_z;
+  position_cmd.position.x     = applied_ref_x;
+  position_cmd.position.y     = applied_ref_y;
+  position_cmd.position.z     = applied_ref_z;
 
   position_cmd.use_position_vertical   = 1;
   position_cmd.use_position_horizontal = 1;
