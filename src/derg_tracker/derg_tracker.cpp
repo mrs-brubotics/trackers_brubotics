@@ -15,6 +15,7 @@
 #include <mrs_msgs/FutureTrajectory.h>
 #include <mrs_msgs/OdometryDiag.h>
 
+#include <geometry_msgs/PoseArray.h>
 
 //}
 
@@ -55,20 +56,12 @@ public:
   const std_srvs::TriggerResponse::ConstPtr resumeTrajectoryTracking(const std_srvs::TriggerRequest::ConstPtr &cmd);
   const std_srvs::TriggerResponse::ConstPtr gotoTrajectoryStart(const std_srvs::TriggerRequest::ConstPtr &cmd);
 
-
-  // D erg
-  mrs_msgs::FutureTrajectory uav_applied_ref_out;
-  mrs_msgs::FuturePoint custom_new_point;
-
-  std::map<std::string, mrs_msgs::FutureTrajectory> other_drones_applied_references;
-  std::vector<ros::Subscriber> other_uav_applied_ref_subscriber;
-
-  ros::Publisher uav_applied_ref_message_publisher;
-
-  void callbackOtherUavAppliedRef(const mrs_msgs::FutureTrajectoryConstPtr& msg);
+  void trajectory_prediction(void);
   void DERG_computation();
+  void callbackOtherUavAppliedRef(const mrs_msgs::FutureTrajectoryConstPtr& msg);
 
 private:
+  mrs_msgs::UavState uav_state_;
   std::mutex         mutex_goal_;
 
   mrs_lib::Profiler profiler_;
@@ -84,14 +77,54 @@ private:
   float goto_ref_z = 0;
   float goto_ref_heading = 0;
   
+  // gain parameters
+
+  float kpxy = 15;
+  float kpz= 15;
+  float kvxy=8;
+  float kvz=8;
+
+  // initial conditions
+  MatrixXd init_pos = MatrixXd::Zero(3, 1);
+  MatrixXd init_vel = MatrixXd::Zero(3, 1);
+
+
+  // prediction Parameters
+  float g=9.8066;
+  float mass=2.0;
+
+  float C1_x;
+  float C2_x;
+  float C1_y;
+  float C2_y;
+  float C1_z;
+  float C2_z;
+
+  float delta_xy=kvxy*kvxy-4*kpxy;
+  float delta_z=kvz*kvz-4*kpz;
+
+  float lambda1_xy=(-kvxy-sqrt(delta_xy))/2;
+  float lambda2_xy=(-kvxy+sqrt(delta_xy))/2;
+  float lambda1_z=(-kvz-sqrt(delta_z))/2;
+  float lambda2_z=(-kvz+sqrt(delta_z))/2;
+
+
+  float custom_dt=0.002; // sampling time (in seconds)
+  float custom_hor=0.4; // prediction horizon (in seconds)
+  float sample_hor=custom_hor/custom_dt; // prediction horion ( in samples)
+
+  geometry_msgs::PoseArray predicted_thrust_out; // array of thrust predictions
+  geometry_msgs::PoseArray custom_trajectory_out;
+
+  ros::Publisher custom_predicted_traj_publisher;
+  ros::Publisher custom_predicted_thrust_publisher;
+  ros::Publisher custom_predicted_velocity_publisher;
+  
   // applied reference
   float applied_ref_x=0;
   float applied_ref_y=0;
   float applied_ref_z=0;
  
-  // initial conditions
-  MatrixXd init_pos = MatrixXd::Zero(3, 1);
-  
   // ERG parameters
   MatrixXd NF_total=MatrixXd::Zero(3, 1);
   float DSM_total;
@@ -139,6 +172,13 @@ private:
 
   mrs_msgs::OdometryDiag odometry_diagnostics;
   mrs_msgs::FutureTrajectory future_trajectory_out;
+  mrs_msgs::FutureTrajectory uav_applied_ref_out;
+  mrs_msgs::FuturePoint custom_new_point;
+
+  std::map<std::string, mrs_msgs::FutureTrajectory> other_drones_applied_references;
+  std::vector<ros::Subscriber> other_uav_applied_ref_subscriber;
+
+  ros::Publisher uav_applied_ref_message_publisher;
 
 
 };
@@ -154,6 +194,10 @@ void DergTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unused]] 
   mrs_lib::ParamLoader param_loader(nh_, "DergTracker");
 
   ros::Time::waitForValid();
+  
+  custom_predicted_traj_publisher = nh_.advertise<geometry_msgs::PoseArray>("custom_predicted_traj", 1);
+  custom_predicted_thrust_publisher = nh_.advertise<geometry_msgs::PoseArray>("custom_predicted_thrust", 1);
+  custom_predicted_velocity_publisher = nh_.advertise<geometry_msgs::PoseArray>("custom_predicted_vel", 1); 
   
   future_trajectory_out.stamp    = ros::Time::now();
   future_trajectory_out.uav_name = uav_name_;
@@ -237,16 +281,29 @@ const mrs_msgs::PositionCommand::ConstPtr DergTracker::update(const mrs_msgs::Ua
 
   mrs_lib::Routine profiler_routine = profiler_.createRoutine("update");
 
-
-  // up to this part the update() method is evaluated even when the tracker is not active
-  if (!is_active_) {
-    return mrs_msgs::PositionCommand::Ptr();
+  {
+    uav_state_ = *uav_state;
+    // up to this part the update() method is evaluated even when the tracker is not active
+    if (!is_active_) {
+      return mrs_msgs::PositionCommand::Ptr();
+    }
   }
   mrs_msgs::PositionCommand position_cmd;
+  
+  init_pos(0,0)=uav_state->pose.position.x;
+  init_pos(1,0)=uav_state->pose.position.y;
+  init_pos(2,0)=uav_state->pose.position.z;
 
+  init_vel(0,0)=uav_state->velocity.linear.x;
+  init_vel(1,0)=uav_state->velocity.linear.y;
+  init_vel(2,0)=uav_state->velocity.linear.z;
+
+  trajectory_prediction();
+  
   position_cmd.header.stamp    = uav_state->header.stamp;
   position_cmd.header.frame_id = uav_state->header.frame_id;
-    if (starting_bool) {
+ 
+  if (starting_bool) {
 
     goto_ref_x= uav_state->pose.position.x;
     goto_ref_y= uav_state->pose.position.y;
@@ -304,6 +361,79 @@ const mrs_msgs::PositionCommand::ConstPtr DergTracker::update(const mrs_msgs::Ua
   // u have to return a position command
   // can set the jerk to 0
   return mrs_msgs::PositionCommand::ConstPtr(new mrs_msgs::PositionCommand(position_cmd));
+}
+//}
+
+/*trajectory_prediction()//{*/
+void DergTracker::trajectory_prediction(){
+
+  // compute the C2 parameter for each coordinate
+  C2_x= (-(init_vel(0,0)/lambda1_xy)-goto_ref_x+init_pos(0,0))/(1-(lambda2_xy/lambda1_xy));
+  C2_y= (-(init_vel(1,0)/lambda1_xy)-goto_ref_y+init_pos(1,0))/(1-(lambda2_xy/lambda1_xy));
+  C2_z= (-(init_vel(2,0)/lambda1_z)-goto_ref_z+init_pos(2,0))/(1-(lambda2_z/lambda1_z));
+
+  C1_x = (-lambda2_xy*C2_x+init_vel(0,0))/lambda1_xy;
+  C1_y = (-lambda2_xy*C2_y+init_vel(1,0))/lambda1_xy;
+  C1_z = (-lambda2_z*C2_z+init_vel(2,0))/lambda1_z;
+
+
+  custom_trajectory_out.header.stamp    = ros::Time::now();
+  custom_trajectory_out.header.frame_id = uav_state_.header.frame_id;
+
+
+  predicted_thrust_out.header.stamp    = ros::Time::now();
+  predicted_thrust_out.header.frame_id = uav_state_.header.frame_id;
+
+  /*
+  geometry_msgs::PoseArray custom_vel_out;
+  custom_vel_out.header.stamp    = ros::Time::now();
+  custom_vel_out.header.frame_id = uav_state_.header.frame_id;
+  */
+  float t;
+
+  {
+    for (size_t i = 0; i < sample_hor; i++) {
+      t=i*custom_dt;
+      geometry_msgs::Pose custom_pose;
+      geometry_msgs::Pose custom_vel;
+      geometry_msgs::Pose predicted_thrust; // not physically correct of course. We just had problems publishing other types of arrays that weren't custom
+      geometry_msgs::Pose predicted_thrust_norm;  // predicted thrust norm
+
+      custom_pose.position.x = C1_x*exp(lambda1_xy*t)+C2_x*exp(lambda2_xy*t)+goto_ref_x;
+      custom_pose.position.y = C1_y*exp(lambda1_xy*t)+C2_y*exp(lambda2_xy*t)+goto_ref_y;
+      custom_pose.position.z = C1_z*exp(lambda1_z*t)+C2_z*exp(lambda2_z*t)+goto_ref_z;
+      //ROS_INFO("[MpcTracker- prediction]: %.2f", custom_pose.position.x);
+      /*
+      custom_vel.position.x = lambda1_xy*C1_x*exp(lambda1_xy*t)+lambda2_xy*C2_x*exp(lambda2_xy*t);
+      custom_vel.position.y = lambda1_xy*C1_y*exp(lambda1_xy*t)+lambda2_xy*C2_y*exp(lambda2_xy*t);
+      custom_vel.position.z = lambda1_z*C1_z*exp(lambda1_z*t)+lambda2_z*C2_z*exp(lambda2_z*t);
+      */
+
+      predicted_thrust.position.x = mass*(lambda1_xy*lambda1_xy*C1_x*exp(lambda1_xy*t)+lambda2_xy*lambda2_xy*C2_x*exp(lambda2_xy*t)); //mass*(kpxy*(applied_ref_x-custom_pose.position.x)-kvxy*custom_vel.position.x);//  // thrust x
+      predicted_thrust.position.y = mass*(lambda1_xy*lambda1_xy*C1_y*exp(lambda1_xy*t)+lambda2_xy*lambda2_xy*C2_y*exp(lambda2_xy*t));//mass*(kpxy*(applied_ref_y-custom_pose.position.y)-kvxy*custom_vel.position.y);  // thrust y
+      predicted_thrust.position.z = mass*(lambda1_z*lambda1_z*C1_z*exp(lambda1_z*t)+lambda2_z*lambda2_z*C2_z*exp(lambda2_z*t)+g);//mass*(kpz*(applied_ref_z-custom_pose.position.z)-kvz*custom_vel.position.z) + mass*g;  // thrust z
+
+      predicted_thrust_norm.position.x= sqrt(predicted_thrust.position.x*predicted_thrust.position.x+predicted_thrust.position.y*predicted_thrust.position.y+predicted_thrust.position.z*predicted_thrust.position.z);
+
+      custom_trajectory_out.poses.push_back(custom_pose);
+      //ROS_INFO("[MpcTracker]: custom pose x =  [%.2f]",custom_pose.position.x);
+      //custom_vel_out.poses.push_back(custom_vel);
+      predicted_thrust_out.poses.push_back(predicted_thrust_norm);
+    }
+  }
+
+  try {
+    custom_predicted_traj_publisher.publish(custom_trajectory_out);
+    custom_predicted_thrust_publisher.publish(predicted_thrust_out);
+    //custom_predicted_velocity_publisher.publish(custom_vel_out);
+  }
+  catch (...) {
+    ROS_ERROR("[MpcTracker]: Exception caught during publishing topic %s.", custom_predicted_traj_publisher.getTopic().c_str());
+  }
+
+  custom_trajectory_out.poses.clear();
+  predicted_thrust_out.poses.clear();
+
 }
 //}
 
