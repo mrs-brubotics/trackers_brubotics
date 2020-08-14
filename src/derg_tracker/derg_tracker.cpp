@@ -110,7 +110,7 @@ private:
 
 
   float custom_dt=0.002; // sampling time (in seconds)
-  float custom_hor=0.4; // prediction horizon (in seconds)
+  float custom_hor=0.4; // prediction horizon (in samples)
   float sample_hor=custom_hor/custom_dt; // prediction horion ( in samples)
 
   geometry_msgs::PoseArray predicted_thrust_out; // array of thrust predictions
@@ -119,6 +119,8 @@ private:
   ros::Publisher custom_predicted_traj_publisher;
   ros::Publisher custom_predicted_thrust_publisher;
   ros::Publisher custom_predicted_velocity_publisher;
+
+  ros::Publisher applied_ref_publisher;
   
   // applied reference
   float applied_ref_x=0;
@@ -127,17 +129,25 @@ private:
  
   // ERG parameters
   MatrixXd v_dot=MatrixXd::Zero(4, 1);// derivative of the applied reference
-  MatrixXd NF=MatrixXd::Zero(4, 1); // Navigation field
+  MatrixXd NF_att=MatrixXd::Zero(4, 1); // attraction Navigation field
   MatrixXd ref_dist=MatrixXd::Zero(4, 1); // difference between reference r and applied reference v
   float ref_dist_norm; // norm of res_dist
   float max_dist; // maximum between ref_dist_norm and eta
   float eta; // smoothing parameter
-  float DSM; // Dynamic Safety Margin
+  float DSM_s; // Dynamic Safety Margin for thrust saturation
   float sampling_time=0.002; // sampling frequency 500 Hz
   
+  float kappa_s=1; // kappa parameter of the DSM_s
+  float T_max= 119.340267; // maximum thrust (in Newtons)
+  float T_min=0; // minimum thrust (in Newtons)
+
+  float limit_thrust_diff; // min difference between the thrust limits and the predicted thrust
+  float diff_Tmax; // difference between Tmax and T
+  float diff_Tmin; // difference between T and Tmin 
+  
+
   MatrixXd NF_total=MatrixXd::Zero(3, 1);
   float DSM_total;
-  MatrixXd NF_att=MatrixXd::Zero(3, 1); // attraction Navigation field
   
   // Wall all_constraints
   MatrixXd NF_w = MatrixXd::Zero(3, 1); // Wall repulsion navigation field
@@ -253,7 +263,8 @@ void DergTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unused]] 
     other_uav_subscribers.push_back(nh_.subscribe(applied_ref_topic_name, 1, &DergTracker::callbackOtherUavAppliedRef, this, ros::TransportHints().tcpNoDelay()));
 
   }
-
+  applied_ref_publisher = nh_.advertise<geometry_msgs::Pose>("applied_ref", 1);
+  
   is_initialized_ = true;
 
   ROS_INFO("[DergTracker]: initialized");
@@ -389,9 +400,9 @@ const mrs_msgs::PositionCommand::ConstPtr DergTracker::update(const mrs_msgs::Ua
 void DergTracker::trajectory_prediction(){
 
   // compute the C2 parameter for each coordinate
-  C2_x= (-(init_vel(0,0)/lambda1_xy)-goto_ref_x+init_pos(0,0))/(1-(lambda2_xy/lambda1_xy));
-  C2_y= (-(init_vel(1,0)/lambda1_xy)-goto_ref_y+init_pos(1,0))/(1-(lambda2_xy/lambda1_xy));
-  C2_z= (-(init_vel(2,0)/lambda1_z)-goto_ref_z+init_pos(2,0))/(1-(lambda2_z/lambda1_z));
+  C2_x= (-(init_vel(0,0)/lambda1_xy)-applied_ref_x+init_pos(0,0))/(1-(lambda2_xy/lambda1_xy));
+  C2_y= (-(init_vel(1,0)/lambda1_xy)-applied_ref_y+init_pos(1,0))/(1-(lambda2_xy/lambda1_xy));
+  C2_z= (-(init_vel(2,0)/lambda1_z)-applied_ref_z+init_pos(2,0))/(1-(lambda2_z/lambda1_z));
 
   C1_x = (-lambda2_xy*C2_x+init_vel(0,0))/lambda1_xy;
   C1_y = (-lambda2_xy*C2_y+init_vel(1,0))/lambda1_xy;
@@ -459,37 +470,60 @@ void DergTracker::trajectory_prediction(){
 //}
 
 /*DERG_computation()//{*/
-  void DergTracker::DERG_computation(){
+void DergTracker::DERG_computation(){
 
-  DSM=10;
+  // computation of the Saturation Dynamic Safety Margin
 
-  // computation of the Dynamic Safety Margin
+  //DSM_s=10; // for constant DSM_s testing
 
-  //kappa_s=1;
-  //T_max= 119.340267; // in Newtons
-  //T_min=0;
+  limit_thrust_diff=T_max; // initialization at a high value
+  for (size_t i = 0; i < sample_hor; i++) {
+    diff_Tmax=T_max-predicted_thrust_out.poses[i].position.x;
+    //ROS_WARN_THROTTLE(1.0, "[MpcTracker] diff_Tmax: %f", diff_Tmax);
+    diff_Tmin=predicted_thrust_out.poses[i].position.x-T_min;
+    //ROS_WARN_THROTTLE(1.0, "[MpcTracker] diff_Tmin: %f", diff_Tmin);
+    if (diff_Tmax<limit_thrust_diff) {
+      limit_thrust_diff=diff_Tmax;
+    }
+    if (diff_Tmin < limit_thrust_diff) {
+      limit_thrust_diff= diff_Tmin;
+    }
+    //ROS_WARN_THROTTLE(1.0, "[MpcTracker]: %f", limit_thrust_diff);
+  }
+  DSM_s=kappa_s*limit_thrust_diff;
+ 
+  predicted_thrust_out.poses.clear(); // empty the array of thrust prediction once used
 
-  // computation of the navigation field
+  // computation of the attraction field
   ref_dist(0,0)= goto_ref_x-applied_ref_x;
   ref_dist(1,0)= goto_ref_y-applied_ref_y;
   ref_dist(2,0)= goto_ref_z-applied_ref_z;
   ref_dist_norm= sqrt(pow(ref_dist(0,0), 2) + pow(ref_dist(1,0), 2)+ pow(ref_dist(2,0), 2));
   eta=0.05;
   max_dist=eta;
+
   if (ref_dist_norm>eta){
     max_dist=ref_dist_norm;
   }
-  NF(0,0)=ref_dist(0,0)/max_dist;
-  NF(1,0)=ref_dist(1,0)/max_dist;
-  NF(2,0)=ref_dist(2,0)/max_dist;
+  NF_att(0,0)=ref_dist(0,0)/max_dist;
+  NF_att(1,0)=ref_dist(1,0)/max_dist;
+  NF_att(2,0)=ref_dist(2,0)/max_dist;
 
-  v_dot(0,0)=DSM*NF(0,0);
-  v_dot(1,0)=DSM*NF(1,0);
-  v_dot(2,0)=DSM*NF(2,0);
+  v_dot(0,0)=DSM_s*NF_att(0,0);
+  v_dot(1,0)=DSM_s*NF_att(1,0);
+  v_dot(2,0)=DSM_s*NF_att(2,0);
 
   applied_ref_x=v_dot(0,0)*sampling_time + applied_ref_x;
   applied_ref_y=v_dot(1,0)*sampling_time + applied_ref_y;
   applied_ref_z=v_dot(2,0)*sampling_time + applied_ref_z;
+
+  geometry_msgs::Pose applied_ref_vec; // applied reference vector
+
+  applied_ref_vec.position.x=applied_ref_x;
+  applied_ref_vec.position.y=applied_ref_y;
+  applied_ref_vec.position.z=applied_ref_z;
+
+  applied_ref_publisher.publish(applied_ref_vec);
 
   custom_new_point.x = applied_ref_x;
   custom_new_point.y = applied_ref_y;
