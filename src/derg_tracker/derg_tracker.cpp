@@ -280,6 +280,11 @@ private:
   ros::Publisher uav_applied_ref_message_publisher;
   ros::Publisher agent_DSM_publisher; // publishes the agent DSM
 
+  //use parameter
+  bool use_derg_= true;
+  bool use_wall_constraints_ = false;
+  bool use_cylindrical_constraints_ = false;
+  bool use_agents_avoidance_ = false;
 };
 //}
 
@@ -312,6 +317,10 @@ void DergTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unused]] 
   my_uav_priority = my_uav_number;
 
   param_loader.loadParam("network/robot_names", other_drone_names_);
+  param_loader.loadParam("use_derg", use_derg_);
+  param_loader.loadParam("use_wall_constraints", use_wall_constraints_);
+  param_loader.loadParam("use_cylindrical_constraints", use_cylindrical_constraints_);
+  param_loader.loadParam("use_agents_avoidance", use_agents_avoidance_);
 
   // exclude this drone from the list
   std::vector<std::string>::iterator it = other_drone_names_.begin();
@@ -452,13 +461,14 @@ const mrs_msgs::PositionCommand::ConstPtr DergTracker::update(const mrs_msgs::Ua
     return mrs_msgs::PositionCommand::ConstPtr(new mrs_msgs::PositionCommand(position_cmd));
   }
   
-  DERG_computation(); // modifies the applied reference
-  /*
-  // in case the DERG isn't used
-  applied_ref_x=goto_ref_x;
-  applied_ref_y=goto_ref_y;
-  applied_ref_z=goto_ref_z;
-  */
+  if (use_derg_){
+    DERG_computation(); // modifies the applied reference
+  }
+  else{
+    applied_ref_x=goto_ref_x;
+    applied_ref_y=goto_ref_y;
+    applied_ref_z=goto_ref_z;
+  }
  
   // set the desired states from the input of the goto function
 
@@ -589,106 +599,108 @@ void DergTracker::DERG_computation(){
   ////////////////////////////////////////////////////////////////////////
   ///////////// computation of the wall Dynamic Safety Margin ////////////
   ////////////////////////////////////////////////////////////////////////
+  if (use_wall_constraints_){
+    // walls 1 ( x= ) + wall 2 ( y= )
 
-  // walls 1 ( x= ) + wall 2 ( y= )
+    //DSM_w=10;
 
-  //DSM_w=10;
+    d_w(0,0) = 70 - arm_radius;
+    d_w(1,0) = 15 - arm_radius;
 
-  d_w(0,0) = 70 - arm_radius;
-  d_w(1,0) = 15 - arm_radius;
+    c_w(0,0)=1;
+    c_w(1,0)=0;
+    c_w(2,0)=0;
+    c_w(0,1)=0;
+    c_w(1,1)=1;
+    c_w(2,1)=0;
 
-  c_w(0,0)=1;
-  c_w(1,0)=0;
-  c_w(2,0)=0;
-  c_w(0,1)=0;
-  c_w(1,1)=1;
-  c_w(2,1)=0;
-
-  min_wall_distance= d_w(1,0) -custom_trajectory_out.poses[0].position.y;
-  for (size_t i = 0; i < sample_hor; i++) {
-    if (d_w(0,0) -custom_trajectory_out.poses[i].position.x < min_wall_distance){
-      min_wall_distance=d_w(0,0) -custom_trajectory_out.poses[i].position.x;
+    min_wall_distance= d_w(1,0) -custom_trajectory_out.poses[0].position.y;
+    for (size_t i = 0; i < sample_hor; i++) {
+      if (d_w(0,0) -custom_trajectory_out.poses[i].position.x < min_wall_distance){
+        min_wall_distance=d_w(0,0) -custom_trajectory_out.poses[i].position.x;
+      }
+      if (d_w(1,0) -custom_trajectory_out.poses[i].position.y < min_wall_distance){
+        min_wall_distance=d_w(1,0) -custom_trajectory_out.poses[i].position.y;
+      }
     }
-    if (d_w(1,0) -custom_trajectory_out.poses[i].position.y < min_wall_distance){
-      min_wall_distance=d_w(1,0) -custom_trajectory_out.poses[i].position.y;
-    }
+    DSM_w=kappa_w*min_wall_distance;
   }
-  DSM_w=kappa_w*min_wall_distance;
-
   ////////////////////////////////////////////////////////////////////////
   ///////// computation of the Cylindrical Dynamic Safety Margin /////////
   ////////////////////////////////////////////////////////////////////////
 
-  /*
-  o_1(0,0)=0; // x=0
-  o_1(1,0)=40; // y=40;
+  if (use_cylindrical_constraints_){
 
-  dist_obs_x_1=custom_trajectory_out.poses[0].position.x-o_1(0,0);
-  dist_obs_y_1=custom_trajectory_out.poses[0].position.y-o_1(1,0);
-  dist_obs_1=sqrt(dist_obs_x_1*dist_obs_x_1+dist_obs_y_1*dist_obs_y_1);
+    /*
+    o_1(0,0)=0; // x=0
+    o_1(1,0)=40; // y=40;
 
-
-  min_obs_distance=dist_obs_1-R_o1;
-  for (size_t i = 1; i < sample_hor; i++) {
-    dist_obs_x_1=custom_trajectory_out.poses[i].position.x-o_1(0,0);
-    dist_obs_y_1=custom_trajectory_out.poses[i].position.y-o_1(1,0);
+    dist_obs_x_1=custom_trajectory_out.poses[0].position.x-o_1(0,0);
+    dist_obs_y_1=custom_trajectory_out.poses[0].position.y-o_1(1,0);
     dist_obs_1=sqrt(dist_obs_x_1*dist_obs_x_1+dist_obs_y_1*dist_obs_y_1);
-    if (dist_obs_1-R_o1<min_obs_distance) {
-      min_obs_distance=dist_obs_1-R_o1;
+
+
+    min_obs_distance=dist_obs_1-R_o1;
+    for (size_t i = 1; i < sample_hor; i++) {
+      dist_obs_x_1=custom_trajectory_out.poses[i].position.x-o_1(0,0);
+      dist_obs_y_1=custom_trajectory_out.poses[i].position.y-o_1(1,0);
+      dist_obs_1=sqrt(dist_obs_x_1*dist_obs_x_1+dist_obs_y_1*dist_obs_y_1);
+      if (dist_obs_1-R_o1<min_obs_distance) {
+        min_obs_distance=dist_obs_1-R_o1;
+      }
     }
-  }
-*/
+  */
 
-  o_1(0,0)=2; // x=2;
-  o_1(1,0)=4; // y=4;
+    o_1(0,0)=2; // x=2;
+    o_1(1,0)=4; // y=4;
 
-  o_2(0,0)=9; // x=9
-  o_2(1,0)=9; // y=9;
+    o_2(0,0)=9; // x=9
+    o_2(1,0)=9; // y=9;
 
-  o_3(0,0)=9; // x=9
-  o_3(1,0)=9; // y=9;
-
-
-  dist_obs_x_1=custom_trajectory_out.poses[0].position.x-o_1(0,0);
-  dist_obs_y_1=custom_trajectory_out.poses[0].position.y-o_1(1,0);
-  dist_obs_1=sqrt(dist_obs_x_1*dist_obs_x_1+dist_obs_y_1*dist_obs_y_1);
-
-  dist_obs_x_2=custom_trajectory_out.poses[0].position.x-o_2(0,0);
-  dist_obs_y_2=custom_trajectory_out.poses[0].position.y-o_2(1,0);
-  dist_obs_2=sqrt(dist_obs_x_2*dist_obs_x_2+dist_obs_y_2*dist_obs_y_2);
-
-  dist_obs_x_3=custom_trajectory_out.poses[0].position.x-o_3(0,0);
-  dist_obs_y_3=custom_trajectory_out.poses[0].position.y-o_3(1,0);
-  dist_obs_3=sqrt(dist_obs_x_3*dist_obs_x_3+dist_obs_y_3*dist_obs_y_3);
+    o_3(0,0)=9; // x=9
+    o_3(1,0)=9; // y=9;
 
 
-  min_obs_distance=dist_obs_1-R_o1;
-  for (size_t i = 1; i < sample_hor; i++) {
-    dist_obs_x_1=custom_trajectory_out.poses[i].position.x-o_1(0,0);
-    dist_obs_y_1=custom_trajectory_out.poses[i].position.y-o_1(1,0);
+    dist_obs_x_1=custom_trajectory_out.poses[0].position.x-o_1(0,0);
+    dist_obs_y_1=custom_trajectory_out.poses[0].position.y-o_1(1,0);
     dist_obs_1=sqrt(dist_obs_x_1*dist_obs_x_1+dist_obs_y_1*dist_obs_y_1);
 
-    dist_obs_x_2=custom_trajectory_out.poses[i].position.x-o_2(0,0);
-    dist_obs_y_2=custom_trajectory_out.poses[i].position.y-o_2(1,0);
+    dist_obs_x_2=custom_trajectory_out.poses[0].position.x-o_2(0,0);
+    dist_obs_y_2=custom_trajectory_out.poses[0].position.y-o_2(1,0);
     dist_obs_2=sqrt(dist_obs_x_2*dist_obs_x_2+dist_obs_y_2*dist_obs_y_2);
 
-    dist_obs_x_3=custom_trajectory_out.poses[i].position.x-o_3(0,0);
-    dist_obs_y_3=custom_trajectory_out.poses[i].position.y-o_3(1,0);
+    dist_obs_x_3=custom_trajectory_out.poses[0].position.x-o_3(0,0);
+    dist_obs_y_3=custom_trajectory_out.poses[0].position.y-o_3(1,0);
     dist_obs_3=sqrt(dist_obs_x_3*dist_obs_x_3+dist_obs_y_3*dist_obs_y_3);
 
-    if (dist_obs_1-R_o1<min_obs_distance) {
-      min_obs_distance=dist_obs_1-R_o1;
+
+    min_obs_distance=dist_obs_1-R_o1;
+    for (size_t i = 1; i < sample_hor; i++) {
+      dist_obs_x_1=custom_trajectory_out.poses[i].position.x-o_1(0,0);
+      dist_obs_y_1=custom_trajectory_out.poses[i].position.y-o_1(1,0);
+      dist_obs_1=sqrt(dist_obs_x_1*dist_obs_x_1+dist_obs_y_1*dist_obs_y_1);
+
+      dist_obs_x_2=custom_trajectory_out.poses[i].position.x-o_2(0,0);
+      dist_obs_y_2=custom_trajectory_out.poses[i].position.y-o_2(1,0);
+      dist_obs_2=sqrt(dist_obs_x_2*dist_obs_x_2+dist_obs_y_2*dist_obs_y_2);
+
+      dist_obs_x_3=custom_trajectory_out.poses[i].position.x-o_3(0,0);
+      dist_obs_y_3=custom_trajectory_out.poses[i].position.y-o_3(1,0);
+      dist_obs_3=sqrt(dist_obs_x_3*dist_obs_x_3+dist_obs_y_3*dist_obs_y_3);
+
+      if (dist_obs_1-R_o1<min_obs_distance) {
+        min_obs_distance=dist_obs_1-R_o1;
+      }
+      if (dist_obs_2-R_o2<min_obs_distance) {
+        min_obs_distance=dist_obs_2-R_o2;
+      }
+      if (dist_obs_3-R_o3<min_obs_distance) {
+        min_obs_distance=dist_obs_3-R_o3;
+      }
     }
-    if (dist_obs_2-R_o2<min_obs_distance) {
-      min_obs_distance=dist_obs_2-R_o2;
-    }
-    if (dist_obs_3-R_o3<min_obs_distance) {
-      min_obs_distance=dist_obs_3-R_o3;
-    }
+
+    DSM_o=kappa_o*min_obs_distance;
   }
-
-  DSM_o=kappa_o*min_obs_distance;
-
   //////////////////////////////////////////////////////////
   // computation of the attraction navigation field ///////
   /////////////////////////////////////////////////////////
@@ -711,22 +723,23 @@ void DergTracker::DERG_computation(){
   /////////////////////////////////////////////////////////////
   // computation of the wall repulsion navigation field ///////
   /////////////////////////////////////////////////////////////
+  
+  if (use_wall_constraints_){
+    // wall 1
+    max_repulsion_wall1= (sigma_w-(d_w(0,0)-applied_ref_x))/(sigma_w-delta_w);
+    if (0 > max_repulsion_wall1){
+      max_repulsion_wall1=0;
+    }
 
-  // wall 1
-  max_repulsion_wall1= (sigma_w-(d_w(0,0)-applied_ref_x))/(sigma_w-delta_w);
-  if (0 > max_repulsion_wall1){
-    max_repulsion_wall1=0;
+    // wall 2
+    max_repulsion_wall2= (sigma_w-(d_w(1,0)-applied_ref_y))/(sigma_w-delta_w);
+    if (0 > max_repulsion_wall2){
+      max_repulsion_wall2=0;
+    }
+    NF_w(0,0)=-max_repulsion_wall1;
+    NF_w(1,0)=-max_repulsion_wall2;
+    NF_w(2,0)=0;
   }
-
-  // wall 2
-  max_repulsion_wall2= (sigma_w-(d_w(1,0)-applied_ref_y))/(sigma_w-delta_w);
-  if (0 > max_repulsion_wall2){
-    max_repulsion_wall2=0;
-  }
-  NF_w(0,0)=-max_repulsion_wall1;
-  NF_w(1,0)=-max_repulsion_wall2;
-  NF_w(2,0)=0;
-
 
   /////////////////////////////////////////////////////////////
   /// computation of the obstacle repulsion navigation field //
@@ -789,6 +802,8 @@ void DergTracker::DERG_computation(){
   //// computation of the agent repulsion navigation field ////
   /////////////////////////////////////////////////////////////
   
+  if (use_agents_avoidance_){
+
   pos_error_x= applied_ref_x - init_pos(0,0);
   pos_error_y= applied_ref_y - init_pos(1,0);
   pos_error_z= applied_ref_z - init_pos(2,0);
@@ -862,7 +877,8 @@ void DergTracker::DERG_computation(){
   NF_a(0,0)=NF_a_co(0,0) + NF_a_nco(0,0);
   NF_a(1,0)=NF_a_co(1,0) + NF_a_nco(1,0);
   NF_a(2,0)=NF_a_co(2,0) + NF_a_nco(2,0);
-  
+
+  }
 
   ////////////////////////////////////////////////////////////////////
   /////////////////// computation of v_dot ///////////////////////////
