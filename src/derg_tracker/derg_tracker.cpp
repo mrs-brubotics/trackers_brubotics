@@ -14,7 +14,7 @@
 #include <mrs_msgs/FuturePoint.h>
 #include <mrs_msgs/FutureTrajectory.h>
 #include <mrs_msgs/OdometryDiag.h>
-
+#include <std_msgs/Float32.h>
 #include <geometry_msgs/PoseArray.h>
 
 //}
@@ -58,6 +58,7 @@ public:
 
   void trajectory_prediction(void);
   void DERG_computation();
+  void callbackOtherUavPosition(const mrs_msgs::FutureTrajectoryConstPtr& msg);
   void callbackOtherUavAppliedRef(const mrs_msgs::FutureTrajectoryConstPtr& msg);
 
 private:
@@ -141,7 +142,7 @@ private:
   // thrust constraints
   float kappa_s=1; // kappa parameter of the DSM_s
   float DSM_s; // Dynamic Safety Margin for thrust saturation
-  float T_max= 119.340267; // maximum thrust (in Newtons)
+  float T_max= 36.59; // maximum thrust (in Newtons)
   float T_min=0; // minimum thrust (in Newtons)
 
   float limit_thrust_diff; // min difference between the thrust limits and the predicted thrust
@@ -157,7 +158,7 @@ private:
   float min_wall_distance; // minimum distance with a wall
 
   // Obstacle Constraints
-  float kappa_o=10;
+  float kappa_o=10; // kappa parametrer of the DSM_o
   float N_o=1; //number of obstacles
   float DSM_o; // Dynamic Safety Margin for obstacle constraints
   float min_obs_distance; // minimum distance with an obstacle
@@ -169,8 +170,8 @@ private:
   MatrixXd NF_o = MatrixXd::Zero(3, 1); // obstacle repulsion navigation field
   MatrixXd NF_o_co = MatrixXd::Zero(3, 1); // conservative part
   MatrixXd NF_o_nco = MatrixXd::Zero(3, 1); // non conservative part
-  float sigma_o=2;
-  float delta_o=0.01;
+  float sigma_o=2.5;
+  float delta_o=0.1;
   float dist_obs_x_1;
   float dist_obs_y_1;
   float dist_obs_1;
@@ -178,15 +179,40 @@ private:
   float dist_ref_obs_y_1;
   float dist_ref_obs_1;
   float max_repulsion_obs1;
-  float alpha_o_1=0.1;
+  float alpha_o_1=0.5;
 
-  // walls 1 ( x=10 ) + wall 2 ( y=35 )
+  // obstacle 2
+  float R_o2= 1+arm_radius; // radius of obstacle 2 + uav radius
+  MatrixXd o_2=MatrixXd::Zero(2, 1); // center of obstacle ( in (x,y))
+  float dist_obs_x_2;
+  float dist_obs_y_2;
+  float dist_obs_2;
+  float dist_ref_obs_x_2;
+  float dist_ref_obs_y_2;
+  float dist_ref_obs_2;
+  float max_repulsion_obs2;
+  float alpha_o_2=0.5;
+
+  // obstacle 3
+  float R_o3= 1+arm_radius; // radius of obstacle 3 + uav radius
+  MatrixXd o_3=MatrixXd::Zero(2, 1); // center of obstacle ( in (x,y))
+
+  float dist_obs_x_3;
+  float dist_obs_y_3;
+  float dist_obs_3;
+  float dist_ref_obs_x_3;
+  float dist_ref_obs_y_3;
+  float dist_ref_obs_3;
+  float max_repulsion_obs3;
+  float alpha_o_3=0.5;
+
+  // walls 1 ( x= ) + wall 2 ( y= )
   MatrixXd d_w=MatrixXd::Zero(3, 1); // d_w matrix of constraints
   MatrixXd c_w=MatrixXd::Zero(3, 3); // c_w matrix of constraints
 
   MatrixXd NF_w = MatrixXd::Zero(3, 1); // Wall repulsion navigation field
-  float sigma_w=2;
-  float delta_w=0.01;
+  float sigma_w=2.5;
+  float delta_w=0.1;
   float max_repulsion_wall1;
   float max_repulsion_wall2;
 
@@ -199,8 +225,9 @@ private:
   
   float pos_error_x;
   float pos_error_y;
+  float pos_error_z;
   float pos_error;
-  float kappa_a=30;
+  float kappa_a=100;
   float DSM_a;
 
   float other_uav_ref_x;
@@ -212,13 +239,23 @@ private:
   float sigma_a=1;
   float delta_a=0.01;
   float Ra=0.4;
-  float Sa=2;
+  float Sa=1.6;
   float alpha_a=0.1;
 
   std::string uav_name_;
   std::vector<std::string> other_drone_names_;
   
-  std::vector<ros::Subscriber> other_uav_subscribers;
+  float other_uav_pos_x;
+  float other_uav_pos_y;
+  float other_uav_pos_z;
+  float dist_between_agents_x;
+  float dist_between_agents_y;
+  float dist_between_agents_z;
+  float dist_between_agents;
+  
+  float min_dist_agents;
+  geometry_msgs::Pose min_dist_agents_vect; // ditance between agents as vector to publish it
+  geometry_msgs::Pose DSM_pose_object; // DSM of agent as a vector to publish it
 
   int my_uav_number;
   int my_uav_priority;
@@ -229,12 +266,19 @@ private:
   mrs_msgs::FutureTrajectory future_trajectory_out;
   mrs_msgs::FutureTrajectory uav_applied_ref_out;
   mrs_msgs::FuturePoint custom_new_point;
-
+  
+  mrs_msgs::FutureTrajectory uav_current_position_out;
+  mrs_msgs::FuturePoint custom_position;
+  
   std::map<std::string, mrs_msgs::FutureTrajectory> other_drones_applied_references;
   std::vector<ros::Subscriber> other_uav_applied_ref_subscriber;
-
+  std::map<std::string, mrs_msgs::FutureTrajectory>      other_drones_positions;
+  std::vector<ros::Subscriber> other_uav_subscribers; 
+  
+  ros::Publisher uav_current_position_publisher; // publishes the current position of the uav + name of the uav
+  ros::Publisher min_agent_dist_publisher; // publishes the minimum distance between this agent and the other ones
   ros::Publisher uav_applied_ref_message_publisher;
-
+  ros::Publisher agent_DSM_publisher; // publishes the agent DSM
 
 };
 //}
@@ -260,6 +304,7 @@ void DergTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unused]] 
   future_trajectory_out.collision_avoidance = collision_avoidance_enabled_ && ((odometry_diagnostics.estimator_type.name.compare(std::string("GPS")) == STRING_EQUAL) || odometry_diagnostics.estimator_type.name.compare(std::string("RTK")) == STRING_EQUAL);
 
   uav_applied_ref_out=future_trajectory_out; // initialize the message
+  uav_current_position_out=future_trajectory_out; // initialize the message
 
   // extract the numerical name
   sscanf(uav_name_.c_str(), "uav%d", &my_uav_number);
@@ -298,10 +343,19 @@ void DergTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unused]] 
 
     other_uav_subscribers.push_back(nh_.subscribe(applied_ref_topic_name, 1, &DergTracker::callbackOtherUavAppliedRef, this, ros::TransportHints().tcpNoDelay()));
 
+    /// subscribe to the other UAV's position
+    std::string position_topic_name = std::string("/") + other_drone_names_[i] + std::string("/") + std::string("control_manager/mpc_tracker/uav_current_position");
+
+    other_uav_subscribers.push_back(
+        nh_.subscribe(position_topic_name, 1, &DergTracker::callbackOtherUavPosition, this, ros::TransportHints().tcpNoDelay()));
   }
   applied_ref_publisher = nh_.advertise<geometry_msgs::Pose>("applied_ref", 1);
   
   is_initialized_ = true;
+  
+  uav_current_position_publisher = nh_.advertise<mrs_msgs::FutureTrajectory>("uav_current_position", 1);
+  min_agent_dist_publisher = nh_.advertise<geometry_msgs::Pose>("min_agent_dist", 1);
+  agent_DSM_publisher = nh_.advertise<geometry_msgs::Pose>("uav_DSM", 1);
 
   ROS_INFO("[DergTracker]: initialized");
 
@@ -491,16 +545,16 @@ void DergTracker::trajectory_prediction(){
   }
 
   try {
-    custom_predicted_traj_publisher.publish(custom_trajectory_out);
-    custom_predicted_thrust_publisher.publish(predicted_thrust_out);
+    //custom_predicted_traj_publisher.publish(custom_trajectory_out);
+    //custom_predicted_thrust_publisher.publish(predicted_thrust_out);
     //custom_predicted_velocity_publisher.publish(custom_vel_out);
   }
   catch (...) {
     ROS_ERROR("[DergTracker]: Exception caught during publishing topic %s.", custom_predicted_traj_publisher.getTopic().c_str());
   }
 
-  custom_trajectory_out.poses.clear();
-  predicted_thrust_out.poses.clear();
+  //custom_trajectory_out.poses.clear();
+  //predicted_thrust_out.poses.clear();
 
 }
 //}
@@ -517,16 +571,16 @@ void DergTracker::DERG_computation(){
   limit_thrust_diff=T_max; // initialization at a high value
   for (size_t i = 0; i < sample_hor; i++) {
     diff_Tmax=T_max-predicted_thrust_out.poses[i].position.x;
-    //ROS_WARN_THROTTLE(1.0, "[MpcTracker] diff_Tmax: %f", diff_Tmax);
+    //ROS_WARN_THROTTLE(1.0, "[DergTracker] diff_Tmax: %f", diff_Tmax);
     diff_Tmin=predicted_thrust_out.poses[i].position.x-T_min;
-    //ROS_WARN_THROTTLE(1.0, "[MpcTracker] diff_Tmin: %f", diff_Tmin);
+    //ROS_WARN_THROTTLE(1.0, "[DergTracker] diff_Tmin: %f", diff_Tmin);
     if (diff_Tmax<limit_thrust_diff) {
       limit_thrust_diff=diff_Tmax;
     }
     if (diff_Tmin < limit_thrust_diff) {
       limit_thrust_diff= diff_Tmin;
     }
-    //ROS_WARN_THROTTLE(1.0, "[MpcTracker]: %f", limit_thrust_diff);
+    //ROS_WARN_THROTTLE(1.0, "[DergTracker]: %f", limit_thrust_diff);
   }
   DSM_s=kappa_s*limit_thrust_diff;
  
@@ -536,12 +590,12 @@ void DergTracker::DERG_computation(){
   ///////////// computation of the wall Dynamic Safety Margin ////////////
   ////////////////////////////////////////////////////////////////////////
 
-  // walls 1 ( x=10 ) + wall 2 ( y=35 )
+  // walls 1 ( x= ) + wall 2 ( y= )
 
   //DSM_w=10;
 
-  d_w(0,0) = 10 - arm_radius;
-  d_w(1,0) = 50 - arm_radius;
+  d_w(0,0) = 70 - arm_radius;
+  d_w(1,0) = 15 - arm_radius;
 
   c_w(0,0)=1;
   c_w(1,0)=0;
@@ -565,6 +619,7 @@ void DergTracker::DERG_computation(){
   ///////// computation of the Cylindrical Dynamic Safety Margin /////////
   ////////////////////////////////////////////////////////////////////////
 
+  /*
   o_1(0,0)=0; // x=0
   o_1(1,0)=40; // y=40;
 
@@ -580,6 +635,55 @@ void DergTracker::DERG_computation(){
     dist_obs_1=sqrt(dist_obs_x_1*dist_obs_x_1+dist_obs_y_1*dist_obs_y_1);
     if (dist_obs_1-R_o1<min_obs_distance) {
       min_obs_distance=dist_obs_1-R_o1;
+    }
+  }
+*/
+
+  o_1(0,0)=2; // x=2;
+  o_1(1,0)=4; // y=4;
+
+  o_2(0,0)=9; // x=9
+  o_2(1,0)=9; // y=9;
+
+  o_3(0,0)=9; // x=9
+  o_3(1,0)=9; // y=9;
+
+
+  dist_obs_x_1=custom_trajectory_out.poses[0].position.x-o_1(0,0);
+  dist_obs_y_1=custom_trajectory_out.poses[0].position.y-o_1(1,0);
+  dist_obs_1=sqrt(dist_obs_x_1*dist_obs_x_1+dist_obs_y_1*dist_obs_y_1);
+
+  dist_obs_x_2=custom_trajectory_out.poses[0].position.x-o_2(0,0);
+  dist_obs_y_2=custom_trajectory_out.poses[0].position.y-o_2(1,0);
+  dist_obs_2=sqrt(dist_obs_x_2*dist_obs_x_2+dist_obs_y_2*dist_obs_y_2);
+
+  dist_obs_x_3=custom_trajectory_out.poses[0].position.x-o_3(0,0);
+  dist_obs_y_3=custom_trajectory_out.poses[0].position.y-o_3(1,0);
+  dist_obs_3=sqrt(dist_obs_x_3*dist_obs_x_3+dist_obs_y_3*dist_obs_y_3);
+
+
+  min_obs_distance=dist_obs_1-R_o1;
+  for (size_t i = 1; i < sample_hor; i++) {
+    dist_obs_x_1=custom_trajectory_out.poses[i].position.x-o_1(0,0);
+    dist_obs_y_1=custom_trajectory_out.poses[i].position.y-o_1(1,0);
+    dist_obs_1=sqrt(dist_obs_x_1*dist_obs_x_1+dist_obs_y_1*dist_obs_y_1);
+
+    dist_obs_x_2=custom_trajectory_out.poses[i].position.x-o_2(0,0);
+    dist_obs_y_2=custom_trajectory_out.poses[i].position.y-o_2(1,0);
+    dist_obs_2=sqrt(dist_obs_x_2*dist_obs_x_2+dist_obs_y_2*dist_obs_y_2);
+
+    dist_obs_x_3=custom_trajectory_out.poses[i].position.x-o_3(0,0);
+    dist_obs_y_3=custom_trajectory_out.poses[i].position.y-o_3(1,0);
+    dist_obs_3=sqrt(dist_obs_x_3*dist_obs_x_3+dist_obs_y_3*dist_obs_y_3);
+
+    if (dist_obs_1-R_o1<min_obs_distance) {
+      min_obs_distance=dist_obs_1-R_o1;
+    }
+    if (dist_obs_2-R_o2<min_obs_distance) {
+      min_obs_distance=dist_obs_2-R_o2;
+    }
+    if (dist_obs_3-R_o3<min_obs_distance) {
+      min_obs_distance=dist_obs_3-R_o3;
     }
   }
 
@@ -632,23 +736,46 @@ void DergTracker::DERG_computation(){
   dist_ref_obs_x_1=o_1(0,0)-applied_ref_x; // x distance between v and obstacle 1
   dist_ref_obs_y_1=o_1(1,0)-applied_ref_y; // y distance between v and obstacle 1
   dist_ref_obs_1=sqrt(dist_ref_obs_x_1*dist_ref_obs_x_1+dist_ref_obs_y_1*dist_ref_obs_y_1);
+ 
+  dist_ref_obs_x_2=o_2(0,0)-applied_ref_x; // x distance between v and obstacle 2
+  dist_ref_obs_y_2=o_2(1,0)-applied_ref_y; // y distance between v and obstacle 2
+  dist_ref_obs_2=sqrt(dist_ref_obs_x_2*dist_ref_obs_x_2+dist_ref_obs_y_2*dist_ref_obs_y_2);
+
+  dist_ref_obs_x_3=o_3(0,0)-applied_ref_x; // x distance between v and obstacle 3
+  dist_ref_obs_y_3=o_3(1,0)-applied_ref_y; // y distance between v and obstacle 3
+  dist_ref_obs_3=sqrt(dist_ref_obs_x_3*dist_ref_obs_x_3+dist_ref_obs_y_3*dist_ref_obs_y_3);
+
   max_repulsion_obs1=(sigma_o-(dist_ref_obs_1-R_o1))/(sigma_o-delta_o);
   if (0>max_repulsion_obs1) {
     max_repulsion_obs1=0;
   }
-  NF_o_co(0,0)=-max_repulsion_obs1*(dist_ref_obs_x_1/dist_ref_obs_1);
-  NF_o_co(1,0)=-max_repulsion_obs1*(dist_ref_obs_y_1/dist_ref_obs_1);
+  
+ max_repulsion_obs2=(sigma_o-(dist_ref_obs_2-R_o2))/(sigma_o-delta_o);
+  if (0>max_repulsion_obs2) {
+    max_repulsion_obs2=0;
+  }
+
+  max_repulsion_obs3=(sigma_o-(dist_ref_obs_3-R_o3))/(sigma_o-delta_o);
+  if (0>max_repulsion_obs3) {
+    max_repulsion_obs3=0;
+  }
+
+  NF_o_co(0,0)=-(max_repulsion_obs1*(dist_ref_obs_x_1/dist_ref_obs_1)+max_repulsion_obs2*(dist_ref_obs_x_2/dist_ref_obs_2)+max_repulsion_obs3*(dist_ref_obs_x_3/dist_ref_obs_3));
+  NF_o_co(1,0)=-(max_repulsion_obs1*(dist_ref_obs_y_1/dist_ref_obs_1)+max_repulsion_obs2*(dist_ref_obs_y_2/dist_ref_obs_2)+max_repulsion_obs3*(dist_ref_obs_y_3/dist_ref_obs_3));
   NF_o_co(2,0)=0;
 
   // non conservative part
-  NF_o_nco(2,0)=0;
   if (sigma_o>=dist_ref_obs_1-R_o1) {
-    NF_o_nco(0,0)=alpha_o_1*dist_ref_obs_y_1;
-    NF_o_nco(1,0)=-alpha_o_1*dist_ref_obs_x_1;
+    NF_o_nco(0,0)=NF_o_nco(0,0)+alpha_o_1*(dist_ref_obs_y_1/dist_ref_obs_1);
+    NF_o_nco(1,0)=NF_o_nco(1,0)-alpha_o_1*(dist_ref_obs_x_1/dist_ref_obs_1);
   }
-  else {
-    NF_o_nco(0,0)=0;
-    NF_o_nco(1,0)=0;
+  if (sigma_o>=dist_ref_obs_2-R_o2) {
+    NF_o_nco(0,0)=NF_o_nco(0,0)+alpha_o_2*(dist_ref_obs_y_2/dist_ref_obs_2);
+    NF_o_nco(1,0)=NF_o_nco(1,0)-alpha_o_2*(dist_ref_obs_x_2/dist_ref_obs_2);
+  }
+  if (sigma_o>=dist_ref_obs_3-R_o3) {
+    NF_o_nco(0,0)=NF_o_nco(0,0)+alpha_o_3*(dist_ref_obs_y_3/dist_ref_obs_3);
+    NF_o_nco(1,0)=NF_o_nco(1,0)-alpha_o_3*(dist_ref_obs_x_3/dist_ref_obs_3);
   }
 
   // combined
@@ -664,7 +791,8 @@ void DergTracker::DERG_computation(){
   
   pos_error_x= applied_ref_x - init_pos(0,0);
   pos_error_y= applied_ref_y - init_pos(1,0);
-  pos_error= sqrt(pos_error_x*pos_error_x + pos_error_y*pos_error_y);
+  pos_error_z= applied_ref_z - init_pos(2,0);
+  pos_error= sqrt(pos_error_x*pos_error_x + pos_error_y*pos_error_y + pos_error_z*pos_error_z);
 
   DSM_a=kappa_a*(Sa-pos_error);
   
@@ -678,6 +806,7 @@ void DergTracker::DERG_computation(){
   
   std::map<std::string, mrs_msgs::FutureTrajectory>::iterator u = other_drones_applied_references.begin();
 
+  // compare agents applied references
   while (u != other_drones_applied_references.end()) {
     other_uav_ref_x = u->second.points[0].x;
     other_uav_ref_y = u->second.points[0].y;
@@ -697,13 +826,39 @@ void DergTracker::DERG_computation(){
 
     // Non conservative part
     if (sigma_a >= dist_between_ref-2*Ra-2*Sa) {
-      NF_a_nco(0,0)=NF_a_nco(0,0) + alpha_a*dist_between_ref_y;
-      NF_a_nco(1,0)=NF_a_nco(1,0) -alpha_a*dist_between_ref_x;
+      NF_a_nco(0,0)=NF_a_nco(0,0) + alpha_a*(dist_between_ref_y/dist_between_ref);
+      NF_a_nco(1,0)=NF_a_nco(1,0) -alpha_a*(dist_between_ref_x/dist_between_ref);
     }
 
     u++;
   }
- 
+
+  std::map<std::string, mrs_msgs::FutureTrajectory>::iterator u2 = other_drones_positions.begin();
+
+  min_dist_agents=100;
+  // compare agents positions
+  while (u2 != other_drones_positions.end()) {
+    other_uav_pos_x = u2->second.points[0].x;
+    other_uav_pos_y = u2->second.points[0].y;
+    dist_between_agents_x = other_uav_pos_x - init_pos(0,0);
+    dist_between_agents_y = other_uav_pos_y - init_pos(1,0);
+    dist_between_agents= sqrt(dist_between_agents_x*dist_between_agents_x+dist_between_agents_y*dist_between_agents_y);
+
+    if (dist_between_agents < min_dist_agents){
+      min_dist_agents=dist_between_agents; // to plot the mimimum distance between this agent and other agents
+    }
+
+    u2++;
+  }
+
+
+  min_dist_agents_vect.position.x=min_dist_agents-2*Ra;
+  min_dist_agents_vect.position.y=0;
+  min_dist_agents_vect.position.z=0;
+
+
+  min_agent_dist_publisher.publish(min_dist_agents_vect);
+
   NF_a(0,0)=NF_a_co(0,0) + NF_a_nco(0,0);
   NF_a(1,0)=NF_a_co(1,0) + NF_a_nco(1,0);
   NF_a(2,0)=NF_a_co(2,0) + NF_a_nco(2,0);
@@ -735,6 +890,15 @@ void DergTracker::DERG_computation(){
 
   //DSM_total=10; // for constant DSM
 
+  // publish DSM
+
+  DSM_pose_object.orientation.x= DSM_s;
+  DSM_pose_object.orientation.y=DSM_w;
+  DSM_pose_object.orientation.z=DSM_o;
+  DSM_pose_object.orientation.w=DSM_a;
+  agent_DSM_publisher.publish(DSM_pose_object);
+
+  // v_dot
   v_dot(0,0)=DSM_total*NF_total(0,0);
   v_dot(1,0)=DSM_total*NF_total(1,0);
   v_dot(2,0)=DSM_total*NF_total(2,0);
@@ -751,8 +915,6 @@ void DergTracker::DERG_computation(){
 
   applied_ref_publisher.publish(applied_ref_vec);
 
-  custom_trajectory_out.poses.clear();
-
   custom_new_point.x = applied_ref_x;
   custom_new_point.y = applied_ref_y;
   custom_new_point.z = applied_ref_z;
@@ -761,6 +923,17 @@ void DergTracker::DERG_computation(){
   uav_applied_ref_message_publisher.publish(uav_applied_ref_out);
   uav_applied_ref_out.points.clear();
 
+  /// publish current position
+
+  custom_position.x=init_pos(0,0);
+  custom_position.y=init_pos(1,0);
+  custom_position.z=init_pos(2,0);
+
+  uav_current_position_out.points.push_back(custom_position);
+  uav_current_position_publisher.publish(uav_current_position_out);
+  uav_current_position_out.points.clear();
+  
+  custom_trajectory_out.poses.clear();
   }
 //}
 
@@ -890,7 +1063,25 @@ void DergTracker::callbackOtherUavAppliedRef(const mrs_msgs::FutureTrajectoryCon
   mrs_msgs::FutureTrajectory temp_pose= *msg;
   other_drones_applied_references[msg->uav_name] = temp_pose;
 
-  //ROS_INFO("[MpcTracker]: Other UAV reference x: %f", other_drones_applied_references[msg->uav_name].points[0].x);
+  //ROS_INFO("[DergTracker]: Other UAV reference x: %f", other_drones_applied_references[msg->uav_name].points[0].x);
+}
+//}
+
+/*callbackOtherUavPosition//{*/
+void DergTracker::callbackOtherUavPosition(const mrs_msgs::FutureTrajectoryConstPtr& msg) {
+
+  if (!is_initialized_) {
+    return;
+  }
+
+  mrs_lib::Routine profiler_routine = profiler_.createRoutine("callbackOtherUavPosition");
+
+
+  mrs_msgs::FutureTrajectory other_uav_state= *msg;
+
+  other_drones_positions[msg->uav_name] = other_uav_state;
+
+  //ROS_INFO("[DergTracker]: Other UAV reference x: %f", other_drones_applied_references[msg->uav_name].points[0].x);
 }
 //}
 
