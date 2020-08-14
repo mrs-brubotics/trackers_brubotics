@@ -106,7 +106,7 @@ private:
 // thrust constraints
   float kappa_s=1; // kappa parameter of the DSM_s
   float DSM_s; // Dynamic Safety Margin for thrust saturation
-  float T_max= 119.340267; // maximum thrust (in Newtons)
+  float T_max= 36.59; // maximum thrust (in Newtons)
   float T_min=0; // minimum thrust (in Newtons)
 
   float limit_thrust_diff; // min difference between the thrust limits and the predicted thrust
