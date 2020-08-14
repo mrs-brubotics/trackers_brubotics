@@ -156,19 +156,41 @@ private:
   float arm_radius=0.2; // radius of the quadrotor
   float min_wall_distance; // minimum distance with a wall
 
+  // Obstacle Constraints
+  float kappa_o=10;
+  float N_o=1; //number of obstacles
+  float DSM_o; // Dynamic Safety Margin for obstacle constraints
+  float min_obs_distance; // minimum distance with an obstacle
+
+  // obstacle 1
+  float R_o1= 1+arm_radius; // radius of obstacle 1 + uav radius
+  MatrixXd o_1=MatrixXd::Zero(2, 1); // center of obstacle ( in (x,y))
+
+  MatrixXd NF_o = MatrixXd::Zero(3, 1); // obstacle repulsion navigation field
+  MatrixXd NF_o_co = MatrixXd::Zero(3, 1); // conservative part
+  MatrixXd NF_o_nco = MatrixXd::Zero(3, 1); // non conservative part
+  float sigma_o=2;
+  float delta_o=0.01;
+  float dist_obs_x_1;
+  float dist_obs_y_1;
+  float dist_obs_1;
+  float dist_ref_obs_x_1;
+  float dist_ref_obs_y_1;
+  float dist_ref_obs_1;
+  float max_repulsion_obs1;
+  float alpha_o_1=0.1;
+
   // walls 1 ( x=10 ) + wall 2 ( y=35 )
   MatrixXd d_w=MatrixXd::Zero(3, 1); // d_w matrix of constraints
   MatrixXd c_w=MatrixXd::Zero(3, 3); // c_w matrix of constraints
 
   MatrixXd NF_w = MatrixXd::Zero(3, 1); // Wall repulsion navigation field
   float sigma_w=2;
-  float delta_w=0.02;
+  float delta_w=0.01;
   float max_repulsion_wall1;
   float max_repulsion_wall2;
 
-  //D erg
   ros::NodeHandle nh_;
-  MatrixXd NF_o = MatrixXd::Zero(3, 1); // obstacle repulsion navigation field
   
   // agent collision avoidance_active_uavs
   MatrixXd NF_a = MatrixXd::Zero(3, 1); // agent repulsion navigation field
@@ -519,7 +541,7 @@ void DergTracker::DERG_computation(){
   //DSM_w=10;
 
   d_w(0,0) = 10 - arm_radius;
-  d_w(1,0) = 35 - arm_radius;
+  d_w(1,0) = 50 - arm_radius;
 
   c_w(0,0)=1;
   c_w(1,0)=0;
@@ -528,7 +550,7 @@ void DergTracker::DERG_computation(){
   c_w(1,1)=1;
   c_w(2,1)=0;
 
-  min_wall_distance= d_w(0,0) -custom_trajectory_out.poses[0].position.x;
+  min_wall_distance= d_w(1,0) -custom_trajectory_out.poses[0].position.y;
   for (size_t i = 0; i < sample_hor; i++) {
     if (d_w(0,0) -custom_trajectory_out.poses[i].position.x < min_wall_distance){
       min_wall_distance=d_w(0,0) -custom_trajectory_out.poses[i].position.x;
@@ -539,7 +561,29 @@ void DergTracker::DERG_computation(){
   }
   DSM_w=kappa_w*min_wall_distance;
 
+  ////////////////////////////////////////////////////////////////////////
+  ///////// computation of the Cylindrical Dynamic Safety Margin /////////
+  ////////////////////////////////////////////////////////////////////////
 
+  o_1(0,0)=0; // x=0
+  o_1(1,0)=40; // y=40;
+
+  dist_obs_x_1=custom_trajectory_out.poses[0].position.x-o_1(0,0);
+  dist_obs_y_1=custom_trajectory_out.poses[0].position.y-o_1(1,0);
+  dist_obs_1=sqrt(dist_obs_x_1*dist_obs_x_1+dist_obs_y_1*dist_obs_y_1);
+
+
+  min_obs_distance=dist_obs_1-R_o1;
+  for (size_t i = 1; i < sample_hor; i++) {
+    dist_obs_x_1=custom_trajectory_out.poses[i].position.x-o_1(0,0);
+    dist_obs_y_1=custom_trajectory_out.poses[i].position.y-o_1(1,0);
+    dist_obs_1=sqrt(dist_obs_x_1*dist_obs_x_1+dist_obs_y_1*dist_obs_y_1);
+    if (dist_obs_1-R_o1<min_obs_distance) {
+      min_obs_distance=dist_obs_1-R_o1;
+    }
+  }
+
+  DSM_o=kappa_o*min_obs_distance;
 
   //////////////////////////////////////////////////////////
   // computation of the attraction navigation field ///////
@@ -580,47 +624,38 @@ void DergTracker::DERG_computation(){
   NF_w(2,0)=0;
 
 
-  ////////////////////////////////////////////////////////////////////
-  //// computation of v_dot //////////////////////////////////////////
-  ///////////////////////////////////////////////////////////////////
+  /////////////////////////////////////////////////////////////
+  /// computation of the obstacle repulsion navigation field //
+  /////////////////////////////////////////////////////////////
 
-  // total navigation field
-  NF_total(0,0)=NF_att(0,0) + NF_w(0,0);
-  NF_total(1,0)=NF_att(1,0) + NF_w(1,0);
-  NF_total(2,0)=NF_att(2,0) + NF_w(2,0);
+  // Conservative part
+  dist_ref_obs_x_1=o_1(0,0)-applied_ref_x; // x distance between v and obstacle 1
+  dist_ref_obs_y_1=o_1(1,0)-applied_ref_y; // y distance between v and obstacle 1
+  dist_ref_obs_1=sqrt(dist_ref_obs_x_1*dist_ref_obs_x_1+dist_ref_obs_y_1*dist_ref_obs_y_1);
+  max_repulsion_obs1=(sigma_o-(dist_ref_obs_1-R_o1))/(sigma_o-delta_o);
+  if (0>max_repulsion_obs1) {
+    max_repulsion_obs1=0;
+  }
+  NF_o_co(0,0)=-max_repulsion_obs1*(dist_ref_obs_x_1/dist_ref_obs_1);
+  NF_o_co(1,0)=-max_repulsion_obs1*(dist_ref_obs_y_1/dist_ref_obs_1);
+  NF_o_co(2,0)=0;
 
-  // total DSM
-  DSM_total=DSM_s;
-  if (DSM_w<DSM_total){
-    DSM_total=DSM_w;
+  // non conservative part
+  NF_o_nco(2,0)=0;
+  if (sigma_o>=dist_ref_obs_1-R_o1) {
+    NF_o_nco(0,0)=alpha_o_1*dist_ref_obs_y_1;
+    NF_o_nco(1,0)=-alpha_o_1*dist_ref_obs_x_1;
+  }
+  else {
+    NF_o_nco(0,0)=0;
+    NF_o_nco(1,0)=0;
   }
 
+  // combined
 
-  v_dot(0,0)=DSM_total*NF_total(0,0);
-  v_dot(1,0)=DSM_total*NF_total(1,0);
-  v_dot(2,0)=DSM_total*NF_total(2,0);
-  
-  applied_ref_x=v_dot(0,0)*sampling_time + applied_ref_x;
-  applied_ref_y=v_dot(1,0)*sampling_time + applied_ref_y;
-  applied_ref_z=v_dot(2,0)*sampling_time + applied_ref_z;
-
-  geometry_msgs::Pose applied_ref_vec; // applied reference vector
-
-  applied_ref_vec.position.x=applied_ref_x;
-  applied_ref_vec.position.y=applied_ref_y;
-  applied_ref_vec.position.z=applied_ref_z;
-
-  applied_ref_publisher.publish(applied_ref_vec);
-
-  custom_trajectory_out.poses.clear();
-
-  custom_new_point.x = applied_ref_x;
-  custom_new_point.y = applied_ref_y;
-  custom_new_point.z = applied_ref_z;
-
-  uav_applied_ref_out.points.push_back(custom_new_point);
-  uav_applied_ref_message_publisher.publish(uav_applied_ref_out);
-  uav_applied_ref_out.points.clear();
+  NF_o(0,0)=NF_o_co(0,0)+NF_o_nco(0,0);
+  NF_o(1,0)=NF_o_co(1,0)+NF_o_nco(1,0);
+  NF_o(2,0)=NF_o_co(2,0)+NF_o_nco(2,0);
 
 
   /////////////////////////////////////////////////////////////
@@ -673,11 +708,58 @@ void DergTracker::DERG_computation(){
   NF_a(1,0)=NF_a_co(1,0) + NF_a_nco(1,0);
   NF_a(2,0)=NF_a_co(2,0) + NF_a_nco(2,0);
   
+
+  ////////////////////////////////////////////////////////////////////
+  /////////////////// computation of v_dot ///////////////////////////
+  ///////////////////////////////////////////////////////////////////
+
+  // total navigation field
+  NF_total(0,0)=NF_att(0,0) + NF_w(0,0) + NF_o(0.0);
+  NF_total(1,0)=NF_att(1,0) + NF_w(1,0) + NF_o(1,0);
+  NF_total(2,0)=NF_att(2,0) + NF_w(2,0) + NF_o(2,0);
+
+  // total DSM
+  DSM_total=DSM_s;
+  if (DSM_w<DSM_total){
+    DSM_total=DSM_w;
+  }
+  if (DSM_o<DSM_total) {
+    DSM_total=DSM_o;
+  }
+  if (DSM_total<0){
+    DSM_total=0;
+  }
   if (DSM_a<DSM_total){
     DSM_total=DSM_a;
   }
 
   //DSM_total=10; // for constant DSM
+
+  v_dot(0,0)=DSM_total*NF_total(0,0);
+  v_dot(1,0)=DSM_total*NF_total(1,0);
+  v_dot(2,0)=DSM_total*NF_total(2,0);
+  
+  applied_ref_x=v_dot(0,0)*sampling_time + applied_ref_x;
+  applied_ref_y=v_dot(1,0)*sampling_time + applied_ref_y;
+  applied_ref_z=v_dot(2,0)*sampling_time + applied_ref_z;
+
+  geometry_msgs::Pose applied_ref_vec; // applied reference vector
+
+  applied_ref_vec.position.x=applied_ref_x;
+  applied_ref_vec.position.y=applied_ref_y;
+  applied_ref_vec.position.z=applied_ref_z;
+
+  applied_ref_publisher.publish(applied_ref_vec);
+
+  custom_trajectory_out.poses.clear();
+
+  custom_new_point.x = applied_ref_x;
+  custom_new_point.y = applied_ref_y;
+  custom_new_point.z = applied_ref_z;
+
+  uav_applied_ref_out.points.push_back(custom_new_point);
+  uav_applied_ref_message_publisher.publish(uav_applied_ref_out);
+  uav_applied_ref_out.points.clear();
 
   }
 //}
