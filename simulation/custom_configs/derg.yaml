@@ -1,4 +1,4 @@
-use_derg: false
-use_wall_constraints: false
+use_derg: true
+use_wall_constraints: true
 use_cylindrical_constraints: false
 use_agents_avoidance: false
