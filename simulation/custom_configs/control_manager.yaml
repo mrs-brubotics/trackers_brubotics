@@ -1,10 +1,38 @@
+# - list of names of dynamically loaded trackers
 trackers : [
   "MpcTracker",
   "LineTracker",
   "LandoffTracker",
   "JoyTracker",
-  "NullTracker",
+  "MatlabTracker",
   "SpeedTracker",
-  "ModifiedMpc",
+  "NullTracker",
+  "LineTrackerInterns",
   "BypassTracker",
+  "DergTracker",
 ]
+
+# - list of names of dynamically loaded controllers
+controllers : [
+  "Se3Controller",
+  "MpcController",
+  "NsfController",
+  "FailsafeController",
+  "EmergencyController",
+  "Se3ControllerBrubotics",
+]
+
+
+#disable safety area
+safety:
+  tilt_limit_eland : 300000
+  yaw_limit_enabled : 300000
+  tilt_limit_disarm : 300000
+  tilt_error_disarm :
+    enabled : false
+
+safety_area:
+  use_safety_area : false 
+  min_height : 0
+  max_height : 3000
+

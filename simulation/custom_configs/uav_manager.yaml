@@ -1,4 +1,4 @@
 takeoff:
   after_takeoff:
-    controller: "Se3Controller"
-
+    controller: So3ControllerInterns
+    tracker: LineTrackerInterns
