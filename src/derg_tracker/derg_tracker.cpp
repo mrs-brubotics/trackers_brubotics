@@ -1,34 +1,19 @@
 #define VERSION "0.0.0.0"
 
+/*includes//{*/
 #include <ros/ros.h>
 
 #include <mrs_uav_managers/tracker.h>
 
-#include <geometry_msgs/Pose.h>
 #include <geometry_msgs/PoseArray.h>
 
 #include <mrs_msgs/FuturePoint.h>
 #include <mrs_msgs/FutureTrajectory.h>
-#include <mrs_msgs/MpcTrackerDiagnostics.h>
-#include <mrs_msgs/EstimatorType.h>
-
-#include <std_msgs/String.h>
 
 #include <mrs_lib/profiler.h>
-#include <mrs_lib/utils.h>
 #include <mrs_lib/param_loader.h>
 #include <mrs_lib/mutex.h>
-#include <mrs_lib/geometry_utils.h>
-#include <mrs_lib/attitude_converter.h>
-#include <mrs_lib/subscribe_handler.h>
-
-#include <dynamic_reconfigure/server.h>
-#include <mpc_tracker_solver.h>
-
-#include <mrs_uav_trackers/mpc_trackerConfig.h>
-
-#include <visualization_msgs/Marker.h>
-#include <visualization_msgs/MarkerArray.h>
+//}
 
 using namespace Eigen;
 
@@ -38,6 +23,7 @@ namespace mrs_uav_trackers
 namespace derg_tracker
 {
 
+/*class DergTracker//{*/
 class DergTracker : public mrs_uav_managers::Tracker {
 public:
   void                          initialize(const ros::NodeHandle &parent_nh, const std::string uav_name, std::shared_ptr<mrs_uav_managers::CommonHandlers_t> common_handlers);
@@ -93,15 +79,15 @@ private:
 
   // ERG parameters
   MatrixXd v_dot=MatrixXd::Zero(4, 1);// derivative of the applied reference
-   MatrixXd NF_att=MatrixXd::Zero(4, 1); // attraction Navigation field
+  MatrixXd NF_att=MatrixXd::Zero(4, 1); // attraction Navigation field
   MatrixXd ref_dist=MatrixXd::Zero(4, 1); // difference between reference r and applied reference v
   float ref_dist_norm; // norm of res_dist
   float max_dist; // maximum between ref_dist_norm and eta
   float eta; // smoothing parameter
-   float DSM_s; // Dynamic Safety Margin for thrust saturation
+  float DSM_s; // Dynamic Safety Margin for thrust saturation
   float sampling_time=0.002; // sampling frequency 500 Hz
 
-   float kappa_s=1; // kappa parameter of the DSM_s
+  float kappa_s=1; // kappa parameter of the DSM_s
   float T_max= 36.59; // maximum thrust (in Newtons)
   float T_min=0; // minimum thrust (in Newtons)
 
@@ -109,59 +95,74 @@ private:
   float diff_Tmax; // difference between Tmax and T
   float diff_Tmin; // difference between T and Tmin
 
-// gain parameters
+  // gain parameters
 
-float kpxy = 3;
-float kpz = 2;
-float kvxy = 1;
-float kvz = 15;
+  float kpxy = 3;
+  float kpz = 2;
+  float kvxy = 1;
+  float kvz = 15;
 
-// initial conditions
-MatrixXd init_pos = MatrixXd::Zero(3, 1);
-MatrixXd init_vel = MatrixXd::Zero(3, 1);
-
-
-// prediction Parameters
-float g=9.8066;
-float mass=2.0;
-
-float C1_x;
-float C2_x;
-float C1_y;
-float C2_y;
-float C1_z;
-float C2_z;
-
-float delta_xy=kvxy*kvxy-4*kpxy;
-float delta_z=kvz*kvz-4*kpz;
-
-float lambda1_xy=(-kvxy-sqrt(delta_xy))/2;
-float lambda2_xy=(-kvxy+sqrt(delta_xy))/2;
-float lambda1_z=(-kvz-sqrt(delta_z))/2;
-float lambda2_z=(-kvz+sqrt(delta_z))/2;
+  // initial conditions
+  MatrixXd init_pos = MatrixXd::Zero(3, 1);
+  MatrixXd init_vel = MatrixXd::Zero(3, 1);
 
 
-float custom_dt=0.002; // sampling time (in seconds)
-float custom_hor=0.4; // prediction horizon (in samples)
-float sample_hor=custom_hor/custom_dt; // prediction horion ( in samples)
+  // prediction Parameters
+  float g=9.8066;
+  float mass=2.0;
 
-geometry_msgs::PoseArray predicted_thrust_out; // array of thrust predictions
-geometry_msgs::PoseArray custom_trajectory_out;
+  float C1_x;
+  float C2_x;
+  float C1_y;
+  float C2_y;
+  float C1_z;
+  float C2_z;
 
-ros::Publisher custom_predicted_traj_publisher;
-ros::Publisher custom_predicted_thrust_publisher;
-ros::Publisher custom_predicted_velocity_publisher;
+  float delta_xy=kvxy*kvxy-4*kpxy;
+  float delta_z=kvz*kvz-4*kpz;
 
-   ros::Publisher applied_ref_publisher;
+  float lambda1_xy=(-kvxy-sqrt(delta_xy))/2;
+  float lambda2_xy=(-kvxy+sqrt(delta_xy))/2;
+  float lambda1_z=(-kvz-sqrt(delta_z))/2;
+  float lambda2_z=(-kvz+sqrt(delta_z))/2;
+
+
+  float custom_dt=0.002; // sampling time (in seconds)
+  float custom_hor=0.4; // prediction horizon (in samples)
+  float sample_hor=custom_hor/custom_dt; // prediction horion ( in samples)
+
+  geometry_msgs::PoseArray predicted_thrust_out; // array of thrust predictions
+  geometry_msgs::PoseArray custom_trajectory_out;
+
+  ros::Publisher custom_predicted_traj_publisher;
+  ros::Publisher custom_predicted_thrust_publisher;
+  ros::Publisher custom_predicted_velocity_publisher;
+
+  ros::Publisher applied_ref_publisher;
+
+  //use parameter
+  bool use_derg_= true;
+  bool use_wall_constraints_ = false;
+  bool use_cylindrical_constraints_ = false;
+  bool use_agents_avoidance_ = false;
 
 };
+//}
 
+
+/*initialize()//{*/
 void DergTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unused]] const std::string uav_name,
                              [[maybe_unused]] std::shared_ptr<mrs_uav_managers::CommonHandlers_t> common_handlers) {
   ros::Time::waitForValid();
   is_initialized_ = true;
 
   ros::NodeHandle nh_(parent_nh, "derg_tracker");
+  mrs_lib::ParamLoader param_loader(nh_, "DergTracker");
+
+  param_loader.loadParam("use_derg", use_derg_);
+  param_loader.loadParam("use_wall_constraints", use_wall_constraints_);
+  param_loader.loadParam("use_cylindrical_constraints", use_cylindrical_constraints_);
+  param_loader.loadParam("use_agents_avoidance", use_agents_avoidance_);
 
   custom_predicted_traj_publisher = nh_.advertise<geometry_msgs::PoseArray>("custom_predicted_traj", 1);
   custom_predicted_thrust_publisher = nh_.advertise<geometry_msgs::PoseArray>("custom_predicted_thrust", 1);
@@ -169,8 +170,9 @@ void DergTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unused]] 
   ROS_INFO("[DergTracker]: initialized");
    applied_ref_publisher = nh_.advertise<geometry_msgs::Pose>("applied_ref", 1);
 }
+//}
 
-
+/*activate()//{*/
 std::tuple<bool, std::string> DergTracker::activate(const mrs_msgs::PositionCommand::ConstPtr &last_position_cmd) {
   std::stringstream ss;
   ss << "Activated";
@@ -178,18 +180,22 @@ std::tuple<bool, std::string> DergTracker::activate(const mrs_msgs::PositionComm
   ROS_INFO("[DergTracker]: activated");
   return std::tuple(true, ss.str());
 }
+//}
 
-
+/*deactivate()//{*/
 void DergTracker::deactivate(void) {
   is_active_ = false;
   ROS_INFO("[DergTracker]: deactivated");
 }
+//}
 
-
+/*resetStatic//{*/
 bool DergTracker::resetStatic(void) {
   return true;
 }
+//}
 
+/*DERG_computation()//{*/
 void DergTracker::DERG_computation(){
   // computation of the Saturation Dynamic Safety Margin
 
@@ -198,16 +204,16 @@ void DergTracker::DERG_computation(){
   limit_thrust_diff=T_max; // initialization at a high value
   for (size_t i = 0; i < sample_hor; i++) {
     diff_Tmax=T_max-predicted_thrust_out.poses[i].position.x;
-    //ROS_WARN_THROTTLE(1.0, "[MpcTracker] diff_Tmax: %f", diff_Tmax);
+    //ROS_WARN_THROTTLE(1.0, "[DergTracker] diff_Tmax: %f", diff_Tmax);
     diff_Tmin=predicted_thrust_out.poses[i].position.x-T_min;
-    //ROS_WARN_THROTTLE(1.0, "[MpcTracker] diff_Tmin: %f", diff_Tmin);
+    //ROS_WARN_THROTTLE(1.0, "[DergTracker] diff_Tmin: %f", diff_Tmin);
     if (diff_Tmax<limit_thrust_diff) {
       limit_thrust_diff=diff_Tmax;
     }
     if (diff_Tmin < limit_thrust_diff) {
       limit_thrust_diff= diff_Tmin;
     }
-    //ROS_WARN_THROTTLE(1.0, "[MpcTracker]: %f", limit_thrust_diff);
+    //ROS_WARN_THROTTLE(1.0, "[DergTracker]: %f", limit_thrust_diff);
   }
   DSM_s=kappa_s*limit_thrust_diff;
 
@@ -243,7 +249,9 @@ void DergTracker::DERG_computation(){
 
   applied_ref_publisher.publish(applied_ref_vec);
 }
+//}
 
+/*trajectory_prediction()//{*/
 void DergTracker::trajectory_prediction(){
 
   // compute the C2 parameter for each coordinate
@@ -316,8 +324,9 @@ void DergTracker::trajectory_prediction(){
   predicted_thrust_out.poses.clear();
 
 }
+//}
 
-
+/*update()//{*/
 const mrs_msgs::PositionCommand::ConstPtr DergTracker::update(const mrs_msgs::UavState::ConstPtr &                        uav_state,
                                                               [[maybe_unused]] const mrs_msgs::AttitudeCommand::ConstPtr &last_attitude_cmd) {
 
@@ -378,20 +387,22 @@ const mrs_msgs::PositionCommand::ConstPtr DergTracker::update(const mrs_msgs::Ua
     starting_bool=false;
 
     ROS_INFO(
-        "[MPC tracker - odom]: [goto_ref_x=%.2f],[goto_ref_y=%.2f],[goto_ref_z=%.2f]",goto_ref_x,goto_ref_y,goto_ref_z);
+        "[Derg tracker - odom]: [goto_ref_x=%.2f],[goto_ref_y=%.2f],[goto_ref_z=%.2f]",goto_ref_x,goto_ref_y,goto_ref_z);
 
   return mrs_msgs::PositionCommand::ConstPtr(new mrs_msgs::PositionCommand(position_cmd));
 }
 
-    std::scoped_lock lock(mutex_uav_state_);
-
-  DERG_computation(); // modifies the applied reference
-  /*
+  std::scoped_lock lock(mutex_uav_state_);
+  
+  if (use_derg_){
+    DERG_computation(); // modifies the applied reference
+  }
+  else{
   // in case the DERG isn't used
   applied_ref_x=goto_ref_x;
   applied_ref_y=goto_ref_y;
   applied_ref_z=goto_ref_z;
-  */
+  }
 
  // set the desired states from the input of the goto function
 
@@ -416,15 +427,17 @@ const mrs_msgs::PositionCommand::ConstPtr DergTracker::update(const mrs_msgs::Ua
   // can set the jerk to 0
   return mrs_msgs::PositionCommand::ConstPtr(new mrs_msgs::PositionCommand(position_cmd));
 }
+//}
 
-
+/*getStatus()//{*/
 const mrs_msgs::TrackerStatus DergTracker::getStatus() {
   mrs_msgs::TrackerStatus tracker_status;
   tracker_status.active = is_active_;
   return tracker_status;
 }
+//}
 
-
+/*enableCallBacks()//{*/
 const std_srvs::SetBoolResponse::ConstPtr DergTracker::enableCallbacks(const std_srvs::SetBoolRequest::ConstPtr &cmd) {
 
   std_srvs::SetBoolResponse res;
@@ -434,8 +447,9 @@ const std_srvs::SetBoolResponse::ConstPtr DergTracker::enableCallbacks(const std
 
   return std_srvs::SetBoolResponse::ConstPtr(new std_srvs::SetBoolResponse(res));
 }
+//}
 
-
+/*switchOdometruSource()//{*/
 const std_srvs::TriggerResponse::ConstPtr DergTracker::switchOdometrySource(const mrs_msgs::UavState::ConstPtr &new_uav_state) {
 
   std_srvs::TriggerResponse res;
@@ -445,8 +459,9 @@ const std_srvs::TriggerResponse::ConstPtr DergTracker::switchOdometrySource(cons
 
   return std_srvs::TriggerResponse::ConstPtr(new std_srvs::TriggerResponse(res));
 }
+//}
 
-
+/*hover()//{*/
 const std_srvs::TriggerResponse::ConstPtr DergTracker::hover([[maybe_unused]] const std_srvs::TriggerRequest::ConstPtr &cmd) {
   std_srvs::TriggerResponse res;
   res.message = "hover initiated";
@@ -456,31 +471,36 @@ const std_srvs::TriggerResponse::ConstPtr DergTracker::hover([[maybe_unused]] co
 
   return std_srvs::TriggerResponse::ConstPtr(new std_srvs::TriggerResponse(res));
 }
+//}
 
-
+/*startTrajectoryTracking()//{*/
 const std_srvs::TriggerResponse::ConstPtr DergTracker::startTrajectoryTracking([[maybe_unused]] const std_srvs::TriggerRequest::ConstPtr &cmd) {
   hover_ = false;
   return std_srvs::TriggerResponse::Ptr();
 }
+//}
 
-
+/*stopTrajectoryTracking()//{*/
 const std_srvs::TriggerResponse::ConstPtr DergTracker::stopTrajectoryTracking([[maybe_unused]] const std_srvs::TriggerRequest::ConstPtr &cmd) {
   hover_ = true;
   return std_srvs::TriggerResponse::Ptr();
 }
+//}
 
-
+/*resumeTrajectoryTracking()//{*/
 const std_srvs::TriggerResponse::ConstPtr DergTracker::resumeTrajectoryTracking([[maybe_unused]] const std_srvs::TriggerRequest::ConstPtr &cmd) {
   hover_ = false;
   return std_srvs::TriggerResponse::Ptr();
 }
+//}
 
-
+/*gotoTrajectoryStart()//{*/
 const std_srvs::TriggerResponse::ConstPtr DergTracker::gotoTrajectoryStart([[maybe_unused]] const std_srvs::TriggerRequest::ConstPtr &cmd) {
   return std_srvs::TriggerResponse::Ptr();
 }
+//}
 
-
+/*setConstraints()//{*/
 const mrs_msgs::DynamicsConstraintsSrvResponse::ConstPtr DergTracker::setConstraints(const mrs_msgs::DynamicsConstraintsSrvRequest::ConstPtr &cmd) {
 
   mrs_msgs::DynamicsConstraintsSrvResponse res;
@@ -490,8 +510,9 @@ const mrs_msgs::DynamicsConstraintsSrvResponse::ConstPtr DergTracker::setConstra
 
   return mrs_msgs::DynamicsConstraintsSrvResponse::ConstPtr(new mrs_msgs::DynamicsConstraintsSrvResponse(res));
 }
+//}
 
-
+/*setReference()//{*/
 const mrs_msgs::ReferenceSrvResponse::ConstPtr DergTracker::setReference(const mrs_msgs::ReferenceSrvRequest::ConstPtr &cmd) {
 
   mrs_msgs::ReferenceSrvResponse res;
@@ -512,13 +533,14 @@ const mrs_msgs::ReferenceSrvResponse::ConstPtr DergTracker::setReference(const m
 
   return mrs_msgs::ReferenceSrvResponse::ConstPtr(new mrs_msgs::ReferenceSrvResponse(res));
 }
+//}
 
-
+/*setTrajectoryReference()//{*/
 const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergTracker::setTrajectoryReference([
     [maybe_unused]] const mrs_msgs::TrajectoryReferenceSrvRequest::ConstPtr &cmd) {
   return mrs_msgs::TrajectoryReferenceSrvResponse::Ptr();
 }
-
+//}
 
 }  // namespace derg_tracker
 }  // namespace mrs_uav_trackers
