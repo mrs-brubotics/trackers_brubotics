@@ -216,6 +216,26 @@ bool DergTracker::resetStatic(void) {
 
 /*DERG_computation()//{*/
 void DergTracker::DERG_computation(){
+
+  limit_thrust_diff=T_max; // initialization at a high value
+  for (size_t i = 0; i < sample_hor; i++) {
+    diff_Tmax=T_max-predicted_thrust_out.poses[i].position.x;
+    //ROS_WARN_THROTTLE(1.0, "[MpcTracker] diff_Tmax: %f", diff_Tmax);
+    diff_Tmin=predicted_thrust_out.poses[i].position.x-T_min;
+    //ROS_WARN_THROTTLE(1.0, "[MpcTracker] diff_Tmin: %f", diff_Tmin);
+    if (diff_Tmax<limit_thrust_diff) {
+      limit_thrust_diff=diff_Tmax;
+    }
+    if (diff_Tmin < limit_thrust_diff) {
+      limit_thrust_diff= diff_Tmin;
+    }
+    //ROS_WARN_THROTTLE(1.0, "[MpcTracker]: %f", limit_thrust_diff);
+  }
+  DSM_s=kappa_s*limit_thrust_diff;
+
+
+
+  predicted_thrust_out.poses.clear(); // empty the array of thrust prediction once used
  
   ref_dist(0,0)= goto_ref_x-applied_ref_x;
   ref_dist(1,0)= goto_ref_y-applied_ref_y;
@@ -226,7 +246,7 @@ void DergTracker::DERG_computation(){
   if (ref_dist_norm>eta){
     max_dist=ref_dist_norm;
   }
-  
+
   NF_att(0,0)=ref_dist(0,0)/max_dist;
   NF_att(1,0)=ref_dist(1,0)/max_dist;
   NF_att(2,0)=ref_dist(2,0)/max_dist;
@@ -246,7 +266,7 @@ void DergTracker::DERG_computation(){
   NF_total(1,0)=NF_att(1,0);
   NF_total(2,0)=NF_att(2,0);
 
-  DSM_total=1;
+  DSM_total=DSM_s;
 
 
   v_dot(0,0)=DSM_total*NF_total(0,0);
