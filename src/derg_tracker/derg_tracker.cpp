@@ -216,65 +216,6 @@ bool DergTracker::resetStatic(void) {
 
 /*DERG_computation()//{*/
 void DergTracker::DERG_computation(){
-  
-  //////////////////////////////////////////////////////////////////////////////
-  ///////////// Computation of the Saturation Dynamic Safety Margin ////////////
-  //////////////////////////////////////////////////////////////////////////////
-  
-  //DSM_s=10; // for constant DSM_s testing
-
-  limit_thrust_diff=T_max; // initialization at a high value
-  for (size_t i = 0; i < sample_hor; i++) {
-    diff_Tmax=T_max-predicted_thrust_out.poses[i].position.x;
-    //ROS_WARN_THROTTLE(1.0, "[DergTracker] diff_Tmax: %f", diff_Tmax);
-    diff_Tmin=predicted_thrust_out.poses[i].position.x-T_min;
-    //ROS_WARN_THROTTLE(1.0, "[DergTracker] diff_Tmin: %f", diff_Tmin);
-    if (diff_Tmax<limit_thrust_diff) {
-      limit_thrust_diff=diff_Tmax;
-    }
-    if (diff_Tmin < limit_thrust_diff) {
-      limit_thrust_diff= diff_Tmin;
-    }
-    //ROS_WARN_THROTTLE(1.0, "[DergTracker]: %f", limit_thrust_diff);
-  }
-  DSM_s=kappa_s*limit_thrust_diff;
-
-  predicted_thrust_out.poses.clear(); // empty the array of thrust prediction once used
-
-
-  ////////////////////////////////////////////////////////////////////////
-  ///////////// Computation of the wall Dynamic Safety Margin ////////////
-  ////////////////////////////////////////////////////////////////////////
-  
-  // walls 1 ( y=10 )
-  if (use_wall_constraints_){
-    DSM_w=0.01;
-
-    d_w(0,0) = 0;
-    d_w(1,0) = 10;
-
-    c_w(0,0)=1;
-    c_w(1,0)=0;
-    c_w(2,0)=0;
-    c_w(0,1)=0;
-    c_w(1,1)=1;
-    c_w(2,1)=0;
-
-    min_wall_distance= d_w(0,0) -custom_trajectory_out.poses[0].position.x;
-    for (size_t i = 0; i < sample_hor; i++) {
-      if (d_w(0,0) -custom_trajectory_out.poses[i].position.x < min_wall_distance){
-        min_wall_distance=d_w(0,0) -custom_trajectory_out.poses[i].position.x;
-      }
-      if (d_w(1,0) -custom_trajectory_out.poses[i].position.y < min_wall_distance){
-        min_wall_distance=d_w(1,0) -custom_trajectory_out.poses[i].position.y;
-      }
-    }
-    //DSM_w=kappa_w*min_wall_distance;
-  }
-
-  //////////////////////////////////////////////////////////
-  // Computation of the attraction navigation field ///////
-  /////////////////////////////////////////////////////////
  
   ref_dist(0,0)= goto_ref_x-applied_ref_x;
   ref_dist(1,0)= goto_ref_y-applied_ref_y;
@@ -285,6 +226,7 @@ void DergTracker::DERG_computation(){
   if (ref_dist_norm>eta){
     max_dist=ref_dist_norm;
   }
+  
   NF_att(0,0)=ref_dist(0,0)/max_dist;
   NF_att(1,0)=ref_dist(1,0)/max_dist;
   NF_att(2,0)=ref_dist(2,0)/max_dist;
@@ -294,36 +236,22 @@ void DergTracker::DERG_computation(){
   // Computation of the wall repulsion navigation field ///////
   /////////////////////////////////////////////////////////////
 
-  if (use_wall_constraints_){
-    // wall 1
-    max_repulsion_wall1= (sigma_w-(d_w(1,0)-applied_ref_x))/(sigma_w-delta_w);
-    if (0 > max_repulsion_wall1){
-      max_repulsion_wall1=0;
-    }
-
-    NF_w(0,0)=0;
-    NF_w(1,0)=-max_repulsion_wall1;
-    NF_w(2,0)=0;
-  }
 
   ////////////////////////////////////////////////////////////////////
   ///////////////////// computation of v_dot /////////////////////////
   ///////////////////////////////////////////////////////////////////
 
   // total navigation field
-  NF_total(0,0)=NF_att(0,0) + NF_w(0,0);
-  NF_total(1,0)=NF_att(1,0) + NF_w(1,0);
-  NF_total(2,0)=NF_att(2,0) + NF_w(2,0);
+  NF_total(0,0)=NF_att(0,0);
+  NF_total(1,0)=NF_att(1,0);
+  NF_total(2,0)=NF_att(2,0);
 
-  // total DSM
-  DSM_total=DSM_s;
-  if (DSM_w<DSM_total){
-    DSM_total=DSM_w;
-  }
+  DSM_total=1;
 
-  v_dot(0,0)=DSM_s*NF_total(0,0);
-  v_dot(1,0)=DSM_s*NF_total(1,0);
-  v_dot(2,0)=DSM_s*NF_total(2,0);
+
+  v_dot(0,0)=DSM_total*NF_total(0,0);
+  v_dot(1,0)=DSM_total*NF_total(1,0);
+  v_dot(2,0)=DSM_total*NF_total(2,0);
 
   applied_ref_x=v_dot(0,0)*sampling_time + applied_ref_x;
   applied_ref_y=v_dot(1,0)*sampling_time + applied_ref_y;
