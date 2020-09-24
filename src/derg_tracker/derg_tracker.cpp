@@ -212,28 +212,21 @@ void DergTracker::deactivate(void) {
 bool DergTracker::resetStatic(void) {
   return true;
 }
-//}
 
-/*DERG_computation()//{*/
 void DergTracker::DERG_computation(){
 
   limit_thrust_diff=T_max; // initialization at a high value
   for (size_t i = 0; i < sample_hor; i++) {
     diff_Tmax=T_max-predicted_thrust_out.poses[i].position.x;
-    //ROS_WARN_THROTTLE(1.0, "[MpcTracker] diff_Tmax: %f", diff_Tmax);
     diff_Tmin=predicted_thrust_out.poses[i].position.x-T_min;
-    //ROS_WARN_THROTTLE(1.0, "[MpcTracker] diff_Tmin: %f", diff_Tmin);
     if (diff_Tmax<limit_thrust_diff) {
       limit_thrust_diff=diff_Tmax;
     }
     if (diff_Tmin < limit_thrust_diff) {
       limit_thrust_diff= diff_Tmin;
     }
-    //ROS_WARN_THROTTLE(1.0, "[MpcTracker]: %f", limit_thrust_diff);
   }
   DSM_s=kappa_s*limit_thrust_diff;
-
-
 
   predicted_thrust_out.poses.clear(); // empty the array of thrust prediction once used
  
@@ -251,16 +244,6 @@ void DergTracker::DERG_computation(){
   NF_att(1,0)=ref_dist(1,0)/max_dist;
   NF_att(2,0)=ref_dist(2,0)/max_dist;
 
-
-  /////////////////////////////////////////////////////////////
-  // Computation of the wall repulsion navigation field ///////
-  /////////////////////////////////////////////////////////////
-
-
-  ////////////////////////////////////////////////////////////////////
-  ///////////////////// computation of v_dot /////////////////////////
-  ///////////////////////////////////////////////////////////////////
-
   // total navigation field
   NF_total(0,0)=NF_att(0,0);
   NF_total(1,0)=NF_att(1,0);
@@ -268,6 +251,9 @@ void DergTracker::DERG_computation(){
 
   DSM_total=DSM_s;
 
+  ////////////////////////////////////////////////////////////////////
+  ///////////////////// computation of v_dot /////////////////////////
+  ///////////////////////////////////////////////////////////////////
 
   v_dot(0,0)=DSM_total*NF_total(0,0);
   v_dot(1,0)=DSM_total*NF_total(1,0);
@@ -287,9 +273,8 @@ void DergTracker::DERG_computation(){
 
   custom_trajectory_out.poses.clear();
 }
-//}
 
-/*trajectory_prediction()//{*/
+
 void DergTracker::trajectory_prediction(){
 
   // compute the C2 parameter for each coordinate
