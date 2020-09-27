@@ -112,7 +112,7 @@ private:
 
   MatrixXd NF_w = MatrixXd::Zero(3, 1); // Wall repulsion navigation field
   float sigma_w=2;
-  float delta_w=0.02;
+  float delta_w=0.1;
   float max_repulsion_wall1;
   
 
@@ -280,6 +280,21 @@ void DergTracker::DERG_computation(){
 
   DSM_o=kappa_o*min_obs_distance;
 
+  d_w(1,0) = 5 - arm_radius;
+
+  c_w(0,0)=1;
+  c_w(1,0)=0;
+  c_w(2,0)=0;
+
+  min_wall_distance= abs(d_w(1,0) -custom_trajectory_out.poses[0].position.x);
+  for (size_t i = 0; i < sample_hor; i++) {
+    if (abs(d_w(1,0) -custom_trajectory_out.poses[i].position.x) < min_wall_distance){
+      min_wall_distance=abs(d_w(1,0) -custom_trajectory_out.poses[i].position.x);
+    }
+  }
+  DSM_w=kappa_w*min_wall_distance;
+
+
   ref_dist(0,0)= goto_ref_x-applied_ref_x;
   ref_dist(1,0)= goto_ref_y-applied_ref_y;
   ref_dist(2,0)= goto_ref_z-applied_ref_z;
@@ -330,16 +345,26 @@ void DergTracker::DERG_computation(){
   NF_o(1,0)=NF_o_co(1,0)+NF_o_nco(1,0);
   NF_o(2,0)=NF_o_co(2,0)+NF_o_nco(2,0);
 
+  max_repulsion_wall1= (sigma_w-(abs(d_w(1,0)-applied_ref_x)))/(sigma_w-delta_w);
+  if (0 > max_repulsion_wall1){
+    max_repulsion_wall1=0;
+  }
+  NF_w(0,0)=-max_repulsion_wall1;
+  NF_w(1,0)=0;
+  NF_w(2,0)=0;
+
   // total navigation field
-  NF_total(0,0)=NF_att(0,0) + NF_o(0,0);
-  NF_total(1,0)=NF_att(1,0) + NF_o(1,0);
-  NF_total(2,0)=NF_att(2,0) + NF_o(2,0);
+  NF_total(0,0)=NF_att(0,0) + NF_o(0,0) + NF_w(0,0);
+  NF_total(1,0)=NF_att(1,0) + NF_o(1,0) + NF_w(1,0);
+  NF_total(2,0)=NF_att(2,0) + NF_o(2,0) + NF_w(2,0);
 
   DSM_total=DSM_s;
   if(DSM_o <= DSM_total){
     DSM_total=DSM_o;
   }
-
+  if(DSM_w <= DSM_total){
+    DSM_total=DSM_w;
+  }
 
 
   ////////////////////////////////////////////////////////////////////
