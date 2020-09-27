@@ -26,10 +26,10 @@ namespace derg_tracker
 /*class DergTracker//{*/
 class DergTracker : public mrs_uav_managers::Tracker {
 public:
-  void                          initialize(const ros::NodeHandle &parent_nh, const std::string uav_name, std::shared_ptr<mrs_uav_managers::CommonHandlers_t> common_handlers);
+  void initialize(const ros::NodeHandle &parent_nh, const std::string uav_name, std::shared_ptr<mrs_uav_managers::CommonHandlers_t> common_handlers);
   std::tuple<bool, std::string> activate(const mrs_msgs::PositionCommand::ConstPtr &last_position_cmd);
-  void                          deactivate(void);
-  bool                          resetStatic(void);
+  void deactivate(void);
+  bool resetStatic(void);
 
   const mrs_msgs::PositionCommand::ConstPtr update(const mrs_msgs::UavState::ConstPtr &uav_state, const mrs_msgs::AttitudeCommand::ConstPtr &last_attitude_cmd);
   const mrs_msgs::TrackerStatus             getStatus();
@@ -47,7 +47,7 @@ public:
   const std_srvs::TriggerResponse::ConstPtr resumeTrajectoryTracking(const std_srvs::TriggerRequest::ConstPtr &cmd);
   const std_srvs::TriggerResponse::ConstPtr gotoTrajectoryStart(const std_srvs::TriggerRequest::ConstPtr &cmd);
   void trajectory_prediction(void);
-   void DERG_computation();
+  void DERG_computation();
 private:
   ros::NodeHandle                                    nh_;
   mrs_msgs::UavState uav_state_;
@@ -100,21 +100,49 @@ private:
   float diff_Tmin; // difference between T and Tmin
 
   // Wall all_constraints
-  float kappa_w=10;
-  float Nw=2; // number of walls
+  float kappa_w=5;
+  float Nw=1; // number of walls
   float DSM_w; // Dynamic Safety Margin for wall constraints
   float arm_radius=0.2; // radius of the quadrotor
   float min_wall_distance; // minimum distance with a wall
 
   // walls 1 ( y=10 ) 
   MatrixXd d_w=MatrixXd::Zero(3, 1); // d_w matrix of constraints
-  MatrixXd c_w=MatrixXd::Zero(3, 3); // c_w matrix of constraints
+  MatrixXd c_w=MatrixXd::Zero(3, 1); // c_w matrix of constraints
 
   MatrixXd NF_w = MatrixXd::Zero(3, 1); // Wall repulsion navigation field
   float sigma_w=2;
   float delta_w=0.02;
   float max_repulsion_wall1;
   
+
+  // Obstacle 1
+    float kappa_o=10;
+  float N_o=1; //number of obstacles
+  float DSM_o; // Dynamic Safety Margin for obstacle constraints
+  float min_obs_distance; // minimum distance with an obstacle
+
+  // obstacle 1
+  float R_o1= 1+arm_radius; // radius of obstacle 1 + uav radius
+  MatrixXd o_1=MatrixXd::Zero(2, 1); // center of obstacle ( in (x,y))
+  MatrixXd o_2=MatrixXd::Zero(2, 1); // center of obstacle ( in (x,y))
+
+  MatrixXd NF_o = MatrixXd::Zero(3, 1); // obstacle repulsion navugation field
+  MatrixXd NF_o_co = MatrixXd::Zero(3, 1); // conservative part
+  MatrixXd NF_o_nco = MatrixXd::Zero(3, 1); // non conservative part
+
+  float sigma_o=2.5;
+  float delta_o=0.1;
+  float dist_obs_x_1;
+  float dist_obs_y_1;
+  float dist_obs_1;
+  float dist_ref_obs_x_1;
+  float dist_ref_obs_y_1;
+  float dist_ref_obs_1;
+  float max_repulsion_obs1;
+  float alpha_o_1=0.5;
+
+
   // gain parameters
   float kpxy = 15;
   float kpz = 15;
@@ -183,6 +211,7 @@ void DergTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unused]] 
   param_loader.loadParam("use_cylindrical_constraints", use_cylindrical_constraints_);
   param_loader.loadParam("use_agents_avoidance", use_agents_avoidance_);
 
+
   custom_predicted_traj_publisher = nh_.advertise<geometry_msgs::PoseArray>("custom_predicted_traj", 1);
   custom_predicted_thrust_publisher = nh_.advertise<geometry_msgs::PoseArray>("custom_predicted_thrust", 1);
   custom_predicted_velocity_publisher = nh_.advertise<geometry_msgs::PoseArray>("custom_predicted_vel", 1);
@@ -230,6 +259,27 @@ void DergTracker::DERG_computation(){
 
   predicted_thrust_out.poses.clear(); // empty the array of thrust prediction once used
  
+  o_1(0,0)=0; // x=0
+  o_1(1,0)=-5; // y=40;
+
+
+  dist_obs_x_1=custom_trajectory_out.poses[0].position.x-o_1(0,0);
+  dist_obs_y_1=custom_trajectory_out.poses[0].position.y-o_1(1,0);
+  dist_obs_1=sqrt(dist_obs_x_1*dist_obs_x_1+dist_obs_y_1*dist_obs_y_1);
+
+  min_obs_distance=dist_obs_1-R_o1;
+  for (size_t i = 1; i < sample_hor; i++) {
+    dist_obs_x_1=custom_trajectory_out.poses[i].position.x-o_1(0,0);
+    dist_obs_y_1=custom_trajectory_out.poses[i].position.y-o_1(1,0);
+
+    dist_obs_1=sqrt(dist_obs_x_1*dist_obs_x_1+dist_obs_y_1*dist_obs_y_1);
+    if (dist_obs_1-R_o1<min_obs_distance) {
+      min_obs_distance=dist_obs_1-R_o1;
+    }
+  }
+
+  DSM_o=kappa_o*min_obs_distance;
+
   ref_dist(0,0)= goto_ref_x-applied_ref_x;
   ref_dist(1,0)= goto_ref_y-applied_ref_y;
   ref_dist(2,0)= goto_ref_z-applied_ref_z;
@@ -244,12 +294,53 @@ void DergTracker::DERG_computation(){
   NF_att(1,0)=ref_dist(1,0)/max_dist;
   NF_att(2,0)=ref_dist(2,0)/max_dist;
 
+
+  /////////////////////////////////////////////////////////////
+  // computation of the obstacle repulsion navigation field ///////
+  /////////////////////////////////////////////////////////////
+
+  // Conservative part
+  dist_ref_obs_x_1=o_1(0,0)-applied_ref_x; // x distance between v and obstacle 1
+  dist_ref_obs_y_1=o_1(1,0)-applied_ref_y; // y distance between v and obstacle 1
+  dist_ref_obs_1=sqrt(dist_ref_obs_x_1*dist_ref_obs_x_1+dist_ref_obs_y_1*dist_ref_obs_y_1);
+
+  max_repulsion_obs1=(sigma_o-(dist_ref_obs_1-R_o1))/(sigma_o-delta_o);
+  if (0>max_repulsion_obs1) {
+    max_repulsion_obs1=0;
+  }
+
+
+  NF_o_co(0,0)=-(max_repulsion_obs1*(dist_ref_obs_x_1/dist_ref_obs_1));
+  NF_o_co(1,0)=-(max_repulsion_obs1*(dist_ref_obs_y_1/dist_ref_obs_1));
+  NF_o_co(2,0)=0;
+
+  // non conservative part
+  NF_o_nco(2,0)=0;
+  if (sigma_o>=dist_ref_obs_1-R_o1) {
+      NF_o_nco(0,0)=alpha_o_1*(dist_ref_obs_y_1/dist_ref_obs_1);
+      NF_o_nco(1,0)=-alpha_o_1*(dist_ref_obs_x_1/dist_ref_obs_1);
+  } else {
+        NF_o_nco(0,0)=0;
+        NF_o_nco(1,0)=0;
+        }
+
+  // combined
+
+  NF_o(0,0)=NF_o_co(0,0)+NF_o_nco(0,0);
+  NF_o(1,0)=NF_o_co(1,0)+NF_o_nco(1,0);
+  NF_o(2,0)=NF_o_co(2,0)+NF_o_nco(2,0);
+
   // total navigation field
-  NF_total(0,0)=NF_att(0,0);
-  NF_total(1,0)=NF_att(1,0);
-  NF_total(2,0)=NF_att(2,0);
+  NF_total(0,0)=NF_att(0,0) + NF_o(0,0);
+  NF_total(1,0)=NF_att(1,0) + NF_o(1,0);
+  NF_total(2,0)=NF_att(2,0) + NF_o(2,0);
 
   DSM_total=DSM_s;
+  if(DSM_o <= DSM_total){
+    DSM_total=DSM_o;
+  }
+
+
 
   ////////////////////////////////////////////////////////////////////
   ///////////////////// computation of v_dot /////////////////////////
