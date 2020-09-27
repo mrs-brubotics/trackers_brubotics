@@ -123,7 +123,7 @@ private:
   float min_obs_distance; // minimum distance with an obstacle
 
   // obstacle 1
-  float R_o1= 1+arm_radius; // radius of obstacle 1 + uav radius
+  float R_o1= 0.5+arm_radius; // radius of obstacle 1 + uav radius
   MatrixXd o_1=MatrixXd::Zero(2, 1); // center of obstacle ( in (x,y))
   MatrixXd o_2=MatrixXd::Zero(2, 1); // center of obstacle ( in (x,y))
 
