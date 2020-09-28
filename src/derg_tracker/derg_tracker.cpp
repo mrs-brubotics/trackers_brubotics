@@ -142,6 +142,13 @@ private:
   float max_repulsion_obs1;
   float alpha_o_1=0.5;
 
+  float pos_error_x;
+  float pos_error_y;
+  float pos_error_z;
+  float pos_error;
+  float kappa_a=100;
+  float DSM_a;
+
 
   // gain parameters
   float kpxy = 15;
@@ -294,6 +301,13 @@ void DergTracker::DERG_computation(){
   }
   DSM_w=kappa_w*min_wall_distance;
 
+  pos_error_x= applied_ref_x - init_pos(0,0);
+  pos_error_y= applied_ref_y - init_pos(1,0);
+  pos_error_z= applied_ref_z - init_pos(2,0);
+  pos_error= sqrt(pos_error_x*pos_error_x + pos_error_y*pos_error_y + pos_error_z*pos_error_z);
+
+  DSM_a=kappa_a*(Sa-pos_error);
+
 
   ref_dist(0,0)= goto_ref_x-applied_ref_x;
   ref_dist(1,0)= goto_ref_y-applied_ref_y;
@@ -364,6 +378,9 @@ void DergTracker::DERG_computation(){
   }
   if(DSM_w <= DSM_total){
     DSM_total=DSM_w;
+  }
+  if(DSM_a <= DSM_total){
+    DSM_total=DSM_a;
   }
 
 
