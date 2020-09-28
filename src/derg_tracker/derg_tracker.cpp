@@ -56,7 +56,8 @@ private:
   std::mutex         mutex_goal_;
 
 
-  mrs_lib::Profiler profiler_;
+  mrs_lib::Profiler profiler;
+  bool              _profiler_enabled_ = false;
 
   bool is_initialized_ = false;
   bool is_active_      = false;
@@ -65,6 +66,16 @@ private:
   double uav_x_ = 0;
   double uav_y_ = 0;
   double uav_z_ = 2;
+
+  mrs_msgs::FutureTrajectory     future_trajectory_out;
+  mrs_msgs::FutureTrajectory uav_applied_ref_out;
+  mrs_msgs::FuturePoint custom_new_point;
+
+  std::map<std::string, mrs_msgs::FutureTrajectory>      other_drones_applied_references;
+  std::vector<ros::Subscriber>                           other_uav_applied_ref_subscribers;
+  /////////////////////////////////////////////////
+
+  ros::Publisher uav_applied_ref_message_publisher;
 
   bool starting_bool=true;
 
@@ -149,6 +160,23 @@ private:
   float kappa_a=100;
   float DSM_a;
 
+  MatrixXd NF_a = MatrixXd::Zero(3, 1); // agent repulsion navigation field
+  MatrixXd NF_a_co = MatrixXd::Zero(3, 1); // conservative part
+  MatrixXd NF_a_nco = MatrixXd::Zero(3, 1); // non conservative part
+  std::string _uav_name_;
+  std::string other_uav_name;
+  std::vector<std::string> _avoidance_other_uav_names_;
+  float other_uav_ref_x;
+  float other_uav_ref_y;
+  float dist_between_ref_x;
+  float dist_between_ref_y;
+  float dist_between_ref;
+  float max_repulsion_other_uav;
+  float sigma_a=1;
+  float delta_a=0.01;
+  float Ra=0.4;
+  float Sa=1.6;
+  float alpha_a=0.1;
 
   // gain parameters
   float kpxy = 15;
@@ -160,7 +188,7 @@ private:
   MatrixXd init_pos = MatrixXd::Zero(3, 1);
   MatrixXd init_vel = MatrixXd::Zero(3, 1);
 
-
+  void callbackOtherUavAppliedRef(const mrs_msgs::FutureTrajectoryConstPtr& msg);
   // prediction Parameters
   float g=9.8066;
   float mass=2.0;
@@ -218,12 +246,27 @@ void DergTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unused]] 
   param_loader.loadParam("use_cylindrical_constraints", use_cylindrical_constraints_);
   param_loader.loadParam("use_agents_avoidance", use_agents_avoidance_);
 
-
+  profiler = mrs_lib::Profiler(nh_, "MpcTracker", _profiler_enabled_);
   custom_predicted_traj_publisher = nh_.advertise<geometry_msgs::PoseArray>("custom_predicted_traj", 1);
   custom_predicted_thrust_publisher = nh_.advertise<geometry_msgs::PoseArray>("custom_predicted_thrust", 1);
   custom_predicted_velocity_publisher = nh_.advertise<geometry_msgs::PoseArray>("custom_predicted_vel", 1);
   ROS_INFO("[DergTracker]: initialized");
-   applied_ref_publisher = nh_.advertise<geometry_msgs::Pose>("applied_ref", 1);
+  future_trajectory_out.stamp    = ros::Time::now();
+  future_trajectory_out.uav_name = _uav_name_;
+
+  uav_applied_ref_out=future_trajectory_out; // initialize the message
+
+  uav_applied_ref_message_publisher = nh_.advertise<mrs_msgs::FutureTrajectory>("uav_applied_ref", 1);
+  for (unsigned long i = 0; i < int(_avoidance_other_uav_names_.size()); i++) {
+
+    std::string applied_ref_topic_name = std::string("/") + _avoidance_other_uav_names_[i] + std::string("/") + std::string("control_manager/derg_tracker/uav_applied_ref");
+
+    ROS_INFO("[DergTracker]: subscribing to %s", applied_ref_topic_name.c_str());
+
+    other_uav_applied_ref_subscribers.push_back(
+        nh_.subscribe(applied_ref_topic_name, 1, &DergTracker::callbackOtherUavAppliedRef, this, ros::TransportHints().tcpNoDelay()));
+
+  }
 }
 //}
 
@@ -367,10 +410,41 @@ void DergTracker::DERG_computation(){
   NF_w(1,0)=0;
   NF_w(2,0)=0;
 
+
+  std::map<std::string, mrs_msgs::FutureTrajectory>::iterator u = other_drones_applied_references.begin();
+
+  while (u != other_drones_applied_references.end()) {
+    other_uav_ref_x = u->second.points[0].x;
+    other_uav_ref_y = u->second.points[0].y;
+    dist_between_ref_x = other_uav_ref_x - applied_ref_x;
+    dist_between_ref_y = other_uav_ref_y - applied_ref_y;
+    dist_between_ref= sqrt(dist_between_ref_x*dist_between_ref_x+dist_between_ref_y*dist_between_ref_y);
+
+    // Conservative part
+    max_repulsion_other_uav=(sigma_a-(dist_between_ref-2*Ra-2*Sa))/(sigma_a-delta_a);
+    if (0>max_repulsion_other_uav) {
+      max_repulsion_other_uav=0;
+    }
+
+    NF_a_co(0,0)=NF_a_co(0,0)-max_repulsion_other_uav*(dist_between_ref_x/dist_between_ref);
+    NF_a_co(1,0)=NF_a_co(1,0)-max_repulsion_other_uav*(dist_between_ref_y/dist_between_ref);
+
+    // Non conservative part
+    if (sigma_a >= dist_between_ref-2*Ra-2*Sa) {
+      NF_a_nco(0,0)=NF_a_nco(0,0) + alpha_a*(dist_between_ref_y/dist_between_ref);
+      NF_a_nco(1,0)=NF_a_nco(1,0) -alpha_a*(dist_between_ref_x/dist_between_ref);
+    }
+    u++;
+  }
+
+  NF_a(0,0)=NF_a_co(0,0) + NF_a_nco(0,0);
+  NF_a(1,0)=NF_a_co(1,0) + NF_a_nco(1,0);
+  NF_a(2,0)=NF_a_co(2,0) + NF_a_nco(2,0);
+
   // total navigation field
-  NF_total(0,0)=NF_att(0,0) + NF_o(0,0) + NF_w(0,0);
-  NF_total(1,0)=NF_att(1,0) + NF_o(1,0) + NF_w(1,0);
-  NF_total(2,0)=NF_att(2,0) + NF_o(2,0) + NF_w(2,0);
+  NF_total(0,0)=NF_att(0,0) + NF_o(0,0) + NF_w(0,0) + NF_a(0,0);
+  NF_total(1,0)=NF_att(1,0) + NF_o(1,0) + NF_w(1,0) + NF_a(1,0);
+  NF_total(2,0)=NF_att(2,0) + NF_o(2,0) + NF_w(2,0) + NF_a(2,0);
 
   DSM_total=DSM_s;
   if(DSM_o <= DSM_total){
@@ -396,14 +470,13 @@ void DergTracker::DERG_computation(){
   applied_ref_y=v_dot(1,0)*sampling_time + applied_ref_y;
   applied_ref_z=v_dot(2,0)*sampling_time + applied_ref_z;
 
-  geometry_msgs::Pose applied_ref_vec; // applied reference vector
+  custom_new_point.x=applied_ref_x;
+  custom_new_point.y=applied_ref_y;
+  custom_new_point.z=applied_ref_z;
 
-  applied_ref_vec.position.x=applied_ref_x;
-  applied_ref_vec.position.y=applied_ref_y;
-  applied_ref_vec.position.z=applied_ref_z;
-
-  applied_ref_publisher.publish(applied_ref_vec);
-
+  uav_applied_ref_out.points.push_back(custom_new_point);
+  uav_applied_ref_message_publisher.publish(uav_applied_ref_out);
+  uav_applied_ref_out.points.clear();
   custom_trajectory_out.poses.clear();
 }
 
@@ -486,7 +559,7 @@ void DergTracker::trajectory_prediction(){
 const mrs_msgs::PositionCommand::ConstPtr DergTracker::update(const mrs_msgs::UavState::ConstPtr &                        uav_state,
                                                               [[maybe_unused]] const mrs_msgs::AttitudeCommand::ConstPtr &last_attitude_cmd) {
 
-  mrs_lib::Routine profiler_routine = profiler_.createRoutine("update");
+  mrs_lib::Routine profiler_routine = profiler.createRoutine("update");
 
 
   {
@@ -697,6 +770,13 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergTracker::setTraject
   return mrs_msgs::TrajectoryReferenceSrvResponse::Ptr();
 }
 //}
+void DergTracker::callbackOtherUavAppliedRef(const mrs_msgs::FutureTrajectoryConstPtr& msg) {
+
+  mrs_lib::Routine profiler_routine = profiler.createRoutine("callbackOtherUavAppliedRef");
+
+  mrs_msgs::FutureTrajectory temp_pose= *msg;
+  other_drones_applied_references[msg->uav_name] = temp_pose;
+}
 
 }  // namespace derg_tracker
 }  // namespace mrs_uav_trackers
