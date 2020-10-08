@@ -48,7 +48,9 @@ const std_srvs::TriggerResponse::ConstPtr stopTrajectoryTracking(const std_srvs:
 const std_srvs::TriggerResponse::ConstPtr resumeTrajectoryTracking(const std_srvs::TriggerRequest::ConstPtr &cmd);
 const std_srvs::TriggerResponse::ConstPtr gotoTrajectoryStart(const std_srvs::TriggerRequest::ConstPtr &cmd);
 void trajectory_prediction(void);
+void trajectory_prediction_general();
 void DERG_computation();
+
 private:
 ros::NodeHandle nh_;
 mrs_msgs::UavState uav_state_;
@@ -78,7 +80,8 @@ std::vector<ros::Subscriber> other_uav_applied_ref_subscribers;
 ros::Publisher uav_applied_ref_message_publisher;
 
 bool starting_bool=true;
-
+ std::map<std::string, mrs_msgs::FutureTrajectory>      other_drones_positions;
+  std::vector<ros::Subscriber>                           other_uav_subscribers;
 float goto_ref_x=0;
 float goto_ref_y=0;
 float goto_ref_z=0;
@@ -126,7 +129,7 @@ float sigma_w=2;
 float delta_w=0.01; // first keep it at 0, increase to 0.05 and check if there are constraint violations
 float max_repulsion_wall1;
 float pos_error_init;
-
+  int            my_uav_number;
 // Obstacle 1
 float kappa_o=10;
 float N_o=1; //number of obstacles
@@ -159,13 +162,14 @@ float pos_error_z;
 float pos_error;
 float kappa_a=10; // decrease if propblems persist
 float DSM_a;
-
+  int            my_uav_priority;
 MatrixXd NF_a = MatrixXd::Zero(3, 1); // agent repulsion navigation field
 MatrixXd NF_a_co = MatrixXd::Zero(3, 1); // conservative part
 MatrixXd NF_a_nco = MatrixXd::Zero(3, 1); // non conservative part
-std::string _uav_name_;
+std::string uav_name_;
 std::string other_uav_name;
 std::vector<std::string> _avoidance_other_uav_names_;
+
 float other_uav_ref_x;
 float other_uav_ref_y;
 float dist_between_ref_x;
@@ -178,6 +182,18 @@ float Ra=0.4;
 float Sa=1.6;
 float alpha_a=0.1;
 
+  float other_uav_pos_x;
+  float other_uav_pos_y;
+  float other_uav_pos_z;
+  float dist_between_agents_x;
+  float dist_between_agents_y;
+  float dist_between_agents_z;
+  float dist_between_agents;
+
+  std::vector<std::string>                               other_drone_names_;
+  float min_dist_agents;
+  geometry_msgs::Pose min_dist_agents_vect; // ditance between agents as vector to publish it
+
 // gain parameters
 float kpxy = 15;
 float kpz = 15;
@@ -187,8 +203,10 @@ float kvz = 8;
 // initial conditions
 MatrixXd init_pos = MatrixXd::Zero(3, 1);
 MatrixXd init_vel = MatrixXd::Zero(3, 1);
+MatrixXd init_accel = MatrixXd::Zero(3, 1);
 
 void callbackOtherUavAppliedRef(const mrs_msgs::FutureTrajectoryConstPtr& msg);
+void callbackOtherUavPosition(const mrs_msgs::FutureTrajectoryConstPtr& msg);
 // prediction Parameters
 float g=9.8066;
 float mass=3.0;
@@ -218,14 +236,16 @@ geometry_msgs::PoseArray custom_trajectory_out;
 ros::Publisher custom_predicted_traj_publisher;
 ros::Publisher custom_predicted_thrust_publisher;
 ros::Publisher custom_predicted_velocity_publisher;
-
-ros::Publisher applied_ref_publisher;
+  mrs_msgs::FutureTrajectory uav_current_position_out;
+  mrs_msgs::FuturePoint custom_position;
 
 //use parameter
 bool use_derg_= true;
 bool use_wall_constraints_ = false;
 bool use_cylindrical_constraints_ = false;
 bool use_agents_avoidance_ = true;
+  ros::Publisher uav_current_position_publisher; // publishes the current position of the uav + name of the uav
+  ros::Publisher min_agent_dist_publisher; // publishes the minimum distance between this agent and the other ones
 
 };
 //}
@@ -235,7 +255,7 @@ void DergTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unused]] 
 [[maybe_unused]] std::shared_ptr<mrs_uav_managers::CommonHandlers_t> common_handlers) {
 ros::Time::waitForValid();
 is_initialized_ = true;
-
+uav_name_             = uav_name;
 ros::NodeHandle nh_(parent_nh, "derg_tracker");
 mrs_lib::ParamLoader param_loader(nh_, "DergTracker");
 
@@ -243,18 +263,42 @@ param_loader.loadParam("use_derg", use_derg_);
 param_loader.loadParam("use_wall_constraints", use_wall_constraints_);
 param_loader.loadParam("use_cylindrical_constraints", use_cylindrical_constraints_);
 param_loader.loadParam("use_agents_avoidance", use_agents_avoidance_);
+  param_loader.loadParam("network/robot_names", other_drone_names_);
 
+  sscanf(uav_name_.c_str(), "uav%d", &my_uav_number);
+  ROS_INFO("[DergTracker]: Numerical ID of this UAV is %d", my_uav_number);
+  my_uav_priority = my_uav_number;
 
-profiler = mrs_lib::Profiler(nh_, "MpcTracker", _profiler_enabled_);
+  // exclude this drone from the list
+  std::vector<std::string>::iterator it = other_drone_names_.begin();
+  while (it != other_drone_names_.end()) {
+
+    std::string temp_str = *it;
+
+    int other_uav_priority;
+    sscanf(temp_str.c_str(), "uav%d", &other_uav_priority);
+
+    if (other_uav_priority == my_uav_number) {
+
+      other_drone_names_.erase(it);
+      continue;
+    }
+
+    it++;
+  }
+
+profiler = mrs_lib::Profiler(nh_, "DergTracker", _profiler_enabled_);
 custom_predicted_traj_publisher = nh_.advertise<geometry_msgs::PoseArray>("custom_predicted_traj", 1);
 custom_predicted_thrust_publisher = nh_.advertise<geometry_msgs::PoseArray>("custom_predicted_thrust", 1);
 custom_predicted_velocity_publisher = nh_.advertise<geometry_msgs::PoseArray>("custom_predicted_vel", 1);
 ROS_INFO("[DergTracker]: initialized");
 
 future_trajectory_out.stamp = ros::Time::now();
-future_trajectory_out.uav_name = _uav_name_;
+future_trajectory_out.uav_name = uav_name_;
+future_trajectory_out.priority = my_uav_priority;
 
 uav_applied_ref_out=future_trajectory_out; // initialize the message
+
 
 uav_applied_ref_message_publisher = nh_.advertise<mrs_msgs::FutureTrajectory>("uav_applied_ref", 1);
 
@@ -264,9 +308,8 @@ std::string applied_ref_topic_name = std::string("/") + _avoidance_other_uav_nam
 
 ROS_INFO("[DergTracker]: subscribing to %s", applied_ref_topic_name.c_str());
 
-other_uav_applied_ref_subscribers.push_back(
+other_uav_subscribers.push_back(
 nh_.subscribe(applied_ref_topic_name, 1, &DergTracker::callbackOtherUavAppliedRef, this, ros::TransportHints().tcpNoDelay()));
-
 }
 }
 //}
@@ -348,8 +391,7 @@ pos_error_x= applied_ref_x - custom_trajectory_out.poses[0].position.x;
 pos_error_y= applied_ref_y - custom_trajectory_out.poses[0].position.y;
 pos_error_z= applied_ref_z - custom_trajectory_out.poses[0].position.z;
 pos_error_init= sqrt(pos_error_x*pos_error_x + pos_error_y*pos_error_y + pos_error_z*pos_error_z);
-
-DSM_a=kappa_a*(Sa-pos_error);
+DSM_a=kappa_a*(Sa-pos_error_init);
 
 ref_dist(0,0)= goto_ref_x-applied_ref_x;
 ref_dist(1,0)= goto_ref_y-applied_ref_y;
@@ -416,11 +458,12 @@ NF_a_nco(1,0)=0;
 NF_a_nco(2,0)=0;
 
 std::map<std::string, mrs_msgs::FutureTrajectory>::iterator u = other_drones_applied_references.begin();
-
+ROS_INFO("Position is %f", u->second.points[0].x);
+ROS_INFO("Other drone reference is %f", other_drones_applied_references);
 while (u != other_drones_applied_references.end()) {
-other_uav_ref_x = u->second.points[0].x;
+other_uav_ref_x = u->second.points[0].x;//Second means accessing the second part of the iterator. Here it is FutureTrajectory
 other_uav_ref_y = u->second.points[0].y;
-ROS_DEBUG_STREAM_DELAYED_THROTTLE(1, second.points[0].x); 
+
 dist_between_ref_x = other_uav_ref_x - applied_ref_x;
 dist_between_ref_y = other_uav_ref_y - applied_ref_y;
 dist_between_ref= sqrt(dist_between_ref_x*dist_between_ref_x+dist_between_ref_y*dist_between_ref_y);
@@ -467,8 +510,7 @@ if(DSM_total<0){
 DSM_total=0;
 }
 
-DSM_total=1;
-
+DSM_total=10;
 //Adding terminal constraint
 
 ////////////////////////////////////////////////////////////////////
@@ -494,11 +536,69 @@ uav_applied_ref_out.points.clear();
 custom_trajectory_out.poses.clear();
 }
 
-/*
+
 void DergTracker::trajectory_prediction_general(){
-using general form with euler formulation (discrete time impletementation)
+
+
+custom_trajectory_out.header.stamp = ros::Time::now();
+custom_trajectory_out.header.frame_id = uav_state_.header.frame_id;
+
+predicted_thrust_out.header.stamp = ros::Time::now();
+predicted_thrust_out.header.frame_id = uav_state_.header.frame_id;
+
+geometry_msgs::Pose custom_pose;
+geometry_msgs::Pose custom_vel;
+geometry_msgs::Pose custom_acceleration;
+geometry_msgs::Pose predicted_thrust; // not physically correct of course. We just had problems publishing other types of arrays that weren't custom
+geometry_msgs::Pose predicted_thrust_norm; // predicted thrust norm
+
+{
+for (int i = 0; i < sample_hor; i++) {
+  if(i==0){
+    custom_pose.position.x = 0;
+    custom_pose.position.y = 0;
+    custom_pose.position.z = 0;
+
+    custom_vel.position.x = 0;
+    custom_vel.position.y = 0;
+    custom_vel.position.z = 0;
+
+    custom_acceleration.position.x = kpxy*(applied_ref_x-custom_pose.position.x)-kvxy*custom_vel.position.x;
+    custom_acceleration.position.y = kpxy*(applied_ref_y-custom_pose.position.y)-kvxy*custom_vel.position.y;
+    custom_acceleration.position.z = kpz*(applied_ref_z-custom_pose.position.z)-kvz*custom_vel.position.z;
+  
+    predicted_thrust.position.x = mass*custom_acceleration.position.x;
+    predicted_thrust.position.y = mass*custom_acceleration.position.y;
+    predicted_thrust.position.z = mass*custom_acceleration.position.x+mass*g;
+
+    predicted_thrust_norm.position.x= sqrt(predicted_thrust.position.x*predicted_thrust.position.x+predicted_thrust.position.y*predicted_thrust.position.y+predicted_thrust.position.z*predicted_thrust.position.z);
+  } 
+  else{
+    custom_pose.position.x = custom_vel.position.x*custom_dt+custom_pose.position.x;
+    custom_pose.position.y = custom_vel.position.y*custom_dt+custom_pose.position.y;
+    custom_pose.position.z = custom_vel.position.z*custom_dt+custom_pose.position.z;
+
+    custom_vel.position.x = custom_acceleration.position.x*custom_dt+custom_vel.position.x;
+    custom_vel.position.y = custom_acceleration.position.y*custom_dt+custom_vel.position.y;
+    custom_vel.position.z = custom_acceleration.position.z*custom_dt+custom_vel.position.z;
+
+    custom_acceleration.position.x = kpxy*(applied_ref_x-custom_pose.position.x)-kvxy*custom_vel.position.x;
+    custom_acceleration.position.y = kpxy*(applied_ref_y-custom_pose.position.y)-kvxy*custom_vel.position.y;
+    custom_acceleration.position.z = kpz*(applied_ref_z-custom_pose.position.z)-kvz*custom_vel.position.z;
+
+    predicted_thrust.position.x = mass*custom_acceleration.position.x;
+    predicted_thrust.position.y = mass*custom_acceleration.position.y;
+    predicted_thrust.position.z = mass*custom_acceleration.position.x+mass*g;
 }
-*/
+custom_trajectory_out.poses.push_back(custom_pose);
+predicted_thrust_out.poses.push_back(predicted_thrust_norm);
+
+custom_trajectory_out.poses.clear();
+predicted_thrust_out.poses.clear();
+}
+}
+}
+
 void DergTracker::trajectory_prediction(){
 
 // compute the C2 parameter for each coordinate
@@ -598,7 +698,7 @@ init_vel(0,0)=uav_state->velocity.linear.x;
 init_vel(1,0)=uav_state->velocity.linear.y;
 init_vel(2,0)=uav_state->velocity.linear.z;
 
-trajectory_prediction();
+trajectory_prediction_general();
 
 if (starting_bool) {
 
@@ -789,6 +889,9 @@ mrs_lib::Routine profiler_routine = profiler.createRoutine("callbackOtherUavAppl
 
 mrs_msgs::FutureTrajectory temp_pose= *msg;
 other_drones_applied_references[msg->uav_name] = temp_pose;
+for (int i=0;i<100000000;i++){
+ROS_INFO("[DergTracker]: Other UAV reference x: %f", other_drones_applied_references[msg->uav_name].points[0].x);
+}
 }
 
 } // namespace derg_tracker
