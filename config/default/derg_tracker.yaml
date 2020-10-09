@@ -5,3 +5,11 @@ use_wall_constraints: true
 use_cylindrical_constraints: false
 
 use_agents_avoidence: false
+
+network:
+
+  robot_names: [
+
+    uav1, uav2, uav3, uav4, uav5
+
+  ]
