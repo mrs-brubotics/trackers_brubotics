@@ -182,15 +182,17 @@ float Ra=0.4;
 float Sa=1.6;
 float alpha_a=0.1;
 
-  float other_uav_pos_x;
-  float other_uav_pos_y;
-  float other_uav_pos_z;
-  float dist_between_agents_x;
-  float dist_between_agents_y;
-  float dist_between_agents_z;
-  float dist_between_agents;
+float other_uav_pos_x;
+float other_uav_pos_y;
+float other_uav_pos_z;
+float dist_between_agents_x;
+float dist_between_agents_y;
+float dist_between_agents_z;
+float dist_between_agents;
+int uav_number;
 
-  std::vector<std::string>                               other_drone_names_;
+
+  std::vector<std::string> other_drone_names_;
   float min_dist_agents;
   geometry_msgs::Pose min_dist_agents_vect; // ditance between agents as vector to publish it
 
@@ -263,7 +265,7 @@ param_loader.loadParam("use_derg", use_derg_);
 param_loader.loadParam("use_wall_constraints", use_wall_constraints_);
 param_loader.loadParam("use_cylindrical_constraints", use_cylindrical_constraints_);
 param_loader.loadParam("use_agents_avoidance", use_agents_avoidance_);
-  param_loader.loadParam("network/robot_names", other_drone_names_);
+param_loader.loadParam("network/robot_names", other_drone_names_);
 
   sscanf(uav_name_.c_str(), "uav%d", &my_uav_number);
   ROS_INFO("[DergTracker]: Numerical ID of this UAV is %d", my_uav_number);
@@ -302,9 +304,9 @@ uav_applied_ref_out=future_trajectory_out; // initialize the message
 
 uav_applied_ref_message_publisher = nh_.advertise<mrs_msgs::FutureTrajectory>("uav_applied_ref", 1);
 
-for (unsigned long i = 0; i < int(_avoidance_other_uav_names_.size()); i++) {
+for (unsigned long i = 0; i < int(other_drone_names_.size()); i++) {
 
-std::string applied_ref_topic_name = std::string("/") + _avoidance_other_uav_names_[i] + std::string("/") + std::string("control_manager/derg_tracker/uav_applied_ref");
+std::string applied_ref_topic_name = std::string("/") + other_drone_names_[i] + std::string("/") + std::string("control_manager/derg_tracker/uav_applied_ref");
 
 ROS_INFO("[DergTracker]: subscribing to %s", applied_ref_topic_name.c_str());
 
@@ -458,12 +460,14 @@ NF_a_nco(1,0)=0;
 NF_a_nco(2,0)=0;
 
 std::map<std::string, mrs_msgs::FutureTrajectory>::iterator u = other_drones_applied_references.begin();
-ROS_INFO("Position is %f", u->second.points[0].x);
-ROS_INFO("Other drone reference is %f", other_drones_applied_references);
+//ROS_INFO("UAV Nnumber is  %i", other_uav_numbers[0]);
+//ROS_INFO("UAV Nnumber is  %i", other_uav_numbers[1]);
+ROS_INFO("UAV name is  %s", uav_name_.c_str());
+ROS_INFO("other uav name is  %s", other_drone_names_[0].c_str());
 while (u != other_drones_applied_references.end()) {
 other_uav_ref_x = u->second.points[0].x;//Second means accessing the second part of the iterator. Here it is FutureTrajectory
 other_uav_ref_y = u->second.points[0].y;
-
+ROS_INFO("other uav name is  %f", other_uav_ref_x);
 dist_between_ref_x = other_uav_ref_x - applied_ref_x;
 dist_between_ref_y = other_uav_ref_y - applied_ref_y;
 dist_between_ref= sqrt(dist_between_ref_x*dist_between_ref_x+dist_between_ref_y*dist_between_ref_y);
@@ -889,9 +893,6 @@ mrs_lib::Routine profiler_routine = profiler.createRoutine("callbackOtherUavAppl
 
 mrs_msgs::FutureTrajectory temp_pose= *msg;
 other_drones_applied_references[msg->uav_name] = temp_pose;
-for (int i=0;i<100000000;i++){
-ROS_INFO("[DergTracker]: Other UAV reference x: %f", other_drones_applied_references[msg->uav_name].points[0].x);
-}
 }
 
 } // namespace derg_tracker
