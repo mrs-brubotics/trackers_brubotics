@@ -74,14 +74,12 @@ mrs_msgs::FutureTrajectory uav_applied_ref_out;
 mrs_msgs::FuturePoint custom_new_point;
 
 std::map<std::string, mrs_msgs::FutureTrajectory> other_drones_applied_references;
-std::vector<ros::Subscriber> other_uav_applied_ref_subscribers;
 /////////////////////////////////////////////////
 
 ros::Publisher uav_applied_ref_message_publisher;
 
 bool starting_bool=true;
- std::map<std::string, mrs_msgs::FutureTrajectory>      other_drones_positions;
-  std::vector<ros::Subscriber>                           other_uav_subscribers;
+std::vector<ros::Subscriber>  other_uav_subscribers;
 float goto_ref_x=0;
 float goto_ref_y=0;
 float goto_ref_z=0;
@@ -129,7 +127,8 @@ float sigma_w=2;
 float delta_w=0.01; // first keep it at 0, increase to 0.05 and check if there are constraint violations
 float max_repulsion_wall1;
 float pos_error_init;
-  int            my_uav_number;
+int my_uav_number;
+int my_uav_priority;
 // Obstacle 1
 float kappa_o=10;
 float N_o=1; //number of obstacles
@@ -162,13 +161,11 @@ float pos_error_z;
 float pos_error;
 float kappa_a=10; // decrease if propblems persist
 float DSM_a;
-  int            my_uav_priority;
+
 MatrixXd NF_a = MatrixXd::Zero(3, 1); // agent repulsion navigation field
 MatrixXd NF_a_co = MatrixXd::Zero(3, 1); // conservative part
 MatrixXd NF_a_nco = MatrixXd::Zero(3, 1); // non conservative part
 std::string uav_name_;
-std::string other_uav_name;
-std::vector<std::string> _avoidance_other_uav_names_;
 
 float other_uav_ref_x;
 float other_uav_ref_y;
@@ -189,13 +186,7 @@ float dist_between_agents_x;
 float dist_between_agents_y;
 float dist_between_agents_z;
 float dist_between_agents;
-int uav_number;
-
-
-  std::vector<std::string> other_drone_names_;
-  float min_dist_agents;
-  geometry_msgs::Pose min_dist_agents_vect; // ditance between agents as vector to publish it
-
+std::vector<std::string> other_drone_names_;
 // gain parameters
 float kpxy = 15;
 float kpz = 15;
@@ -255,8 +246,9 @@ bool use_agents_avoidance_ = true;
 /*initialize()//{*/
 void DergTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unused]] const std::string uav_name,
 [[maybe_unused]] std::shared_ptr<mrs_uav_managers::CommonHandlers_t> common_handlers) {
+
 ros::Time::waitForValid();
-is_initialized_ = true;
+
 uav_name_             = uav_name;
 ros::NodeHandle nh_(parent_nh, "derg_tracker");
 mrs_lib::ParamLoader param_loader(nh_, "DergTracker");
@@ -267,23 +259,21 @@ param_loader.loadParam("use_cylindrical_constraints", use_cylindrical_constraint
 param_loader.loadParam("use_agents_avoidance", use_agents_avoidance_);
 param_loader.loadParam("network/robot_names", other_drone_names_);
 
-  sscanf(uav_name_.c_str(), "uav%d", &my_uav_number);
-  ROS_INFO("[DergTracker]: Numerical ID of this UAV is %d", my_uav_number);
-  my_uav_priority = my_uav_number;
+sscanf(uav_name_.c_str(), "uav%d", &my_uav_number);
+ROS_INFO("[DergTracker]: Numerical ID of this UAV is %d", my_uav_number);
+my_uav_priority = my_uav_number;
 
-  // exclude this drone from the list
-  std::vector<std::string>::iterator it = other_drone_names_.begin();
-  while (it != other_drone_names_.end()) {
+// exclude this drone from the list
+std::vector<std::string>::iterator it = other_drone_names_.begin();
+while (it != other_drone_names_.end()) {
 
-    std::string temp_str = *it;
+  std::string temp_str = *it;
 
-    int other_uav_priority;
-    sscanf(temp_str.c_str(), "uav%d", &other_uav_priority);
-
-    if (other_uav_priority == my_uav_number) {
-
-      other_drone_names_.erase(it);
-      continue;
+  int other_uav_priority;
+  sscanf(temp_str.c_str(), "uav%d", &other_uav_priority);
+  if (other_uav_priority == my_uav_number) {
+    other_drone_names_.erase(it);
+    continue;
     }
 
     it++;
@@ -293,7 +283,7 @@ profiler = mrs_lib::Profiler(nh_, "DergTracker", _profiler_enabled_);
 custom_predicted_traj_publisher = nh_.advertise<geometry_msgs::PoseArray>("custom_predicted_traj", 1);
 custom_predicted_thrust_publisher = nh_.advertise<geometry_msgs::PoseArray>("custom_predicted_thrust", 1);
 custom_predicted_velocity_publisher = nh_.advertise<geometry_msgs::PoseArray>("custom_predicted_vel", 1);
-ROS_INFO("[DergTracker]: initialized");
+
 
 future_trajectory_out.stamp = ros::Time::now();
 future_trajectory_out.uav_name = uav_name_;
@@ -313,6 +303,9 @@ ROS_INFO("[DergTracker]: subscribing to %s", applied_ref_topic_name.c_str());
 other_uav_subscribers.push_back(
 nh_.subscribe(applied_ref_topic_name, 1, &DergTracker::callbackOtherUavAppliedRef, this, ros::TransportHints().tcpNoDelay()));
 }
+
+is_initialized_ = true;
+ROS_INFO("[DergTracker]: initialized");
 }
 //}
 
@@ -340,6 +333,7 @@ return true;
 
 void DergTracker::DERG_computation(){
 
+/////////////////////////DSM_saturation////////////////////////////////
 limit_thrust_diff=T_max; // initialization at a high value
 for (size_t i = 0; i < sample_hor; i++) {
 diff_Tmax=T_max-predicted_thrust_out.poses[i].position.x;
@@ -354,6 +348,7 @@ limit_thrust_diff= diff_Tmin;
 DSM_s=kappa_s*limit_thrust_diff;
 
 predicted_thrust_out.poses.clear(); // empty the array of thrust prediction once used
+////////////////////////DSM_obstacle////////////////////////////////
 o_1(0,0)=0; // x=0
 o_1(1,0)=40; // y=40;
 
@@ -373,7 +368,7 @@ min_obs_distance=dist_obs_1-R_o1;
 }
 
 DSM_o=kappa_o*min_obs_distance;
-
+////////////////////////DSM_wall////////////////////////////////
 d_w(1,0) = 10 - arm_radius;
 
 c_w(0,0)=1;
@@ -388,13 +383,13 @@ min_wall_distance=abs(d_w(1,0) -custom_trajectory_out.poses[i].position.x);
 }
 DSM_w=kappa_w*min_wall_distance;
 
-// This should be changed, trajectory should be used here
+////////////////////////DSM_agent////////////////////////////////
 pos_error_x= applied_ref_x - custom_trajectory_out.poses[0].position.x;
 pos_error_y= applied_ref_y - custom_trajectory_out.poses[0].position.y;
 pos_error_z= applied_ref_z - custom_trajectory_out.poses[0].position.z;
 pos_error_init= sqrt(pos_error_x*pos_error_x + pos_error_y*pos_error_y + pos_error_z*pos_error_z);
 DSM_a=kappa_a*(Sa-pos_error_init);
-
+////////////////////////Attraction part of navigation field////////////////////////////////
 ref_dist(0,0)= goto_ref_x-applied_ref_x;
 ref_dist(1,0)= goto_ref_y-applied_ref_y;
 ref_dist(2,0)= goto_ref_z-applied_ref_z;
@@ -409,10 +404,7 @@ NF_att(0,0)=ref_dist(0,0)/max_dist;
 NF_att(1,0)=ref_dist(1,0)/max_dist;
 NF_att(2,0)=ref_dist(2,0)/max_dist;
 
-/////////////////////////////////////////////////////////////
-// computation of the obstacle repulsion navigation field ///////
-/////////////////////////////////////////////////////////////
-
+////////////////////////Repulsion part of navigation field_obstacle////////////////////////////////
 // Conservative part
 dist_ref_obs_x_1=o_1(0,0)-applied_ref_x; // x distance between v and obstacle 1
 dist_ref_obs_y_1=o_1(1,0)-applied_ref_y; // y distance between v and obstacle 1
@@ -427,7 +419,7 @@ NF_o_co(0,0)=-(max_repulsion_obs1*(dist_ref_obs_x_1/dist_ref_obs_1));
 NF_o_co(1,0)=-(max_repulsion_obs1*(dist_ref_obs_y_1/dist_ref_obs_1));
 NF_o_co(2,0)=0;
 
-// non conservative part
+// Non-conservative part
 NF_o_nco(2,0)=0;
 if (sigma_o>=dist_ref_obs_1-R_o1) {
 NF_o_nco(0,0)=alpha_o_1*(dist_ref_obs_y_1/dist_ref_obs_1);
@@ -437,12 +429,12 @@ NF_o_nco(0,0)=0;
 NF_o_nco(1,0)=0;
 }
 
-// combined
+// Both combined
 
 NF_o(0,0)=NF_o_co(0,0)+NF_o_nco(0,0);
 NF_o(1,0)=NF_o_co(1,0)+NF_o_nco(1,0);
 NF_o(2,0)=NF_o_co(2,0)+NF_o_nco(2,0);
-
+////////////////////////Repulsion part of navigation field_wall////////////////////////////////
 max_repulsion_wall1= (sigma_w-(abs(d_w(1,0)-applied_ref_x)))/(sigma_w-delta_w);
 if (0 > max_repulsion_wall1){
 max_repulsion_wall1=0;
@@ -450,7 +442,7 @@ max_repulsion_wall1=0;
 NF_w(0,0)=-max_repulsion_wall1;
 NF_w(1,0)=0;
 NF_w(2,0)=0;
-
+////////////////////////Repulsion part of navigation field_agent////////////////////////////////
 NF_a_co(0,0)=0;
 NF_a_co(1,0)=0;
 NF_a_co(2,0)=0;
@@ -460,14 +452,10 @@ NF_a_nco(1,0)=0;
 NF_a_nco(2,0)=0;
 
 std::map<std::string, mrs_msgs::FutureTrajectory>::iterator u = other_drones_applied_references.begin();
-//ROS_INFO("UAV Nnumber is  %i", other_uav_numbers[0]);
-//ROS_INFO("UAV Nnumber is  %i", other_uav_numbers[1]);
-//ROS_INFO("UAV name is  %s", uav_name_.c_str());
-//ROS_INFO("other uav name is  %s", other_drone_names_[0].c_str());
+
 while (u != other_drones_applied_references.end()) {
 other_uav_ref_x = u->second.points[0].x;//Second means accessing the second part of the iterator. Here it is FutureTrajectory
 other_uav_ref_y = u->second.points[0].y;
-//ROS_INFO("other uav name is  %f", other_uav_ref_x);
 dist_between_ref_x = other_uav_ref_x - applied_ref_x;
 dist_between_ref_y = other_uav_ref_y - applied_ref_y;
 dist_between_ref= sqrt(dist_between_ref_x*dist_between_ref_x+dist_between_ref_y*dist_between_ref_y);
@@ -481,23 +469,25 @@ max_repulsion_other_uav=0;
 NF_a_co(0,0)=NF_a_co(0,0)-max_repulsion_other_uav*(dist_between_ref_x/dist_between_ref);
 NF_a_co(1,0)=NF_a_co(1,0)-max_repulsion_other_uav*(dist_between_ref_y/dist_between_ref);
 
-// Non conservative part, first test don't use it
+// Non-conservative part
 if (sigma_a >= dist_between_ref-2*Ra-2*Sa) {
 NF_a_nco(0,0)=NF_a_nco(0,0) + alpha_a*(dist_between_ref_y/dist_between_ref);
 NF_a_nco(1,0)=NF_a_nco(1,0) -alpha_a*(dist_between_ref_x/dist_between_ref);
 }
 u++;
 }
-
+// Both combined
 NF_a(0,0)=NF_a_co(0,0)+ NF_a_nco(0,0);
 NF_a(1,0)=NF_a_co(1,0) + NF_a_nco(1,0);
 NF_a(2,0)=NF_a_co(2,0) + NF_a_nco(2,0);
 
-// total navigation field
+
+////////////////////////Total navigation field////////////////////////////////
 NF_total(0,0)=NF_att(0,0)+ NF_a(0,0); // NF_o(0,0) + NF_w(0,0) +
 NF_total(1,0)=NF_att(1,0) + NF_a(1,0); //+ NF_o(1,0) + NF_w(1,0)
 NF_total(2,0)=NF_att(2,0) + NF_a(2,0); //+ NF_o(2,0) + NF_w(2,0)
 
+//////////////////////// Determining DSM_total= minimum {DSM_a,DSM_s,DSM_o,DSM_w}////////////////////////////////
 DSM_total=DSM_s;
 if(DSM_w <= DSM_total){
 DSM_total=DSM_w;
@@ -516,12 +506,11 @@ DSM_total=0;
 
 ROS_INFO("DSM_total is  %f", DSM_total);
 ROS_INFO("DSM_s is  %f", DSM_s);
-//Adding terminal constraint
 
-////////////////////////////////////////////////////////////////////
-///////////////////// computation of v_dot /////////////////////////
-///////////////////////////////////////////////////////////////////
 
+//TODO Adding terminal constraint
+
+//////////////////////// Computation of v_dot////////////////////////////////
 v_dot(0,0)=DSM_total*NF_total(0,0);
 v_dot(1,0)=DSM_total*NF_total(1,0);
 v_dot(2,0)=DSM_total*NF_total(2,0);
@@ -543,7 +532,7 @@ custom_trajectory_out.poses.clear();
 
 
 void DergTracker::trajectory_prediction_general(){
-
+// Discrete trajectory prediction using the forward Euler formula's
 
 custom_trajectory_out.header.stamp = ros::Time::now();
 custom_trajectory_out.header.frame_id = uav_state_.header.frame_id;
@@ -554,12 +543,14 @@ predicted_thrust_out.header.frame_id = uav_state_.header.frame_id;
 geometry_msgs::Pose custom_pose;
 geometry_msgs::Pose custom_vel;
 geometry_msgs::Pose custom_acceleration;
-geometry_msgs::Pose predicted_thrust; // not physically correct of course. We just had problems publishing other types of arrays that weren't custom
-geometry_msgs::Pose predicted_thrust_norm; // predicted thrust norm
+geometry_msgs::Pose predicted_thrust; 
+geometry_msgs::Pose predicted_thrust_norm; 
 
 
 for (int i = 0; i < sample_hor; i++) {
   if(i==0){
+
+    //Initial conditions for first iteration
     custom_pose.position.x = init_pos(0,0);
     custom_pose.position.y = init_pos(1,0);
     custom_pose.position.z = init_pos(2,0);
@@ -567,10 +558,6 @@ for (int i = 0; i < sample_hor; i++) {
     custom_vel.position.x = init_vel(0,0);
     custom_vel.position.y = init_vel(1,0);
     custom_vel.position.z = init_vel(2,0);
-
-
-
-   
   } 
   else{
     custom_pose.position.x = custom_vel.position.x*custom_dt+custom_pose.position.x;
@@ -580,7 +567,6 @@ for (int i = 0; i < sample_hor; i++) {
     custom_vel.position.x = custom_acceleration.position.x*custom_dt+custom_vel.position.x;
     custom_vel.position.y = custom_acceleration.position.y*custom_dt+custom_vel.position.y;
     custom_vel.position.z = custom_acceleration.position.z*custom_dt+custom_vel.position.z;
-
 }
 
   custom_acceleration.position.x = kpxy*(applied_ref_x-custom_pose.position.x)-kvxy*custom_vel.position.x;
@@ -590,26 +576,29 @@ for (int i = 0; i < sample_hor; i++) {
   predicted_thrust.position.x = mass*(kpxy*(applied_ref_x-custom_pose.position.x)-kvxy*custom_vel.position.x);
   predicted_thrust.position.y = mass*(kpxy*(applied_ref_y-custom_pose.position.y)-kvxy*custom_vel.position.y);;
   predicted_thrust.position.z = mass*(kpz*(applied_ref_z-custom_pose.position.z)-kvz*custom_vel.position.z) + mass*g;
- predicted_thrust_norm.position.x= sqrt(predicted_thrust.position.x*predicted_thrust.position.x+predicted_thrust.position.y*predicted_thrust.position.y+predicted_thrust.position.z*predicted_thrust.position.z);
+
+  predicted_thrust_norm.position.x= sqrt(predicted_thrust.position.x*predicted_thrust.position.x+predicted_thrust.position.y*predicted_thrust.position.y+predicted_thrust.position.z*predicted_thrust.position.z);
 
 
-predicted_thrust_out.poses.push_back(predicted_thrust_norm);
-custom_trajectory_out.poses.push_back(custom_pose);
+  predicted_thrust_out.poses.push_back(predicted_thrust_norm);
+  custom_trajectory_out.poses.push_back(custom_pose);
 }
 try {
-custom_predicted_traj_publisher.publish(custom_trajectory_out);
-custom_predicted_thrust_publisher.publish(predicted_thrust_out);
-//custom_predicted_velocity_publisher.publish(custom_vel_out);
+  custom_predicted_traj_publisher.publish(custom_trajectory_out);
+  custom_predicted_thrust_publisher.publish(predicted_thrust_out);
+
 
 }
 catch (...) {
-ROS_ERROR("[DergTracker]: Exception caught during publishing topic %s.", custom_predicted_traj_publisher.getTopic().c_str());
+  ROS_ERROR("[DergTracker]: Exception caught during publishing topic %s.", custom_predicted_traj_publisher.getTopic().c_str());
 }
 custom_trajectory_out.poses.clear();
 predicted_thrust_out.poses.clear();
 }
 
 void DergTracker::trajectory_prediction(){
+
+//This function is not used anymore, it is the prediction of the trajectory using the analytical solution
 
 // compute the C2 parameter for each coordinate
 C2_x= (-(init_vel(0,0)/lambda1_xy)-applied_ref_x+init_pos(0,0))/(1-(lambda2_xy/lambda1_xy));
@@ -626,51 +615,37 @@ custom_trajectory_out.header.frame_id = uav_state_.header.frame_id;
 predicted_thrust_out.header.stamp = ros::Time::now();
 predicted_thrust_out.header.frame_id = uav_state_.header.frame_id;
 
-/*
-geometry_msgs::PoseArray custom_vel_out;
-custom_vel_out.header.stamp = ros::Time::now();
-custom_vel_out.header.frame_id = uav_state_.header.frame_id;
-*/
 float t;
 
-{
+
 for (size_t i = 0; i < sample_hor; i++) {
-t=i*custom_dt;
-geometry_msgs::Pose custom_pose;
-geometry_msgs::Pose custom_vel;
-geometry_msgs::Pose predicted_thrust; // not physically correct of course. We just had problems publishing other types of arrays that weren't custom
-geometry_msgs::Pose predicted_thrust_norm; // predicted thrust norm
+  t=i*custom_dt;
+  geometry_msgs::Pose custom_pose;
+  geometry_msgs::Pose custom_vel;
+  geometry_msgs::Pose predicted_thrust;
+  geometry_msgs::Pose predicted_thrust_norm; 
 
-custom_pose.position.x = C1_x*exp(lambda1_xy*t)+C2_x*exp(lambda2_xy*t)+goto_ref_x;
-custom_pose.position.y = C1_y*exp(lambda1_xy*t)+C2_y*exp(lambda2_xy*t)+goto_ref_y;
-custom_pose.position.z = C1_z*exp(lambda1_z*t)+C2_z*exp(lambda2_z*t)+goto_ref_z;
-//ROS_INFO("[DergTracker- prediction]: %.2f", custom_pose.position.x);
-/*
-custom_vel.position.x = lambda1_xy*C1_x*exp(lambda1_xy*t)+lambda2_xy*C2_x*exp(lambda2_xy*t);
-custom_vel.position.y = lambda1_xy*C1_y*exp(lambda1_xy*t)+lambda2_xy*C2_y*exp(lambda2_xy*t);
-custom_vel.position.z = lambda1_z*C1_z*exp(lambda1_z*t)+lambda2_z*C2_z*exp(lambda2_z*t);
-*/
+  custom_pose.position.x = C1_x*exp(lambda1_xy*t)+C2_x*exp(lambda2_xy*t)+goto_ref_x;
+  custom_pose.position.y = C1_y*exp(lambda1_xy*t)+C2_y*exp(lambda2_xy*t)+goto_ref_y;
+  custom_pose.position.z = C1_z*exp(lambda1_z*t)+C2_z*exp(lambda2_z*t)+goto_ref_z;
 
-predicted_thrust.position.x = mass*(lambda1_xy*lambda1_xy*C1_x*exp(lambda1_xy*t)+lambda2_xy*lambda2_xy*C2_x*exp(lambda2_xy*t)); //mass*(kpxy*(applied_ref_x-custom_pose.position.x)-kvxy*custom_vel.position.x);// // thrust x
-predicted_thrust.position.y = mass*(lambda1_xy*lambda1_xy*C1_y*exp(lambda1_xy*t)+lambda2_xy*lambda2_xy*C2_y*exp(lambda2_xy*t));//mass*(kpxy*(applied_ref_y-custom_pose.position.y)-kvxy*custom_vel.position.y); // thrust y
-predicted_thrust.position.z = mass*(lambda1_z*lambda1_z*C1_z*exp(lambda1_z*t)+lambda2_z*lambda2_z*C2_z*exp(lambda2_z*t)+g);//mass*(kpz*(applied_ref_z-custom_pose.position.z)-kvz*custom_vel.position.z) + mass*g; // thrust z
+  predicted_thrust.position.x = mass*(lambda1_xy*lambda1_xy*C1_x*exp(lambda1_xy*t)+lambda2_xy*lambda2_xy*C2_x*exp(lambda2_xy*t)); //mass*(kpxy*(applied_ref_x-custom_pose.position.x)-kvxy*custom_vel.position.x);// // thrust x
+  predicted_thrust.position.y = mass*(lambda1_xy*lambda1_xy*C1_y*exp(lambda1_xy*t)+lambda2_xy*lambda2_xy*C2_y*exp(lambda2_xy*t));//mass*(kpxy*(applied_ref_y-custom_pose.position.y)-kvxy*custom_vel.position.y); // thrust y
+  predicted_thrust.position.z = mass*(lambda1_z*lambda1_z*C1_z*exp(lambda1_z*t)+lambda2_z*lambda2_z*C2_z*exp(lambda2_z*t)+g);//mass*(kpz*(applied_ref_z-custom_pose.position.z)-kvz*custom_vel.position.z) + mass*g; // thrust z
 
-predicted_thrust_norm.position.x= sqrt(predicted_thrust.position.x*predicted_thrust.position.x+predicted_thrust.position.y*predicted_thrust.position.y+predicted_thrust.position.z*predicted_thrust.position.z);
+  predicted_thrust_norm.position.x= sqrt(predicted_thrust.position.x*predicted_thrust.position.x+predicted_thrust.position.y*predicted_thrust.position.y+predicted_thrust.position.z*predicted_thrust.position.z);
 
-predicted_thrust_out.poses.push_back(predicted_thrust_norm);
-custom_trajectory_out.poses.push_back(custom_pose);
+  predicted_thrust_out.poses.push_back(predicted_thrust_norm);
+  custom_trajectory_out.poses.push_back(custom_pose);
 
-}
 }
 
 try {
-custom_predicted_traj_publisher.publish(custom_trajectory_out);
-custom_predicted_thrust_publisher.publish(predicted_thrust_out);
-//custom_predicted_velocity_publisher.publish(custom_vel_out);
-
+  custom_predicted_traj_publisher.publish(custom_trajectory_out);
+  custom_predicted_thrust_publisher.publish(predicted_thrust_out);
 }
 catch (...) {
-ROS_ERROR("[DergTracker]: Exception caught during publishing topic %s.", custom_predicted_traj_publisher.getTopic().c_str());
+  ROS_ERROR("[DergTracker]: Exception caught during publishing topic %s.", custom_predicted_traj_publisher.getTopic().c_str());
 }
 
 custom_trajectory_out.poses.clear();
