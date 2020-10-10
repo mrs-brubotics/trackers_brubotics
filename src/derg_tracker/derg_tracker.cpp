@@ -353,7 +353,7 @@ limit_thrust_diff= diff_Tmin;
 }
 DSM_s=kappa_s*limit_thrust_diff;
 
-//predicted_thrust_out.poses.clear(); // empty the array of thrust prediction once used
+predicted_thrust_out.poses.clear(); // empty the array of thrust prediction once used
 o_1(0,0)=0; // x=0
 o_1(1,0)=40; // y=40;
 
