@@ -489,9 +489,9 @@ NF_a_nco(1,0)=NF_a_nco(1,0) -alpha_a*(dist_between_ref_x/dist_between_ref);
 u++;
 }
 
-NF_a(0,0)=NF_a_co(0,0);// + NF_a_nco(0,0);
-NF_a(1,0)=NF_a_co(1,0);// + NF_a_nco(1,0);
-NF_a(2,0)=NF_a_co(2,0);// + NF_a_nco(2,0);
+NF_a(0,0)=NF_a_co(0,0)+ NF_a_nco(0,0);
+NF_a(1,0)=NF_a_co(1,0) + NF_a_nco(1,0);
+NF_a(2,0)=NF_a_co(2,0) + NF_a_nco(2,0);
 
 // total navigation field
 NF_total(0,0)=NF_att(0,0)+ NF_a(0,0); // NF_o(0,0) + NF_w(0,0) +
