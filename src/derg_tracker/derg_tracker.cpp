@@ -483,9 +483,9 @@ NF_a(2,0)=NF_a_co(2,0) + NF_a_nco(2,0);
 
 
 ////////////////////////Total navigation field////////////////////////////////
-NF_total(0,0)=NF_att(0,0)+ NF_a(0,0); // NF_o(0,0) + NF_w(0,0) +
-NF_total(1,0)=NF_att(1,0) + NF_a(1,0); //+ NF_o(1,0) + NF_w(1,0)
-NF_total(2,0)=NF_att(2,0) + NF_a(2,0); //+ NF_o(2,0) + NF_w(2,0)
+NF_total(0,0)=NF_att(0,0)+ NF_a(0,0) +NF_o(0,0) + NF_w(0,0);
+NF_total(1,0)=NF_att(1,0) + NF_a(1,0) +NF_o(1,0) + NF_w(1,0);
+NF_total(2,0)=NF_att(2,0) + NF_a(2,0) +NF_o(2,0) + NF_w(2,0);
 
 //////////////////////// Determining DSM_total= minimum {DSM_a,DSM_s,DSM_o,DSM_w}////////////////////////////////
 DSM_total=DSM_s;
