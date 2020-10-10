@@ -353,7 +353,7 @@ limit_thrust_diff= diff_Tmin;
 }
 DSM_s=kappa_s*limit_thrust_diff;
 
-predicted_thrust_out.poses.clear(); // empty the array of thrust prediction once used
+//predicted_thrust_out.poses.clear(); // empty the array of thrust prediction once used
 o_1(0,0)=0; // x=0
 o_1(1,0)=40; // y=40;
 
@@ -462,12 +462,12 @@ NF_a_nco(2,0)=0;
 std::map<std::string, mrs_msgs::FutureTrajectory>::iterator u = other_drones_applied_references.begin();
 //ROS_INFO("UAV Nnumber is  %i", other_uav_numbers[0]);
 //ROS_INFO("UAV Nnumber is  %i", other_uav_numbers[1]);
-ROS_INFO("UAV name is  %s", uav_name_.c_str());
-ROS_INFO("other uav name is  %s", other_drone_names_[0].c_str());
+//ROS_INFO("UAV name is  %s", uav_name_.c_str());
+//ROS_INFO("other uav name is  %s", other_drone_names_[0].c_str());
 while (u != other_drones_applied_references.end()) {
 other_uav_ref_x = u->second.points[0].x;//Second means accessing the second part of the iterator. Here it is FutureTrajectory
 other_uav_ref_y = u->second.points[0].y;
-ROS_INFO("other uav name is  %f", other_uav_ref_x);
+//ROS_INFO("other uav name is  %f", other_uav_ref_x);
 dist_between_ref_x = other_uav_ref_x - applied_ref_x;
 dist_between_ref_y = other_uav_ref_y - applied_ref_y;
 dist_between_ref= sqrt(dist_between_ref_x*dist_between_ref_x+dist_between_ref_y*dist_between_ref_y);
@@ -514,7 +514,8 @@ if(DSM_total<0){
 DSM_total=0;
 }
 
-DSM_total=10;
+ROS_INFO("DSM_total is  %f", DSM_total);
+ROS_INFO("DSM_s is  %f", DSM_s);
 //Adding terminal constraint
 
 ////////////////////////////////////////////////////////////////////
@@ -556,26 +557,20 @@ geometry_msgs::Pose custom_acceleration;
 geometry_msgs::Pose predicted_thrust; // not physically correct of course. We just had problems publishing other types of arrays that weren't custom
 geometry_msgs::Pose predicted_thrust_norm; // predicted thrust norm
 
-{
+
 for (int i = 0; i < sample_hor; i++) {
   if(i==0){
-    custom_pose.position.x = 0;
-    custom_pose.position.y = 0;
-    custom_pose.position.z = 0;
+    custom_pose.position.x = init_pos(0,0);
+    custom_pose.position.y = init_pos(1,0);
+    custom_pose.position.z = init_pos(2,0);
 
-    custom_vel.position.x = 0;
-    custom_vel.position.y = 0;
-    custom_vel.position.z = 0;
+    custom_vel.position.x = init_vel(0,0);
+    custom_vel.position.y = init_vel(1,0);
+    custom_vel.position.z = init_vel(2,0);
 
-    custom_acceleration.position.x = kpxy*(applied_ref_x-custom_pose.position.x)-kvxy*custom_vel.position.x;
-    custom_acceleration.position.y = kpxy*(applied_ref_y-custom_pose.position.y)-kvxy*custom_vel.position.y;
-    custom_acceleration.position.z = kpz*(applied_ref_z-custom_pose.position.z)-kvz*custom_vel.position.z;
-  
-    predicted_thrust.position.x = mass*custom_acceleration.position.x;
-    predicted_thrust.position.y = mass*custom_acceleration.position.y;
-    predicted_thrust.position.z = mass*custom_acceleration.position.x+mass*g;
 
-    predicted_thrust_norm.position.x= sqrt(predicted_thrust.position.x*predicted_thrust.position.x+predicted_thrust.position.y*predicted_thrust.position.y+predicted_thrust.position.z*predicted_thrust.position.z);
+
+   
   } 
   else{
     custom_pose.position.x = custom_vel.position.x*custom_dt+custom_pose.position.x;
@@ -586,21 +581,32 @@ for (int i = 0; i < sample_hor; i++) {
     custom_vel.position.y = custom_acceleration.position.y*custom_dt+custom_vel.position.y;
     custom_vel.position.z = custom_acceleration.position.z*custom_dt+custom_vel.position.z;
 
-    custom_acceleration.position.x = kpxy*(applied_ref_x-custom_pose.position.x)-kvxy*custom_vel.position.x;
-    custom_acceleration.position.y = kpxy*(applied_ref_y-custom_pose.position.y)-kvxy*custom_vel.position.y;
-    custom_acceleration.position.z = kpz*(applied_ref_z-custom_pose.position.z)-kvz*custom_vel.position.z;
-
-    predicted_thrust.position.x = mass*custom_acceleration.position.x;
-    predicted_thrust.position.y = mass*custom_acceleration.position.y;
-    predicted_thrust.position.z = mass*custom_acceleration.position.x+mass*g;
 }
-custom_trajectory_out.poses.push_back(custom_pose);
-predicted_thrust_out.poses.push_back(predicted_thrust_norm);
 
+  custom_acceleration.position.x = kpxy*(applied_ref_x-custom_pose.position.x)-kvxy*custom_vel.position.x;
+  custom_acceleration.position.y = kpxy*(applied_ref_y-custom_pose.position.y)-kvxy*custom_vel.position.y;
+  custom_acceleration.position.z = kpz*(applied_ref_z-custom_pose.position.z)-kvz*custom_vel.position.z;
+  
+  predicted_thrust.position.x = mass*(kpxy*(applied_ref_x-custom_pose.position.x)-kvxy*custom_vel.position.x);
+  predicted_thrust.position.y = mass*(kpxy*(applied_ref_y-custom_pose.position.y)-kvxy*custom_vel.position.y);;
+  predicted_thrust.position.z = mass*(kpz*(applied_ref_z-custom_pose.position.z)-kvz*custom_vel.position.z) + mass*g;
+ predicted_thrust_norm.position.x= sqrt(predicted_thrust.position.x*predicted_thrust.position.x+predicted_thrust.position.y*predicted_thrust.position.y+predicted_thrust.position.z*predicted_thrust.position.z);
+
+
+predicted_thrust_out.poses.push_back(predicted_thrust_norm);
+custom_trajectory_out.poses.push_back(custom_pose);
+}
+try {
+custom_predicted_traj_publisher.publish(custom_trajectory_out);
+custom_predicted_thrust_publisher.publish(predicted_thrust_out);
+//custom_predicted_velocity_publisher.publish(custom_vel_out);
+
+}
+catch (...) {
+ROS_ERROR("[DergTracker]: Exception caught during publishing topic %s.", custom_predicted_traj_publisher.getTopic().c_str());
+}
 custom_trajectory_out.poses.clear();
 predicted_thrust_out.poses.clear();
-}
-}
 }
 
 void DergTracker::trajectory_prediction(){
