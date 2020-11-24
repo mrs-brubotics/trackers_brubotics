@@ -105,6 +105,7 @@ target_link_libraries(LineTrackerInterns
     ${catkin_LIBRARIES}
     )
     
+    
 #############
 ## Install ##
 #############
@@ -114,7 +115,7 @@ install(TARGETS
   MpcTrackerInterns
   BypassTracker
   ModifiedMpc
-DergTracker
+  DergTracker
   ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
   LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
   RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
