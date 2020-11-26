@@ -39,6 +39,22 @@ public:
   const std_srvs::TriggerResponse::ConstPtr gotoTrajectoryStart(const std_srvs::TriggerRequest::ConstPtr &cmd);
 
 private:
+
+// | ------------------------ uav state ----------------------- |
+  mrs_msgs::UavState uav_state_;
+  bool               got_uav_state_ = false; // now added by bryan
+  std::mutex         mutex_uav_state_; // now added by bryan
+
+  double uav_x_; // now added by bryan
+  double uav_y_; // now added by bryan
+  double uav_z_; // now added by bryan
+
+  
+
+
+ 
+
+
   std::mutex         mutex_goal_;
 
   mrs_lib::Profiler profiler_;
@@ -64,16 +80,25 @@ private:
 void BypassTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unused]] const std::string uav_name,
                              [[maybe_unused]] std::shared_ptr<mrs_uav_managers::CommonHandlers_t> common_handlers) {
   ros::Time::waitForValid();
+  // no paramaters to be loaded for this tracker
+  ROS_INFO("[BypassTracker]: no parameters to be loaded");
+  // initialize variables
+
+  // initialization completed
   is_initialized_ = true;
-
   ROS_INFO("[BypassTracker]: initialized");
-
 }
 //}
 
 /*activate()//{*/
 std::tuple<bool, std::string> BypassTracker::activate(const mrs_msgs::PositionCommand::ConstPtr &last_position_cmd) {
   std::stringstream ss;
+  if (!got_uav_state_) {
+    ss << "odometry not set";
+    ROS_ERROR_STREAM("[BypassTracker]: " << ss.str());
+    return std::tuple(false, ss.str());
+  }
+
   ss << "Activated";
   is_active_ = true;
   ROS_INFO("[BypassTracker]: activated");
@@ -99,6 +124,21 @@ const mrs_msgs::PositionCommand::ConstPtr BypassTracker::update(const mrs_msgs::
                                                               [[maybe_unused]] const mrs_msgs::AttitudeCommand::ConstPtr &last_attitude_cmd) {
 
   mrs_lib::Routine profiler_routine = profiler_.createRoutine("update");
+  
+
+  // added by bryan /////////////////////////////////////////
+  {
+    std::scoped_lock lock(mutex_uav_state_);
+
+    uav_state_ = *uav_state;
+    uav_x_     = uav_state_.pose.position.x;
+    uav_y_     = uav_state_.pose.position.y;
+    uav_z_     = uav_state_.pose.position.z;
+
+    got_uav_state_ = true;
+  }
+  // till here bryan /////////////////////////////////////////
+
 
 
   // up to this part the update() method is evaluated even when the tracker is not active
