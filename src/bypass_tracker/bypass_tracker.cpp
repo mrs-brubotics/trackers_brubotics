@@ -39,8 +39,7 @@ public:
   const std_srvs::TriggerResponse::ConstPtr gotoTrajectoryStart(const std_srvs::TriggerRequest::ConstPtr &cmd);
 
 private:
-
-// | ------------------------ uav state ----------------------- |
+  // // | ------------------------ uav state ----------------------- |
   mrs_msgs::UavState uav_state_;
   bool               got_uav_state_ = false; // now added by bryan
   std::mutex         mutex_uav_state_; // now added by bryan
@@ -49,13 +48,24 @@ private:
   double uav_y_; // now added by bryan
   double uav_z_; // now added by bryan
 
-  
 
 
- 
 
 
-  std::mutex         mutex_goal_;
+  // // | ------------------- the state variables ------------------ |
+  std::mutex mutex_state_;
+
+
+
+
+  // | ---------------------- desired goal ---------------------- |
+  double     goal_x_;
+  double     goal_y_;
+  double     goal_z_;
+  double     goal_heading_;
+  double     have_goal_ = false;
+  std::mutex mutex_goal_;
+
 
   mrs_lib::Profiler profiler_;
 
@@ -64,12 +74,6 @@ private:
   bool hover_          = false;
 
   bool starting_bool=true;
-
-  float goto_ref_x = 0;
-  float goto_ref_y = 0;
-  float goto_ref_z = 0;
-  float goto_ref_heading = 0;
-
 };
 //}
 
@@ -89,7 +93,6 @@ void BypassTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unused]
   ROS_INFO("[BypassTracker]: initialized");
 }
 //}
-
 /*activate()//{*/
 std::tuple<bool, std::string> BypassTracker::activate(const mrs_msgs::PositionCommand::ConstPtr &last_position_cmd) {
   std::stringstream ss;
@@ -104,7 +107,6 @@ std::tuple<bool, std::string> BypassTracker::activate(const mrs_msgs::PositionCo
   ROS_INFO("[BypassTracker]: activated");
   return std::tuple(true, ss.str());
 }
-//}
 
 /*deactivate()//{*/
 void BypassTracker::deactivate(void) {
@@ -115,6 +117,7 @@ void BypassTracker::deactivate(void) {
 
 /*resetStatic()//{*/
 bool BypassTracker::resetStatic(void) {
+  ROS_INFO("[BypassTracker]: no states to reset");
   return true;
 }
 //}
@@ -124,9 +127,7 @@ const mrs_msgs::PositionCommand::ConstPtr BypassTracker::update(const mrs_msgs::
                                                               [[maybe_unused]] const mrs_msgs::AttitudeCommand::ConstPtr &last_attitude_cmd) {
 
   mrs_lib::Routine profiler_routine = profiler_.createRoutine("update");
-  
 
-  // added by bryan /////////////////////////////////////////
   {
     std::scoped_lock lock(mutex_uav_state_);
 
@@ -137,9 +138,6 @@ const mrs_msgs::PositionCommand::ConstPtr BypassTracker::update(const mrs_msgs::
 
     got_uav_state_ = true;
   }
-  // till here bryan /////////////////////////////////////////
-
-
 
   // up to this part the update() method is evaluated even when the tracker is not active
   if (!is_active_) {
@@ -150,14 +148,14 @@ const mrs_msgs::PositionCommand::ConstPtr BypassTracker::update(const mrs_msgs::
   // set the header
   position_cmd.header.stamp    = uav_state->header.stamp;
   position_cmd.header.frame_id = uav_state->header.frame_id;
-    if (starting_bool) {
+  if (starting_bool) {
 
-    goto_ref_x= uav_state->pose.position.x;
-    goto_ref_y= uav_state->pose.position.y;
-    goto_ref_z= uav_state->pose.position.z;
+    goal_x_= uav_state->pose.position.x;
+    goal_y_= uav_state->pose.position.y;
+    goal_z_= uav_state->pose.position.z;
     // set heading based on current odom
     try {
-      goto_ref_heading = mrs_lib::AttitudeConverter(uav_state->pose.orientation).getHeading();
+      goal_heading_ = mrs_lib::AttitudeConverter(uav_state->pose.orientation).getHeading();
       position_cmd.use_heading = 1;
     }
     catch (...) {
@@ -165,10 +163,10 @@ const mrs_msgs::PositionCommand::ConstPtr BypassTracker::update(const mrs_msgs::
       ROS_ERROR_THROTTLE(1.0, "[BypassTracker]: could not calculate the current UAV heading");
     }
 
-    position_cmd.position.x     = goto_ref_x;
-    position_cmd.position.y     = goto_ref_y;
-    position_cmd.position.z     = goto_ref_z;
-    position_cmd.heading        = goto_ref_heading;
+    position_cmd.position.x     = goal_x_;
+    position_cmd.position.y     = goal_y_;
+    position_cmd.position.z     = goal_z_;
+    position_cmd.heading        = goal_heading_;
 
     position_cmd.use_position_vertical   = 1;
     position_cmd.use_position_horizontal = 1;
@@ -181,34 +179,33 @@ const mrs_msgs::PositionCommand::ConstPtr BypassTracker::update(const mrs_msgs::
 
     starting_bool=false;
 
-    ROS_INFO(
-        "[Bypass tracker - odom]: [goto_ref_x=%.2f],[goto_ref_y=%.2f],[goto_ref_z=%.2f, goto_ref_heading=%.2f]",goto_ref_x,goto_ref_y,goto_ref_z,goto_ref_heading);
+    ROS_INFO("[Bypass tracker - odom]: [goal_x_=%.2f],[goal_y_=%.2f],[goal_z_=%.2f, goal_heading_=%.2f]",goal_x_,goal_y_,goal_z_,goal_heading_);
  
   return mrs_msgs::PositionCommand::ConstPtr(new mrs_msgs::PositionCommand(position_cmd));
 }
 
  // set the desired states from the input of the goto function
 
-  position_cmd.position.x     = goto_ref_x;
-  position_cmd.position.y     = goto_ref_y;
-  position_cmd.position.z     = goto_ref_z;
-  position_cmd.heading        = goto_ref_heading;
+  position_cmd.position.x     = goal_x_;
+  position_cmd.position.y     = goal_y_;
+  position_cmd.position.z     = goal_z_;
+  position_cmd.heading        = goal_heading_;
 
   position_cmd.use_position_vertical   = 1;
   position_cmd.use_position_horizontal = 1;
   position_cmd.use_velocity_vertical   = 1;
   position_cmd.use_velocity_horizontal = 1;
-  position_cmd.use_acceleration        = 0;
-  position_cmd.use_jerk                = 0;
   position_cmd.use_heading             = 1;
   position_cmd.use_heading_rate        = 1;
+
+  position_cmd.use_acceleration        = 0;
+  position_cmd.use_jerk                = 0;
 
   // set the header
   position_cmd.header.stamp    = uav_state->header.stamp;
   position_cmd.header.frame_id = uav_state->header.frame_id;
 
-  // u have to return a position command
-  // can set the jerk to 0
+  // return a position command
   return mrs_msgs::PositionCommand::ConstPtr(new mrs_msgs::PositionCommand(position_cmd));
 }
 //}
@@ -217,6 +214,7 @@ const mrs_msgs::PositionCommand::ConstPtr BypassTracker::update(const mrs_msgs::
 const mrs_msgs::TrackerStatus BypassTracker::getStatus() {
   mrs_msgs::TrackerStatus tracker_status;
   tracker_status.active = is_active_;
+  tracker_status.tracking_trajectory = false;
   return tracker_status;
 }
 //}
@@ -259,21 +257,18 @@ const std_srvs::TriggerResponse::ConstPtr BypassTracker::hover([[maybe_unused]] 
 
 /*startTrajectoryTracking()//{*/
 const std_srvs::TriggerResponse::ConstPtr BypassTracker::startTrajectoryTracking([[maybe_unused]] const std_srvs::TriggerRequest::ConstPtr &cmd) {
-  hover_ = false;
   return std_srvs::TriggerResponse::Ptr();
 }
 //}
 
 /*stopTrajectoryTracking()//{*/
 const std_srvs::TriggerResponse::ConstPtr BypassTracker::stopTrajectoryTracking([[maybe_unused]] const std_srvs::TriggerRequest::ConstPtr &cmd) {
-  hover_ = true;
   return std_srvs::TriggerResponse::Ptr();
 }
 //}
 
 /*resumeTrajectoryTracking()//{*/
 const std_srvs::TriggerResponse::ConstPtr BypassTracker::resumeTrajectoryTracking([[maybe_unused]] const std_srvs::TriggerRequest::ConstPtr &cmd) {
-  hover_ = false;
   return std_srvs::TriggerResponse::Ptr();
 }
 //}
@@ -304,10 +299,10 @@ const mrs_msgs::ReferenceSrvResponse::ConstPtr BypassTracker::setReference(const
   {
     std::scoped_lock lock(mutex_goal_);
 
-  goto_ref_x=cmd->reference.position.x;
-  goto_ref_y=cmd->reference.position.y;
-  goto_ref_z=cmd->reference.position.z;
-  goto_ref_heading=cmd->reference.heading;
+  goal_x_=cmd->reference.position.x;
+  goal_y_=cmd->reference.position.y;
+  goal_z_=cmd->reference.position.z;
+  goal_heading_=cmd->reference.heading;
 
   }
 
