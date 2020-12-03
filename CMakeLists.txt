@@ -115,19 +115,7 @@ target_link_libraries(LineTrackerInterns
     )
 
 
-  # modified_mpc
-
-  add_library(ModifiedMpc
-    src/modified_mpc/modified_mpc.cpp
-    )
-  add_dependencies(ModifiedMpc
-    ${catkin_EXPORTED_TARGETS}
-    ${${PROJECT_NAME}_EXPORTED_TARGETS}
-    )
-  target_link_libraries(ModifiedMpc
-    ${catkin_LIBRARIES}
-    )
-    
+ 
 
   # DergTracker
 
@@ -165,7 +153,6 @@ install(TARGETS
   LineTrackerInterns
   MpcTrackerInterns
   BypassTracker
-  ModifiedMpc
   DergTracker
   MpcTrackerCopy
   ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}

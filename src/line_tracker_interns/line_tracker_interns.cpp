@@ -9,21 +9,38 @@
 #include <mrs_lib/param_loader.h>
 #include <mrs_lib/profiler.h>
 #include <mrs_lib/mutex.h>
-#include <mrs_lib/geometry_utils.h>
 #include <mrs_lib/attitude_converter.h>
 #include <mrs_lib/utils.h>
+#include <mrs_lib/geometry/cyclic.h>
+#include <mrs_lib/geometry/misc.h>
 
 //}
 
+/* defines //{ */
+
 #define STOP_THR 1e-3
+
+//}
+
+/* using //{ */
+
+using namespace Eigen;
+
+using vec2_t = mrs_lib::geometry::vec_t<2>;
+using vec3_t = mrs_lib::geometry::vec_t<3>;
+
+using radians  = mrs_lib::geometry::radians;
+using sradians = mrs_lib::geometry::sradians;
+
+//}
 
 namespace mrs_uav_trackers
 {
 
-namespace line_tracker_interns
+namespace line_tracker
 {
 
-/* //{ class LineTrackerInterns */
+/* //{ class LineTracker */
 
 // state machine
 typedef enum
@@ -41,7 +58,7 @@ const char *state_names[5] = {
 
     "IDLING", "STOPPING_MOTION", "ACCELERATING", "DECELERATING", "STOPPING"};
 
-class LineTrackerInterns : public mrs_uav_managers::Tracker {
+class LineTracker : public mrs_uav_managers::Tracker {
 public:
   void initialize(const ros::NodeHandle &parent_nh, const std::string uav_name, std::shared_ptr<mrs_uav_managers::CommonHandlers_t> common_handlers);
   std::tuple<bool, std::string> activate(const mrs_msgs::PositionCommand::ConstPtr &last_position_cmd);
@@ -64,7 +81,6 @@ public:
   const std_srvs::TriggerResponse::ConstPtr resumeTrajectoryTracking(const std_srvs::TriggerRequest::ConstPtr &cmd);
   const std_srvs::TriggerResponse::ConstPtr gotoTrajectoryStart(const std_srvs::TriggerRequest::ConstPtr &cmd);
 
-
 private:
   std::shared_ptr<mrs_uav_managers::CommonHandlers_t> common_handlers_;
 
@@ -73,7 +89,7 @@ private:
   std::string _version_;
   std::string _uav_name_;
 
-  void       mainTimer(const ros::TimerEvent &event);
+  void  mainTimer(const ros::TimerEvent &event);
   ros::Timer main_timer_;
 
   // | ------------------------ uav state ----------------------- |
@@ -165,13 +181,13 @@ private:
 
 /* //{ initialize() */
 
-void LineTrackerInterns::initialize(const ros::NodeHandle &parent_nh, [[maybe_unused]] const std::string uav_name,
+void LineTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unused]] const std::string uav_name,
                              [[maybe_unused]] std::shared_ptr<mrs_uav_managers::CommonHandlers_t> common_handlers) {
 
   _uav_name_             = uav_name;
   this->common_handlers_ = common_handlers;
 
-  ros::NodeHandle nh_(parent_nh, "line_tracker_interns");
+  ros::NodeHandle nh_(parent_nh, "line_tracker");
 
   ros::Time::waitForValid();
 
@@ -180,13 +196,13 @@ void LineTrackerInterns::initialize(const ros::NodeHandle &parent_nh, [[maybe_un
   // --------------------------------------------------------------
 
 
-  mrs_lib::ParamLoader param_loader(nh_, "LineTrackerInterns");
+  mrs_lib::ParamLoader param_loader(nh_, "LineTracker");
 
   param_loader.loadParam("version", _version_);
 
   if (_version_ != VERSION) {
 
-    ROS_ERROR("[LineTrackerInterns]: the version of the binary (%s) does not match the config file (%s), please build me!", VERSION, _version_.c_str());
+    ROS_ERROR("[LineTracker]: the version of the binary (%s) does not match the config file (%s), please build me!", VERSION, _version_.c_str());
     ros::shutdown();
   }
 
@@ -205,7 +221,7 @@ void LineTrackerInterns::initialize(const ros::NodeHandle &parent_nh, [[maybe_un
 
   _tracker_dt_ = 1.0 / double(_tracker_loop_rate_);
 
-  ROS_INFO("[LineTrackerInterns]: tracker_dt: %.2f", _tracker_dt_);
+  ROS_INFO("[LineTracker]: tracker_dt: %.2f", _tracker_dt_);
 
   state_x_       = 0;
   state_y_       = 0;
@@ -234,36 +250,36 @@ void LineTrackerInterns::initialize(const ros::NodeHandle &parent_nh, [[maybe_un
   // |                          profiler_                          |
   // --------------------------------------------------------------
 
-  profiler_ = mrs_lib::Profiler(nh_, "LineTrackerInterns", _profiler_enabled_);
+  profiler_ = mrs_lib::Profiler(nh_, "LineTracker", _profiler_enabled_);
 
   // --------------------------------------------------------------
   // |                           timers                           |
   // --------------------------------------------------------------
 
-  main_timer_ = nh_.createTimer(ros::Rate(_tracker_loop_rate_), &LineTrackerInterns::mainTimer, this);
+  main_timer_ = nh_.createTimer(ros::Rate(_tracker_loop_rate_), &LineTracker::mainTimer, this);
 
   if (!param_loader.loadedSuccessfully()) {
-    ROS_ERROR("[LineTrackerInterns]: could not load all parameters!");
+    ROS_ERROR("[LineTracker]: could not load all parameters!");
     ros::shutdown();
   }
 
   is_initialized_ = true;
 
-  ROS_INFO("[LineTrackerInterns]: initialized, version %s", VERSION);
+  ROS_INFO("[LineTracker]: initialized, version %s", VERSION);
 }
 
 //}
 
 /* //{ activate() */
 
-std::tuple<bool, std::string> LineTrackerInterns::activate(const mrs_msgs::PositionCommand::ConstPtr &last_position_cmd) {
+std::tuple<bool, std::string> LineTracker::activate(const mrs_msgs::PositionCommand::ConstPtr &last_position_cmd) {
 
   std::stringstream ss;
 
   if (!got_uav_state_) {
 
     ss << "odometry not set";
-    ROS_ERROR_STREAM("[LineTrackerInterns]: " << ss.str());
+    ROS_ERROR_STREAM("[LineTracker]: " << ss.str());
     return std::tuple(false, ss.str());
   }
 
@@ -332,9 +348,9 @@ std::tuple<bool, std::string> LineTrackerInterns::activate(const mrs_msgs::Posit
 
       goal_heading_ = last_position_cmd->heading;
 
-      ROS_INFO("[LineTrackerInterns]: initial condition: x=%.2f, y=%.2f, z=%.2f, heading=%.2f", last_position_cmd->position.x, last_position_cmd->position.y,
+      ROS_INFO("[LineTracker]: initial condition: x=%.2f, y=%.2f, z=%.2f, heading=%.2f", last_position_cmd->position.x, last_position_cmd->position.y,
                last_position_cmd->position.z, last_position_cmd->heading);
-      ROS_INFO("[LineTrackerInterns]: initial condition: x_rate=%.2f, y_rate=%.2f, z_rate=%.2f", speed_x_, speed_y_, current_vertical_speed_);
+      ROS_INFO("[LineTracker]: initial condition: x_rate=%.2f, y_rate=%.2f, z_rate=%.2f", speed_x_, speed_y_, current_vertical_speed_);
 
     } else {
 
@@ -356,7 +372,7 @@ std::tuple<bool, std::string> LineTrackerInterns::activate(const mrs_msgs::Posit
 
       goal_heading_ = uav_heading;
 
-      ROS_WARN("[LineTrackerInterns]: the previous command is not usable for activation, using Odometry instead");
+      ROS_WARN("[LineTracker]: the previous command is not usable for activation, using Odometry instead");
     }
   }
 
@@ -399,13 +415,13 @@ std::tuple<bool, std::string> LineTrackerInterns::activate(const mrs_msgs::Posit
     goal_y_ = state_y_ + stop_dist_y;
     goal_z_ = state_z_ + vertical_stop_dist;
 
-    ROS_INFO("[LineTrackerInterns]: setting z goal to %.2f", goal_z_);
+    ROS_INFO("[LineTracker]: setting z goal to %.2f", goal_z_);
   }
 
   is_active_ = true;
 
   ss << "activated";
-  ROS_INFO_STREAM("[LineTrackerInterns]: " << ss.str());
+  ROS_INFO_STREAM("[LineTracker]: " << ss.str());
 
   changeState(STOP_MOTION_STATE);
 
@@ -416,30 +432,30 @@ std::tuple<bool, std::string> LineTrackerInterns::activate(const mrs_msgs::Posit
 
 /* //{ deactivate() */
 
-void LineTrackerInterns::deactivate(void) {
+void LineTracker::deactivate(void) {
 
   is_active_ = false;
 
-  ROS_INFO("[LineTrackerInterns]: deactivated");
+  ROS_INFO("[LineTracker]: deactivated");
 }
 
 //}
 
 /* //{ resetStatic() */
 
-bool LineTrackerInterns::resetStatic(void) {
+bool LineTracker::resetStatic(void) {
 
   if (!is_initialized_) {
-    ROS_ERROR("[LineTrackerInterns]: can not reset, not initialized");
+    ROS_ERROR("[LineTracker]: can not reset, not initialized");
     return false;
   }
 
   if (!is_active_) {
-    ROS_ERROR("[LineTrackerInterns]: can not reset, not active");
+    ROS_ERROR("[LineTracker]: can not reset, not active");
     return false;
   }
 
-  ROS_INFO("[LineTrackerInterns]: reseting with no dynamics");
+  ROS_INFO("[LineTracker]: reseting with no dynamics");
 
   auto uav_state = mrs_lib::get_mutexed(mutex_uav_state_, uav_state_);
 
@@ -448,7 +464,7 @@ bool LineTrackerInterns::resetStatic(void) {
     uav_heading = mrs_lib::AttitudeConverter(uav_state.pose.orientation).getHeading();
   }
   catch (...) {
-    ROS_ERROR_THROTTLE(1.0, "[LineTrackerInterns]: could not calculate the UAV heading");
+    ROS_ERROR_THROTTLE(1.0, "[LineTracker]: could not calculate the UAV heading");
     return false;
   }
 
@@ -483,7 +499,7 @@ bool LineTrackerInterns::resetStatic(void) {
 
 /* //{ update() */
 
-const mrs_msgs::PositionCommand::ConstPtr LineTrackerInterns::update(const mrs_msgs::UavState::ConstPtr &                        uav_state,
+const mrs_msgs::PositionCommand::ConstPtr LineTracker::update(const mrs_msgs::UavState::ConstPtr &                        uav_state,
                                                               [[maybe_unused]] const mrs_msgs::AttitudeCommand::ConstPtr &last_attitude_cmd) {
 
   mrs_lib::Routine profiler_routine = profiler_.createRoutine("update");
@@ -504,8 +520,6 @@ const mrs_msgs::PositionCommand::ConstPtr LineTrackerInterns::update(const mrs_m
     return mrs_msgs::PositionCommand::Ptr();
   }
 
-  ROS_INFO("The tracker worked");
-
   mrs_msgs::PositionCommand position_cmd;
 
   position_cmd.header.stamp    = ros::Time::now();
@@ -517,7 +531,7 @@ const mrs_msgs::PositionCommand::ConstPtr LineTrackerInterns::update(const mrs_m
     position_cmd.position.x = state_x_;
     position_cmd.position.y = state_y_;
     position_cmd.position.z = state_z_;
-    position_cmd.heading    = state_heading_;
+    position_cmd.heading    = radians::wrap(state_heading_);
 
     position_cmd.velocity.x   = cos(current_heading_) * current_horizontal_speed_;
     position_cmd.velocity.y   = sin(current_heading_) * current_horizontal_speed_;
@@ -544,7 +558,7 @@ const mrs_msgs::PositionCommand::ConstPtr LineTrackerInterns::update(const mrs_m
 
 /* //{ getStatus() */
 
-const mrs_msgs::TrackerStatus LineTrackerInterns::getStatus() {
+const mrs_msgs::TrackerStatus LineTracker::getStatus() {
 
   mrs_msgs::TrackerStatus tracker_status;
 
@@ -564,7 +578,7 @@ const mrs_msgs::TrackerStatus LineTrackerInterns::getStatus() {
 
 /* //{ enableCallbacks() */
 
-const std_srvs::SetBoolResponse::ConstPtr LineTrackerInterns::enableCallbacks(const std_srvs::SetBoolRequest::ConstPtr &cmd) {
+const std_srvs::SetBoolResponse::ConstPtr LineTracker::enableCallbacks(const std_srvs::SetBoolRequest::ConstPtr &cmd) {
 
   std_srvs::SetBoolResponse res;
   std::stringstream         ss;
@@ -574,12 +588,12 @@ const std_srvs::SetBoolResponse::ConstPtr LineTrackerInterns::enableCallbacks(co
     callbacks_enabled_ = cmd->data;
 
     ss << "callbacks " << (callbacks_enabled_ ? "enabled" : "disabled");
-    ROS_INFO_STREAM_THROTTLE(1.0, "[LineTrackerInterns]: " << ss.str());
+    ROS_INFO_STREAM_THROTTLE(1.0, "[LineTracker]: " << ss.str());
 
   } else {
 
     ss << "callbacks were already " << (callbacks_enabled_ ? "enabled" : "disabled");
-    ROS_WARN_STREAM_THROTTLE(1.0, "[LineTrackerInterns]: " << ss.str());
+    ROS_WARN_STREAM_THROTTLE(1.0, "[LineTracker]: " << ss.str());
   }
 
   res.message = ss.str();
@@ -592,7 +606,7 @@ const std_srvs::SetBoolResponse::ConstPtr LineTrackerInterns::enableCallbacks(co
 
 /* switchOdometrySource() //{ */
 
-const std_srvs::TriggerResponse::ConstPtr LineTrackerInterns::switchOdometrySource(const mrs_msgs::UavState::ConstPtr &new_uav_state) {
+const std_srvs::TriggerResponse::ConstPtr LineTracker::switchOdometrySource(const mrs_msgs::UavState::ConstPtr &new_uav_state) {
 
   std::scoped_lock lock(mutex_goal_, mutex_state_);
 
@@ -605,7 +619,7 @@ const std_srvs::TriggerResponse::ConstPtr LineTrackerInterns::switchOdometrySour
     old_heading = mrs_lib::AttitudeConverter(uav_state.pose.orientation).getHeading();
   }
   catch (...) {
-    ROS_ERROR_THROTTLE(1.0, "[LineTrackerInterns]: could not calculate the old UAV heading");
+    ROS_ERROR_THROTTLE(1.0, "[LineTracker]: could not calculate the old UAV heading");
     got_headings = false;
   }
 
@@ -613,7 +627,7 @@ const std_srvs::TriggerResponse::ConstPtr LineTrackerInterns::switchOdometrySour
     new_heading = mrs_lib::AttitudeConverter(new_uav_state->pose.orientation).getHeading();
   }
   catch (...) {
-    ROS_ERROR_THROTTLE(1.0, "[LineTrackerInterns]: could not calculate the new UAV heading");
+    ROS_ERROR_THROTTLE(1.0, "[LineTracker]: could not calculate the new UAV heading");
     got_headings = false;
   }
 
@@ -657,7 +671,7 @@ const std_srvs::TriggerResponse::ConstPtr LineTrackerInterns::switchOdometrySour
 
 /* //{ hover() */
 
-const std_srvs::TriggerResponse::ConstPtr LineTrackerInterns::hover([[maybe_unused]] const std_srvs::TriggerRequest::ConstPtr &cmd) {
+const std_srvs::TriggerResponse::ConstPtr LineTracker::hover([[maybe_unused]] const std_srvs::TriggerRequest::ConstPtr &cmd) {
 
   std_srvs::TriggerResponse res;
 
@@ -720,7 +734,7 @@ const std_srvs::TriggerResponse::ConstPtr LineTrackerInterns::hover([[maybe_unus
 
 /* //{ startTrajectoryTracking() */
 
-const std_srvs::TriggerResponse::ConstPtr LineTrackerInterns::startTrajectoryTracking([[maybe_unused]] const std_srvs::TriggerRequest::ConstPtr &cmd) {
+const std_srvs::TriggerResponse::ConstPtr LineTracker::startTrajectoryTracking([[maybe_unused]] const std_srvs::TriggerRequest::ConstPtr &cmd) {
   return std_srvs::TriggerResponse::Ptr();
 }
 
@@ -728,7 +742,7 @@ const std_srvs::TriggerResponse::ConstPtr LineTrackerInterns::startTrajectoryTra
 
 /* //{ stopTrajectoryTracking() */
 
-const std_srvs::TriggerResponse::ConstPtr LineTrackerInterns::stopTrajectoryTracking([[maybe_unused]] const std_srvs::TriggerRequest::ConstPtr &cmd) {
+const std_srvs::TriggerResponse::ConstPtr LineTracker::stopTrajectoryTracking([[maybe_unused]] const std_srvs::TriggerRequest::ConstPtr &cmd) {
   return std_srvs::TriggerResponse::Ptr();
 }
 
@@ -736,7 +750,7 @@ const std_srvs::TriggerResponse::ConstPtr LineTrackerInterns::stopTrajectoryTrac
 
 /* //{ resumeTrajectoryTracking() */
 
-const std_srvs::TriggerResponse::ConstPtr LineTrackerInterns::resumeTrajectoryTracking([[maybe_unused]] const std_srvs::TriggerRequest::ConstPtr &cmd) {
+const std_srvs::TriggerResponse::ConstPtr LineTracker::resumeTrajectoryTracking([[maybe_unused]] const std_srvs::TriggerRequest::ConstPtr &cmd) {
   return std_srvs::TriggerResponse::Ptr();
 }
 
@@ -744,7 +758,7 @@ const std_srvs::TriggerResponse::ConstPtr LineTrackerInterns::resumeTrajectoryTr
 
 /* //{ gotoTrajectoryStart() */
 
-const std_srvs::TriggerResponse::ConstPtr LineTrackerInterns::gotoTrajectoryStart([[maybe_unused]] const std_srvs::TriggerRequest::ConstPtr &cmd) {
+const std_srvs::TriggerResponse::ConstPtr LineTracker::gotoTrajectoryStart([[maybe_unused]] const std_srvs::TriggerRequest::ConstPtr &cmd) {
   return std_srvs::TriggerResponse::Ptr();
 }
 
@@ -752,7 +766,7 @@ const std_srvs::TriggerResponse::ConstPtr LineTrackerInterns::gotoTrajectoryStar
 
 /* //{ setConstraints() */
 
-const mrs_msgs::DynamicsConstraintsSrvResponse::ConstPtr LineTrackerInterns::setConstraints(const mrs_msgs::DynamicsConstraintsSrvRequest::ConstPtr &cmd) {
+const mrs_msgs::DynamicsConstraintsSrvResponse::ConstPtr LineTracker::setConstraints(const mrs_msgs::DynamicsConstraintsSrvRequest::ConstPtr &cmd) {
 
   mrs_msgs::DynamicsConstraintsSrvResponse res;
 
@@ -779,9 +793,11 @@ const mrs_msgs::DynamicsConstraintsSrvResponse::ConstPtr LineTrackerInterns::set
 
 /* //{ setReference() */
 
-const mrs_msgs::ReferenceSrvResponse::ConstPtr LineTrackerInterns::setReference(const mrs_msgs::ReferenceSrvRequest::ConstPtr &cmd) {
+const mrs_msgs::ReferenceSrvResponse::ConstPtr LineTracker::setReference(const mrs_msgs::ReferenceSrvRequest::ConstPtr &cmd) {
 
   mrs_msgs::ReferenceSrvResponse res;
+
+  auto state_heading = mrs_lib::get_mutexed(mutex_state_, state_heading_);
 
   {
     std::scoped_lock lock(mutex_goal_);
@@ -789,9 +805,9 @@ const mrs_msgs::ReferenceSrvResponse::ConstPtr LineTrackerInterns::setReference(
     goal_x_       = cmd->reference.position.x;
     goal_y_       = cmd->reference.position.y;
     goal_z_       = cmd->reference.position.z;
-    goal_heading_ = mrs_lib::wrapAngle(cmd->reference.heading);
+    goal_heading_ = radians::unwrap(cmd->reference.heading, state_heading);
 
-    ROS_INFO("[LineTrackerInterns]: received new setpoint %.2f, %.2f, %.2f, %.2f", goal_x_, goal_y_, goal_z_, goal_heading_);
+    ROS_INFO("[LineTracker]: received new setpoint %.2f, %.2f, %.2f, %.2f", goal_x_, goal_y_, goal_z_, goal_heading_);
 
     have_goal_ = true;
   }
@@ -808,7 +824,7 @@ const mrs_msgs::ReferenceSrvResponse::ConstPtr LineTrackerInterns::setReference(
 
 /* //{ setTrajectoryReference() */
 
-const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr LineTrackerInterns::setTrajectoryReference([
+const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr LineTracker::setTrajectoryReference([
     [maybe_unused]] const mrs_msgs::TrajectoryReferenceSrvRequest::ConstPtr &cmd) {
   return mrs_msgs::TrajectoryReferenceSrvResponse::Ptr();
 }
@@ -819,33 +835,33 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr LineTrackerInterns::set
 
 /* //{ changeStateHorizontal() */
 
-void LineTrackerInterns::changeStateHorizontal(States_t new_state) {
+void LineTracker::changeStateHorizontal(States_t new_state) {
 
   previous_state_horizontal_ = current_state_horizontal_;
   current_state_horizontal_  = new_state;
 
   // just for ROS_INFO
-  ROS_DEBUG("[LineTrackerInterns]: Switching horizontal state %s -> %s", state_names[previous_state_horizontal_], state_names[current_state_horizontal_]);
+  ROS_DEBUG("[LineTracker]: Switching horizontal state %s -> %s", state_names[previous_state_horizontal_], state_names[current_state_horizontal_]);
 }
 
 //}
 
 /* //{ changeStateVertical() */
 
-void LineTrackerInterns::changeStateVertical(States_t new_state) {
+void LineTracker::changeStateVertical(States_t new_state) {
 
   previous_state_vertical_ = current_state_vertical_;
   current_state_vertical_  = new_state;
 
   // just for ROS_INFO
-  ROS_DEBUG("[LineTrackerInterns]: Switching vertical state %s -> %s", state_names[previous_state_vertical_], state_names[current_state_vertical_]);
+  ROS_DEBUG("[LineTracker]: Switching vertical state %s -> %s", state_names[previous_state_vertical_], state_names[current_state_vertical_]);
 }
 
 //}
 
 /* //{ changeState() */
 
-void LineTrackerInterns::changeState(States_t new_state) {
+void LineTracker::changeState(States_t new_state) {
 
   changeStateVertical(new_state);
   changeStateHorizontal(new_state);
@@ -857,7 +873,7 @@ void LineTrackerInterns::changeState(States_t new_state) {
 
 /* //{ stopHorizontalMotion() */
 
-void LineTrackerInterns::stopHorizontalMotion(void) {
+void LineTracker::stopHorizontalMotion(void) {
 
   {
     std::scoped_lock lock(mutex_state_);
@@ -877,7 +893,7 @@ void LineTrackerInterns::stopHorizontalMotion(void) {
 
 /* //{ stopVerticalMotion() */
 
-void LineTrackerInterns::stopVerticalMotion(void) {
+void LineTracker::stopVerticalMotion(void) {
 
   {
     std::scoped_lock lock(mutex_state_);
@@ -897,7 +913,7 @@ void LineTrackerInterns::stopVerticalMotion(void) {
 
 /* //{ accelerateHorizontal() */
 
-void LineTrackerInterns::accelerateHorizontal(void) {
+void LineTracker::accelerateHorizontal(void) {
 
   // copy member variables
   auto [goal_x, goal_y]                             = mrs_lib::get_mutexed(mutex_goal_, goal_x_, goal_y_);
@@ -947,7 +963,7 @@ void LineTrackerInterns::accelerateHorizontal(void) {
 
 /* //{ accelerateVertical() */
 
-void LineTrackerInterns::accelerateVertical(void) {
+void LineTracker::accelerateVertical(void) {
 
   auto goal_z                            = mrs_lib::get_mutexed(mutex_goal_, goal_z_);
   auto [state_z, current_vertical_speed] = mrs_lib::get_mutexed(mutex_state_, state_z_, current_vertical_speed_);
@@ -959,7 +975,7 @@ void LineTrackerInterns::accelerateVertical(void) {
   {
     std::scoped_lock lock(mutex_state_);
 
-    current_vertical_direction_ = mrs_lib::sign(tar_z);
+    current_vertical_direction_ = mrs_lib::signum(tar_z);
   }
 
   auto current_vertical_direction = mrs_lib::get_mutexed(mutex_state_, current_vertical_direction_);
@@ -998,7 +1014,7 @@ void LineTrackerInterns::accelerateVertical(void) {
 
 /* //{ decelerateHorizontal() */
 
-void LineTrackerInterns::decelerateHorizontal(void) {
+void LineTracker::decelerateHorizontal(void) {
 
   {
     std::scoped_lock lock(mutex_state_);
@@ -1030,7 +1046,7 @@ void LineTrackerInterns::decelerateHorizontal(void) {
 
 /* //{ decelerateVertical() */
 
-void LineTrackerInterns::decelerateVertical(void) {
+void LineTracker::decelerateVertical(void) {
 
   {
     std::scoped_lock lock(mutex_state_);
@@ -1056,7 +1072,7 @@ void LineTrackerInterns::decelerateVertical(void) {
 
 /* //{ stopHorizontal() */
 
-void LineTrackerInterns::stopHorizontal(void) {
+void LineTracker::stopHorizontal(void) {
 
   {
     std::scoped_lock lock(mutex_state_);
@@ -1071,7 +1087,7 @@ void LineTrackerInterns::stopHorizontal(void) {
 
 /* //{ stopVertical() */
 
-void LineTrackerInterns::stopVertical(void) {
+void LineTracker::stopVertical(void) {
 
   {
     std::scoped_lock lock(mutex_state_);
@@ -1087,7 +1103,7 @@ void LineTrackerInterns::stopVertical(void) {
 
 /* //{ mainTimer() */
 
-void LineTrackerInterns::mainTimer(const ros::TimerEvent &event) {
+void LineTracker::mainTimer(const ros::TimerEvent &event) {
 
   if (!is_active_) {
     return;
@@ -1218,8 +1234,6 @@ void LineTrackerInterns::mainTimer(const ros::TimerEvent &event) {
     // flap the resulted state_heading_ aroud PI
     state_heading_ += current_heading_rate * _tracker_dt_;
 
-    state_heading_ = mrs_lib::wrapAngle(state_heading_);
-
     if (fabs(state_heading_ - goal_heading_) < (2 * (_heading_rate_ * _tracker_dt_))) {
       state_heading_ = goal_heading_;
     }
@@ -1228,9 +1242,9 @@ void LineTrackerInterns::mainTimer(const ros::TimerEvent &event) {
 
 //}
 
-}  // namespace line_tracker_interns
+}  // namespace line_tracker
 
 }  // namespace mrs_uav_trackers
 
 #include <pluginlib/class_list_macros.h>
-PLUGINLIB_EXPORT_CLASS(mrs_uav_trackers::line_tracker_interns::LineTrackerInterns, mrs_uav_managers::Tracker)
+PLUGINLIB_EXPORT_CLASS(mrs_uav_trackers::line_tracker::LineTracker, mrs_uav_managers::Tracker)
