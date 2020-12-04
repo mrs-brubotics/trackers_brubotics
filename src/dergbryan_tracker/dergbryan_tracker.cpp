@@ -1,9 +1,10 @@
-#define VERSION "0.0.0.0"
+#define VERSION "0.0.5.0"
 
 /*includes//{*/
 #include <ros/ros.h>
 #include <mrs_uav_managers/tracker.h>
 #include <mrs_lib/profiler.h>
+#include <mrs_lib/param_loader.h>
 #include <mrs_lib/mutex.h>
 
 /*begin includes added by bryan:*/
@@ -43,6 +44,10 @@ public:
   const std_srvs::TriggerResponse::ConstPtr gotoTrajectoryStart(const std_srvs::TriggerRequest::ConstPtr &cmd);
 
 private:
+  ros::NodeHandle                                     nh_;
+  std::shared_ptr<mrs_uav_managers::CommonHandlers_t> common_handlers_;
+
+  std::string _version_;
   // // | ------------------------ uav state ----------------------- |
   mrs_msgs::UavState uav_state_;
   bool               got_uav_state_ = false; // now added by bryan
@@ -60,6 +65,28 @@ private:
   std::mutex mutex_state_;
 
 
+  // gains that are used and already filtered
+  double kpxy_;       // position xy gain
+  double kvxy_;       // velocity xy gain
+  double kaxy_;       // acceleration xy gain (feed forward, =1)
+  // double kiwxy_;      // world xy integral gain
+  // double kibxy_;      // body xy integral gain
+  // double kiwxy_lim_;  // world xy integral limit
+  // double kibxy_lim_;  // body xy integral limit
+  double kpz_;        // position z gain
+  double kvz_;        // velocity z gain
+  double kaz_;        // acceleration z gain (feed forward, =1)
+  // double km_;         // mass estimator gain
+  // double km_lim_;     // mass estimator limit
+  double kqxy_;       // pitch/roll attitude gain
+  double kqz_;        // yaw attitude gain
+
+  std::mutex mutex_gains_;       // locks the gains the are used and filtered
+
+
+  // | ------------------------ profiler_ ------------------------ |
+  mrs_lib::Profiler profiler_;
+  bool              _profiler_enabled_ = false;
 
 
   // | ---------------------- desired goal ---------------------- |
@@ -71,7 +98,6 @@ private:
   std::mutex mutex_goal_;
 
 
-  mrs_lib::Profiler profiler_;
 
   bool is_initialized_ = false;
   bool is_active_      = false;
@@ -87,9 +113,48 @@ private:
 /*initialize()//{*/
 void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unused]] const std::string uav_name,
                              [[maybe_unused]] std::shared_ptr<mrs_uav_managers::CommonHandlers_t> common_handlers) {
+  /*QUESTION: using se3_controller here since I want to load the se3 controllers paramters and not overwrite them. How to add paramters specific to derg tracker? How to overwrite se3 control paramters if we would use our own se3 controller?*/
+  //ros::NodeHandle nh_(parent_nh, "dergbryan_tracker");
+  ros::NodeHandle nh_(parent_nh, "se3_controller");
+  common_handlers_ = common_handlers;
+  /*QUESTION: how to load these paramters commented below as was done in the se3controller?*/
+  // _motor_params_   = motor_params;
+  // _uav_mass_       = uav_mass;
+  // _g_              = g;
+
   ros::Time::waitForValid();
-  // no paramaters to be loaded for this tracker
-  ROS_INFO("[DergbryanTracker]: no parameters to be loaded");
+
+  // | ------------------- loading parameters ------------------- |
+  //mrs_lib::ParamLoader param_loader(nh_, "DergbryanTracker");
+  mrs_lib::ParamLoader param_loader(nh_, "Se3Controller");
+
+  param_loader.loadParam("version", _version_);
+
+  /*QUESTION: this block triggers the error always, anyone knows solution to this?*/
+  // if (_version_ != VERSION) {
+  //   ROS_ERROR("[DergbryanTracker]: the version of the binary (%s) does not match the config file (%s), please build me!", VERSION, _version_.c_str());
+  //   ros::shutdown();
+  // }
+
+  param_loader.loadParam("enable_profiler", _profiler_enabled_);
+  // lateral gains
+  param_loader.loadParam("default_gains/horizontal/kp", kpxy_);
+  param_loader.loadParam("default_gains/horizontal/kv", kvxy_);
+  param_loader.loadParam("default_gains/horizontal/ka", kaxy_);
+
+  // height gains
+  param_loader.loadParam("default_gains/vertical/kp", kpz_);
+  param_loader.loadParam("default_gains/vertical/kv", kvz_);
+  param_loader.loadParam("default_gains/vertical/ka", kaz_);
+
+  // attitude gains
+  param_loader.loadParam("default_gains/horizontal/attitude/kq", kqxy_);
+  param_loader.loadParam("default_gains/vertical/attitude/kq", kqz_);
+
+  if (!param_loader.loadedSuccessfully()) {
+    ROS_ERROR("[DergbryanTracker]: could not load all parameters!");
+    ros::shutdown();
+  }
   // initialize variables
 
   // initialization completed
@@ -355,6 +420,75 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
   // ROS_INFO_STREAM("Ow = \n" << Ow);
   // ROS_INFO_STREAM("Ep = \n" << Ep);
   // ROS_INFO_STREAM("Ev = \n" << Ev);
+
+  // | --------------------- load the gains --------------------- |
+  /*NOTE: for now on disable the filterGains used in the original se3 controller*/
+  /*QUESTION: shouldn't we add this back later?*/
+  //filterGains(control_reference->disable_position_gains, dt);
+
+  Eigen::Vector3d Ka = Eigen::Vector3d::Zero(3);
+  Eigen::Array3d  Kp = Eigen::Array3d::Zero(3);
+  Eigen::Array3d  Kv = Eigen::Array3d::Zero(3);
+  Eigen::Array3d  Kq = Eigen::Array3d::Zero(3);
+
+  {
+    std::scoped_lock lock(mutex_gains_);
+
+    if (position_cmd.use_position_horizontal) {
+      Kp[0] = kpxy_;
+      Kp[1] = kpxy_;
+    } else {
+      Kp[0] = 0;
+      Kp[1] = 0;
+    }
+
+    if (position_cmd.use_position_vertical) {
+      Kp[2] = kpz_;
+    } else {
+      Kp[2] = 0;
+    }
+
+    if (position_cmd.use_velocity_horizontal) {
+      Kv[0] = kvxy_;
+      Kv[1] = kvxy_;
+    } else {
+      Kv[0] = 0;
+      Kv[1] = 0;
+    }
+
+    if (position_cmd.use_velocity_vertical) {
+      Kv[2] = kvz_;
+    } else if (position_cmd.use_position_vertical) {  // special case: want to control z-pos but not the velocity => at least provide z dampening
+      Kv[2] = kvz_;
+    } else {
+      Kv[2] = 0;
+    }
+
+    if (position_cmd.use_acceleration) {
+      Ka << kaxy_, kaxy_, kaz_;
+    } else {
+      Ka << 0, 0, 0;
+    }
+
+    // Those gains are set regardless of control_reference setting,
+    // because we need to control the attitude.
+    Kq << kqxy_, kqxy_, kqz_;
+  }
+
+  // add a print to test if the gains change so you know where to change
+  // QUESTION: how to get _uav_mass_ analoguous to controllers?
+  // Kp = Kp * (_uav_mass_ + uav_mass_difference_);
+  // Kv = Kv * (_uav_mass_ + uav_mass_difference_);
+
+
+
+
+
+
+
+
+
+
 /* end copy of se3controller*/
  // set the desired states from the input of the goto function
 
