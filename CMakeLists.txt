@@ -16,8 +16,7 @@ find_package(catkin REQUIRED COMPONENTS
   )
 
 generate_dynamic_reconfigure_options(
-    cfg/mpc_tracker_copy.cfg
-    #cfg/mpc_tracker_interns.cfg # does not work anymore
+    #cfg/mpc_tracker_copy.cfg
     ) 
 
 #include_directories(${catkin_INCLUDE_DIRS})
@@ -75,32 +74,6 @@ else()
 endif()
 ####################################
 
-# Line tracker
-
-add_library(LineTrackerInterns
-  src/line_tracker_interns/line_tracker_interns.cpp
-  )
-add_dependencies(LineTrackerInterns
-  ${catkin_EXPORTED_TARGETS}
-  ${${PROJECT_NAME}_EXPORTED_TARGETS}
-  )
-target_link_libraries(LineTrackerInterns
-  ${catkin_LIBRARIES}
-  )
-
-  # MPC tracker
-
-  add_library(MpcTrackerInterns
-    src/mpc_tracker_interns/mpc_tracker_interns.cpp
-    )
-  add_dependencies(MpcTrackerInterns
-    ${catkin_EXPORTED_TARGETS}
-    ${${PROJECT_NAME}_EXPORTED_TARGETS}
-    )
-  target_link_libraries(MpcTrackerInterns
-    ${catkin_LIBRARIES}
-    )
-
   # Bypass tracker
 
   add_library(BypassTracker
@@ -119,30 +92,30 @@ target_link_libraries(LineTrackerInterns
 
   # DergTracker
 
-  add_library(DergTracker
-    src/derg_tracker/derg_tracker.cpp
-    )
-  add_dependencies(DergTracker
-    ${catkin_EXPORTED_TARGETS}
-    ${${PROJECT_NAME}_EXPORTED_TARGETS}
-    )
-  target_link_libraries(DergTracker
-    ${catkin_LIBRARIES}
-    )
+#  add_library(DergTracker
+#    src/derg_tracker/derg_tracker.cpp
+#    )
+#  add_dependencies(DergTracker
+#    ${catkin_EXPORTED_TARGETS}
+#    ${${PROJECT_NAME}_EXPORTED_TARGETS}
+#    )
+#  target_link_libraries(DergTracker
+#    ${catkin_LIBRARIES}
+#    )
     
 
   # MpcTrackerCopy
 
-  add_library(MpcTrackerCopy
-    src/mpc_tracker_copy/mpc_tracker_copy.cpp
-    )
-  add_dependencies(MpcTrackerCopy
-    ${catkin_EXPORTED_TARGETS}
-    ${${PROJECT_NAME}_EXPORTED_TARGETS}
-    )
-  target_link_libraries(MpcTrackerCopy
-    ${catkin_LIBRARIES}
-    )
+#  add_library(MpcTrackerCopy
+#    src/mpc_tracker_copy/mpc_tracker_copy.cpp
+#    )
+#  add_dependencies(MpcTrackerCopy
+#    ${catkin_EXPORTED_TARGETS}
+#    ${${PROJECT_NAME}_EXPORTED_TARGETS}
+#    )
+#  target_link_libraries(MpcTrackerCopy
+#    ${catkin_LIBRARIES}
+#    )
     
     
 #############
@@ -150,11 +123,9 @@ target_link_libraries(LineTrackerInterns
 #############
 
 install(TARGETS
-  LineTrackerInterns
-  MpcTrackerInterns
   BypassTracker
-  DergTracker
-  MpcTrackerCopy
+  #DergTracker
+  #MpcTrackerCopy
   ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
   LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
   RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}

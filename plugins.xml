@@ -1,22 +1,10 @@
-<library path="lib/libLineTrackerInterns">
-  <class name="trackers_brubotics/LineTrackerInterns" type="mrs_uav_trackers::line_tracker_interns::LineTrackerInterns" base_class_type="mrs_uav_managers::Tracker">
-    <description>This is the line tracker.</description>
-  </class>
-</library>
-
-<library path="lib/libMpcTrackerInterns">
-  <class name="trackers_brubotics/MpcTrackerInterns" type="mrs_uav_trackers::mpc_tracker_interns::MpcTrackerInterns" base_class_type="mrs_uav_managers::Tracker">
-    <description>This is the mpc tracker.</description>
-  </class>
-</library>
-
 <library path="lib/libBypassTracker">
   <class name="trackers_brubotics/BypassTracker" type="mrs_uav_trackers::bypass_tracker::BypassTracker" base_class_type="mrs_uav_managers::Tracker">
     <description>This is the bypass tracker.</description>
   </class>
 </library>
 
-<library path="lib/libDergTracker">
+<!-- <library path="lib/libDergTracker">
   <class name="trackers_brubotics/DergTracker" type="mrs_uav_trackers::derg_tracker::DergTracker" base_class_type="mrs_uav_managers::Tracker">
     <description>This is the DergTracker</description>
   </class>
@@ -26,4 +14,4 @@
   <class name="trackers_brubotics/MpcTrackerCopy" type="mrs_uav_trackers::mpc_tracker_copy::MpcTrackerCopy" base_class_type="mrs_uav_managers::Tracker">
     <description>This is the MpcTrackerCopy</description>
   </class>
-</library>
+</library> -->

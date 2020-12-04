@@ -3,19 +3,13 @@
 <arg name="RUN_TYPE" default="$(env RUN_TYPE)" />
 <arg name="UAV_TYPE" default="$(env UAV_TYPE)" />
 <arg name="PROFILER" default="$(optenv PROFILER false)" />
-<arg name="custom_config_line_tracker_interns" default="" />
-<arg name="custom_config_alpha_drg" default="" />
-<arg name="custom_config_derg_tracker" default="" />
-<arg name="custom_config_mpc_tracker_copy" default="" />
+<!-- <arg name="custom_config_line_tracker_interns" default="" /> -->
+<!-- <arg name="custom_config_alpha_drg" default="" />
+<arg name="custom_config_derg_tracker" default="" /> -->
+<!-- <arg name="custom_config_mpc_tracker_copy" default="" /> -->
 
 <!-- Parameter loading -->
-<rosparam ns="$(env UAV_NAME)/control_manager/line_tracker_interns" file="$(find trackers_brubotics)/config/default/line_tracker_interns.yaml" />
-<rosparam ns="$(env UAV_NAME)/control_manager/line_tracker_interns" file="$(find trackers_brubotics)/config/$(arg RUN_TYPE)/$(arg UAV_TYPE)/line_tracker_interns.yaml" />
-<rosparam if="$(eval not arg('custom_config_line_tracker_interns') == '')" ns="$(env UAV_NAME)/control_manager/line_tracker_interns" file="$(arg custom_config_line_tracker_interns)" />
-<param name="$(env UAV_NAME)/control_manager/line_tracker_interns/enable_profiler" type="bool" value="$(arg PROFILER)" />
-<remap from="~$(env UAV_NAME)/control_manager/line_tracker_interns/profiler" to="profiler" />
-
-<rosparam ns="$(env UAV_NAME)/control_manager/alpha_drg" file="$(find trackers_brubotics)/config/default/alpha_drg.yaml" />
+<!-- <rosparam ns="$(env UAV_NAME)/control_manager/alpha_drg" file="$(find trackers_brubotics)/config/default/alpha_drg.yaml" />
 <rosparam ns="$(env UAV_NAME)/control_manager/alpha_drg" file="$(find trackers_brubotics)/config/$(arg RUN_TYPE)/$(arg UAV_TYPE)/alpha_drg.yaml" />
 <rosparam if="$(eval not arg('custom_config_alpha_drg') == '')" ns="$(env UAV_NAME)/control_manager/alpha_drg" file="$(arg custom_config_alpha_drg)" />
 <param name="$(env UAV_NAME)/control_manager/alpha_drg/enable_profiler" type="bool" value="$(arg PROFILER)" />
@@ -25,13 +19,13 @@
 <rosparam ns="$(env UAV_NAME)/control_manager/derg_tracker" file="$(find trackers_brubotics)/config/$(arg RUN_TYPE)/$(arg UAV_TYPE)/derg_tracker.yaml" />
 <rosparam if="$(eval not arg('custom_config_derg_tracker') == '')" ns="$(env UAV_NAME)/control_manager/derg_tracker" file="$(arg custom_config_derg_tracker)" />
 <param name="$(env UAV_NAME)/control_manager/derg_tracker/enable_profiler" type="bool" value="$(arg PROFILER)" />
-<remap from="~$(env UAV_NAME)/control_manager/derg_tracker/profiler" to="profiler" />
+<remap from="~$(env UAV_NAME)/control_manager/derg_tracker/profiler" to="profiler" /> -->
 
-<rosparam ns="$(env UAV_NAME)/control_manager/mpc_tracker_copy" file="$(find trackers_brubotics)/config/default/mpc_tracker_copy.yaml" />
+<!-- <rosparam ns="$(env UAV_NAME)/control_manager/mpc_tracker_copy" file="$(find trackers_brubotics)/config/default/mpc_tracker_copy.yaml" />
 <rosparam ns="$(env UAV_NAME)/control_manager/mpc_tracker_copy" file="$(find trackers_brubotics)/config/$(arg RUN_TYPE)/$(arg UAV_TYPE)/mpc_tracker_copy.yaml" />
 <rosparam if="$(eval not arg('custom_config_mpc_tracker_copy') == '')" ns="$(env UAV_NAME)/control_manager/mpc_tracker_copy" file="$(arg custom_config_mpc_tracker_copy)" />
 <param name="$(env UAV_NAME)/control_manager/mpc_tracker_copy/enable_profiler" type="bool" value="$(arg PROFILER)" />
-<remap from="~$(env UAV_NAME)/control_manager/mpc_tracker_copy/profiler" to="profiler" />
+<remap from="~$(env UAV_NAME)/control_manager/mpc_tracker_copy/profiler" to="profiler" /> -->
 
 <!-- Address loading -->
 <rosparam ns="$(env UAV_NAME)/control_manager" file="$(find trackers_brubotics)/config/address.yaml" />

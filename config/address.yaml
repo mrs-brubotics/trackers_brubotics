@@ -1,18 +1,8 @@
-LineTrackerInterns:
-  address: "trackers_brubotics/LineTrackerInterns"
-
-MpcTrackerInterns:
-  address: "trackers_brubotics/MpcTrackerInterns"
-
 BypassTracker:
   address: "trackers_brubotics/BypassTracker"
 
-ModifiedMpc:
-  address: "trackers_brubotics/ModifiedMpc"
+#DergTracker:
+#  address: "trackers_brubotics/DergTracker"
 
-DergTracker:
-  address: "trackers_brubotics/DergTracker"
-
-MpcTrackerCopy:
-  address: "trackers_brubotics/MpcTrackerCopy"
-
+#MpcTrackerCopy:
+#  address: "trackers_brubotics/MpcTrackerCopy"
