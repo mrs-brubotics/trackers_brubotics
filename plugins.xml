@@ -15,3 +15,10 @@
     <description>This is the MpcTrackerCopy</description>
   </class>
 </library> -->
+
+
+<library path="lib/libDergbryanTracker">
+  <class name="trackers_brubotics/DergbryanTracker" type="mrs_uav_trackers::dergbryan_tracker::DergbryanTracker" base_class_type="mrs_uav_managers::Tracker">
+    <description>This is the dergbryan tracker.</description>
+  </class>
+</library>

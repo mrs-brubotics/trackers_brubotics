@@ -6,3 +6,6 @@ BypassTracker:
 
 #MpcTrackerCopy:
 #  address: "trackers_brubotics/MpcTrackerCopy"
+
+DergbryanTracker:
+  address: "trackers_brubotics/DergbryanTracker"

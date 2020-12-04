@@ -9,8 +9,8 @@ trackers : [
   "NullTracker", # CTU
   "LineTrackerInterns", # ours
   "BypassTracker", # ours
-  "DergTracker", # ours
-  "MpcTrackerCopy", # ours
+  #"DergTracker", # ours
+  #"MpcTrackerCopy", # ours
   # "MpcTrackerInterns", # ours, does nto work anymore
 ]
 

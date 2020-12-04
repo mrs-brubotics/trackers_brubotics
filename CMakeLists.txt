@@ -87,7 +87,18 @@ endif()
     ${catkin_LIBRARIES}
     )
 
+  # Bypass tracker
 
+  add_library(DergbryanTracker
+    src/dergbryan_tracker/dergbryan_tracker.cpp
+    )
+  add_dependencies(DergbryanTracker
+    ${catkin_EXPORTED_TARGETS}
+    ${${PROJECT_NAME}_EXPORTED_TARGETS}
+    )
+  target_link_libraries(DergbryanTracker
+    ${catkin_LIBRARIES}
+    )
  
 
   # DergTracker
@@ -126,6 +137,7 @@ install(TARGETS
   BypassTracker
   #DergTracker
   #MpcTrackerCopy
+  DergbryanTracker
   ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
   LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
   RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
