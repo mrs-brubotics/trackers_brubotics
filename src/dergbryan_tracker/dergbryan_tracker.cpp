@@ -57,12 +57,25 @@ private:
   double uav_y_; // now added by bryan
   double uav_z_; // now added by bryan
 
-
+  // | --------------- dynamic reconfigure server --------------- |
+  /* TODO: make it compatible with DRS */
+  // boost::recursive_mutex                            mutex_drs_;
+  // typedef mrs_uav_controllers::se3_controllerConfig DrsConfig_t;
+  // typedef dynamic_reconfigure::Server<DrsConfig_t>  Drs_t;
+  // boost::shared_ptr<Drs_t>                          drs_;
+  // void                                              callbackDrs(mrs_uav_controllers::se3_controllerConfig& config, uint32_t level);
+  // DrsConfig_t                                       drs_params_;
 
 
 
   // // | ------------------- the state variables ------------------ |
   std::mutex mutex_state_;
+
+  // | ----------------------- constraints ---------------------- |
+
+  mrs_msgs::DynamicsConstraints constraints_;
+  std::mutex                    mutex_constraints_;
+  //bool                          got_constraints_ = false;
 
 
   // | ---------- thrust generation and mass estimation --------- |
@@ -91,6 +104,11 @@ private:
 
   std::mutex mutex_gains_;       // locks the gains the are used and filtered
 
+
+
+  // | ------------ controller limits and saturations ----------- |
+  double _tilt_angle_failsafe_;
+  double _thrust_saturation_;
 
   // | ------------------------ profiler_ ------------------------ |
   mrs_lib::Profiler profiler_;
@@ -164,11 +182,26 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   param_loader.loadParam("default_gains/horizontal/attitude/kq", kqxy_);
   param_loader.loadParam("default_gains/vertical/attitude/kq", kqz_);
 
+  // constraints
+  param_loader.loadParam("constraints/tilt_angle_failsafe", _tilt_angle_failsafe_);
+  param_loader.loadParam("constraints/thrust_saturation", _thrust_saturation_);
+
+
   if (!param_loader.loadedSuccessfully()) {
     ROS_ERROR("[DergbryanTracker]: could not load all parameters!");
     ros::shutdown();
   }
-  // initialize variables
+  // | ---------------- prepare stuff from params --------------- |
+
+  /* QUESTION: do we need this? */
+  // if (!(output_mode_ == OUTPUT_ATTITUDE_RATE || output_mode_ == OUTPUT_ATTITUDE_QUATERNION)) {
+  //   ROS_ERROR("[Se3Controller]: output mode has to be {0, 1}!");
+  //   ros::shutdown();
+  // }
+
+  // convert to radians
+  _tilt_angle_failsafe_ = (_tilt_angle_failsafe_ / 180.0) * M_PI;
+  
 
   // initialize the integrals
   uav_mass_difference_ = 0;
@@ -225,6 +258,8 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
 
     got_uav_state_ = true;
   }
+  /* TODO: make it compatible with DRS */
+  //auto drs_params = mrs_lib::get_mutexed(mutex_drs_params_, drs_params_);
 
   // up to this part the update() method is evaluated even when the tracker is not active
   if (!is_active_) {
@@ -569,6 +604,129 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
 
   // test printing force:
   // ROS_INFO_STREAM("f = \n" << f);
+
+  // | ------------------ limit the tilt angle ------------------ |
+
+  Eigen::Vector3d f_norm = f.normalized();
+
+  // calculate the force in spherical coordinates
+  double theta = acos(f_norm[2]);
+  double phi   = atan2(f_norm[1], f_norm[0]);
+
+  // check for the failsafe limit
+  if (!std::isfinite(theta)) {
+
+    ROS_ERROR("[Se3Controller]: NaN detected in variable 'theta', returning null");
+
+    /* TODO: return something in this function */
+    //return mrs_msgs::AttitudeCommand::ConstPtr();
+  }
+
+  if (_tilt_angle_failsafe_ > 1e-3 && theta > _tilt_angle_failsafe_) {
+
+    // ROS_ERROR("[Se3Controller]: the produced tilt angle (%.2f deg) would be over the failsafe limit (%.2f deg), returning null", (180.0 / M_PI) * theta,
+    //           (180.0 / M_PI) * _tilt_angle_failsafe_);
+    // ROS_INFO("[Se3Controller]: f = [%.2f, %.2f, %.2f]", f[0], f[1], f[2]);
+    // ROS_INFO("[Se3Controller]: position feedback: [%.2f, %.2f, %.2f]", position_feedback[0], position_feedback[1], position_feedback[2]);
+    // ROS_INFO("[Se3Controller]: velocity feedback: [%.2f, %.2f, %.2f]", velocity_feedback[0], velocity_feedback[1], velocity_feedback[2]);
+    // ROS_INFO("[Se3Controller]: integral feedback: [%.2f, %.2f, %.2f]", integral_feedback[0], integral_feedback[1], integral_feedback[2]);
+    // ROS_INFO("[Se3Controller]: position_cmd: x: %.2f, y: %.2f, z: %.2f, heading: %.2f", control_reference->position.x, control_reference->position.y,
+    //          control_reference->position.z, control_reference->heading);
+    // ROS_INFO("[Se3Controller]: odometry: x: %.2f, y: %.2f, z: %.2f, heading: %.2f", uav_state->pose.position.x, uav_state->pose.position.y,
+    //          uav_state->pose.position.z, uav_heading);
+
+    /* TODO: return something in this function */
+    //return mrs_msgs::AttitudeCommand::ConstPtr();
+  }
+
+  // saturate the angle
+
+  auto constraints = mrs_lib::get_mutexed(mutex_constraints_, constraints_);
+
+  if (theta > constraints.tilt) {
+    ROS_WARN_THROTTLE(1.0, "[Se3Controller]: tilt is being saturated, desired: %.2f deg, saturated %.2f deg", (theta / M_PI) * 180.0,
+                      (constraints.tilt / M_PI) * 180.0);
+    theta = constraints.tilt;
+  }
+
+  // reconstruct the vector
+  f_norm[0] = sin(theta) * cos(phi);
+  f_norm[1] = sin(theta) * sin(phi);
+  f_norm[2] = cos(theta);
+
+  // | ------------- construct the rotational matrix ------------ |
+
+  Eigen::Matrix3d Rd;
+
+  if (position_cmd.use_orientation) {
+
+    // fill in the desired orientation based on the desired orientation from the control command
+    Rd = mrs_lib::AttitudeConverter(position_cmd.orientation);
+
+    if (position_cmd.use_heading) {
+      Rd = mrs_lib::AttitudeConverter(Rd).setHeading(position_cmd.heading);
+    }
+
+  } else {
+
+    Eigen::Vector3d bxd;  // desired heading vector
+
+    if (position_cmd.use_heading) {
+      bxd << cos(position_cmd.heading), sin(position_cmd.heading), 0;
+    } else {
+      ROS_ERROR_THROTTLE(1.0, "[Se3Controller]: desired heading was not specified, using current heading instead!");
+      bxd << cos(uav_heading), sin(uav_heading), 0;
+    }
+
+    // fill in the desired orientation based on the state feedback
+    /* TODO: make it compatible with DRS, now skipped first if */
+    //if (drs_params.rotation_type == 0) {
+      if (0) {
+
+      Rd.col(2) = f_norm;
+      Rd.col(1) = Rd.col(2).cross(bxd);
+      Rd.col(1).normalize();
+      Rd.col(0) = Rd.col(1).cross(Rd.col(2));
+      Rd.col(0).normalize();
+
+    } else {
+
+      // | ------------------------- body z ------------------------- |
+      Rd.col(2) = f_norm;
+
+      // | ------------------------- body x ------------------------- |
+
+      // construct the oblique projection
+      Eigen::Matrix3d projector_body_z_compl = (Eigen::Matrix3d::Identity(3, 3) - f_norm * f_norm.transpose());
+
+      // create a basis of the body-z complement subspace
+      Eigen::MatrixXd A = Eigen::MatrixXd(3, 2);
+      A.col(0)          = projector_body_z_compl.col(0);
+      A.col(1)          = projector_body_z_compl.col(1);
+
+      // create the basis of the projection null-space complement
+      Eigen::MatrixXd B = Eigen::MatrixXd(3, 2);
+      B.col(0)          = Eigen::Vector3d(1, 0, 0);
+      B.col(1)          = Eigen::Vector3d(0, 1, 0);
+
+      // oblique projector to <range_basis>
+      Eigen::MatrixXd Bt_A               = B.transpose() * A;
+      Eigen::MatrixXd Bt_A_pseudoinverse = ((Bt_A.transpose() * Bt_A).inverse()) * Bt_A.transpose();
+      Eigen::MatrixXd oblique_projector  = A * Bt_A_pseudoinverse * B.transpose();
+
+      Rd.col(0) = oblique_projector * bxd;
+      Rd.col(0).normalize();
+
+      // | ------------------------- body y ------------------------- |
+
+      Rd.col(1) = Rd.col(2).cross(Rd.col(0));
+      Rd.col(1).normalize();
+    }
+  }
+
+  // test printing Rd:
+  ROS_INFO_STREAM("Rd = \n" << Rd);
+
 
 
 /* end copy of se3controller*/
