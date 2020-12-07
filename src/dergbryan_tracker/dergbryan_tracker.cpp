@@ -475,14 +475,20 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
     Kq << kqxy_, kqxy_, kqz_;
   }
 
-  // add a print to test if the gains change so you know where to change
-  // QUESTION: how to get _uav_mass_ analoguous to controllers?
-  // Kp = Kp * (_uav_mass_ + uav_mass_difference_);
-  // Kv = Kv * (_uav_mass_ + uav_mass_difference_);
+  
+  /*TODO: answer question below and define Kp, Kv accordingly, for now deined hardcoded*/
+  double _uav_mass_ = 2.0; // TODO: change later
+  double uav_mass_difference_ = 0.0;  // TODO: change later
+  // QUESTION: how to get _uav_mass_ analoguous to controllers, in the controllers ?
+  Kp = Kp * (_uav_mass_ + uav_mass_difference_);
+  Kv = Kv * (_uav_mass_ + uav_mass_difference_);
 
-
-
-
+  // a print to test if the gains change so you know where to change:
+  // ROS_INFO_STREAM("Kp = \n" << Kp);
+  // ROS_INFO_STREAM("Kv = \n" << Kv);
+  // ROS_INFO_STREAM("Ka = \n" << Ka);
+  // ROS_INFO_STREAM("Kq = \n" << Kq);
+  // QUESTION: some gains printed above do not correspond to the gains set in the yaml file (e.G. Kpz). Why is that?
 
 
 
