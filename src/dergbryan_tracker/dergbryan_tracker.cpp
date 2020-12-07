@@ -65,6 +65,14 @@ private:
   std::mutex mutex_state_;
 
 
+  // | ---------- thrust generation and mass estimation --------- |
+
+  double                        _uav_mass_;
+  double                        uav_mass_difference_;
+  // double                        _g_;
+  // mrs_uav_managers::MotorParams _motor_params_;
+
+
   // gains that are used and already filtered
   double kpxy_;       // position xy gain
   double kvxy_;       // velocity xy gain
@@ -88,6 +96,11 @@ private:
   mrs_lib::Profiler profiler_;
   bool              _profiler_enabled_ = false;
 
+  // | ------------------------ integrals ----------------------- |
+
+  Eigen::Vector2d Ib_b_;  // body error integral in the body frame
+  Eigen::Vector2d Iw_w_;  // world error integral in the world_frame
+  std::mutex      mutex_integrals_;
 
   // | ---------------------- desired goal ---------------------- |
   double     goal_x_;
@@ -156,6 +169,11 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
     ros::shutdown();
   }
   // initialize variables
+
+  // initialize the integrals
+  uav_mass_difference_ = 0;
+  Iw_w_                = Eigen::Vector2d::Zero(2);
+  Ib_b_                = Eigen::Vector2d::Zero(2);
 
   // initialization completed
   is_initialized_ = true;
@@ -491,8 +509,66 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
   // QUESTION: some gains printed above do not correspond to the gains set in the yaml file (e.G. Kpz). Why is that?
 
 
+  // | --------------- desired orientation matrix --------------- |
+
+  // get body integral in the world frame
 
 
+/* NOTE: this part is added by Bryan, was originally in the controllers activate function */
+    Ib_b_[0] = -last_attitude_cmd->disturbance_bx_b;
+    Ib_b_[1] = -last_attitude_cmd->disturbance_by_b;
+
+    Iw_w_[0] = -last_attitude_cmd->disturbance_wx_w;
+    Iw_w_[1] = -last_attitude_cmd->disturbance_wy_w;
+
+    // ROS_INFO(
+    //     "[Se3Controller]: setting the mass difference and integrals from the last AttitudeCmd: mass difference: %.2f kg, Ib_b_: %.2f, %.2f N, Iw_w_: "
+    //     "%.2f, %.2f N",
+    //     uav_mass_difference_, Ib_b_[0], Ib_b_[1], Iw_w_[0], Iw_w_[1]);
+/* NOTE: TILL HERE*/
+
+  Eigen::Vector2d Ib_w = Eigen::Vector2d(0, 0);
+
+  {
+
+    geometry_msgs::Vector3Stamped Ib_b_stamped;
+
+    Ib_b_stamped.header.stamp    = ros::Time::now();
+    Ib_b_stamped.header.frame_id = "fcu_untilted";
+    Ib_b_stamped.vector.x        = Ib_b_(0);
+    Ib_b_stamped.vector.y        = Ib_b_(1);
+    Ib_b_stamped.vector.z        = 0;
+
+    auto res = common_handlers_->transformer->transformSingle(uav_state_.header.frame_id, Ib_b_stamped);
+
+    if (res) {
+      Ib_w[0] = res.value().vector.x;
+      Ib_w[1] = res.value().vector.y;
+    } else {
+      ROS_ERROR_THROTTLE(1.0, "[Se3Controller]: could not transform the Ib_b_ to the world frame");
+    }
+  }
+
+
+  // construct the desired force vector
+  /* TODO: define _g_ as done in controllers */
+  double _g_ = -9.81;
+  double total_mass = _uav_mass_ + uav_mass_difference_;
+
+  Eigen::Vector3d feed_forward      = total_mass * (Eigen::Vector3d(0, 0, _g_) + Ra);
+  Eigen::Vector3d position_feedback = -Kp * Ep.array();
+  Eigen::Vector3d velocity_feedback = -Kv * Ev.array();
+  Eigen::Vector3d integral_feedback;
+  {
+    std::scoped_lock lock(mutex_integrals_);
+
+    integral_feedback << Ib_w[0] + Iw_w_[0], Ib_w[1] + Iw_w_[1], 0;
+  }
+
+  Eigen::Vector3d f = position_feedback + velocity_feedback + integral_feedback + feed_forward;
+
+  // test printing force:
+  // ROS_INFO_STREAM("f = \n" << f);
 
 
 /* end copy of se3controller*/
