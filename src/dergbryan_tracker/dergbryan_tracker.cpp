@@ -1041,7 +1041,47 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
 
   //}
 
-  
+  // --------------------------------------------------------------
+  // |                 produce the control output                 |
+  // --------------------------------------------------------------
+
+  mrs_msgs::AttitudeCommand::Ptr output_command(new mrs_msgs::AttitudeCommand);
+  output_command->header.stamp = ros::Time::now();
+
+  // | ------------ compensated desired acceleration ------------ |
+
+  double desired_x_accel = 0;
+  double desired_y_accel = 0;
+  double desired_z_accel = 0;
+
+  {
+
+    Eigen::Matrix3d des_orientation = mrs_lib::AttitudeConverter(Rd);
+    Eigen::Vector3d thrust_vector   = thrust_force * des_orientation.col(2);
+
+    double world_accel_x = (thrust_vector[0] / total_mass) - (Iw_w_[0] / total_mass) - (Ib_w[0] / total_mass);
+    double world_accel_y = (thrust_vector[1] / total_mass) - (Iw_w_[1] / total_mass) - (Ib_w[1] / total_mass);
+    double world_accel_z = (thrust_vector[2] / total_mass) - _g_;
+
+    geometry_msgs::Vector3Stamped world_accel;
+
+    world_accel.header.stamp    = ros::Time::now();
+    world_accel.header.frame_id = uav_state->header.frame_id;
+    world_accel.vector.x        = world_accel_x;
+    world_accel.vector.y        = world_accel_y;
+    world_accel.vector.z        = world_accel_z;
+
+    auto res = common_handlers_->transformer->transformSingle("fcu", world_accel);
+
+    if (res) {
+
+      desired_x_accel = res.value().vector.x;
+      desired_y_accel = res.value().vector.y;
+      desired_z_accel = res.value().vector.z;
+    }
+  }
+
+
 
 
 /* end copy of se3controller*/
