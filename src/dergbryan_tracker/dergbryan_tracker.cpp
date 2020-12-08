@@ -91,9 +91,9 @@ private:
   double kvxy_;       // velocity xy gain
   double kaxy_;       // acceleration xy gain (feed forward, =1)
   double kiwxy_;      // world xy integral gain
-  // double kibxy_;      // body xy integral gain
+  double kibxy_;      // body xy integral gain
   double kiwxy_lim_;  // world xy integral limit
-  // double kibxy_lim_;  // body xy integral limit
+  double kibxy_lim_;  // body xy integral limit
   double kpz_;        // position z gain
   double kvz_;        // velocity z gain
   double kaz_;        // acceleration z gain (feed forward, =1)
@@ -174,7 +174,7 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   param_loader.loadParam("default_gains/horizontal/ka", kaxy_);
 
   param_loader.loadParam("default_gains/horizontal/kiw", kiwxy_);
-  //param_loader.loadParam("default_gains/horizontal/kib", kibxy_);
+  param_loader.loadParam("default_gains/horizontal/kib", kibxy_);
 
   // height gains
   param_loader.loadParam("default_gains/vertical/kp", kpz_);
@@ -187,7 +187,7 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
 
   // integrator limits
   param_loader.loadParam("default_gains/horizontal/kiw_lim", kiwxy_lim_);
-  //param_loader.loadParam("default_gains/horizontal/kib_lim", kibxy_lim_);
+  param_loader.loadParam("default_gains/horizontal/kib_lim", kibxy_lim_);
 
   // constraints
   param_loader.loadParam("constraints/tilt_angle_failsafe", _tilt_angle_failsafe_);
@@ -904,8 +904,105 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
       ROS_WARN_THROTTLE(1.0, "[Se3Controller]: SE3's world Y integral is being saturated!");
     }
   }
-  
 
+   //}
+
+  /* body error integrator //{ */
+
+  // --------------------------------------------------------------
+  // |                  integrate the body error                  |
+  // --------------------------------------------------------------
+
+  {
+    std::scoped_lock lock(mutex_gains_);
+
+    Eigen::Vector2d Ep_fcu_untilted = Eigen::Vector2d(0, 0);  // position error in the untilted frame of the UAV
+    Eigen::Vector2d Ev_fcu_untilted = Eigen::Vector2d(0, 0);  // velocity error in the untilted frame of the UAV
+
+    // get the position control error in the fcu_untilted frame
+    {
+
+      geometry_msgs::Vector3Stamped Ep_stamped;
+
+      Ep_stamped.header.stamp    = ros::Time::now();
+      Ep_stamped.header.frame_id = uav_state_.header.frame_id;
+      Ep_stamped.vector.x        = Ep(0);
+      Ep_stamped.vector.y        = Ep(1);
+      Ep_stamped.vector.z        = Ep(2);
+
+      auto res = common_handlers_->transformer->transformSingle("fcu_untilted", Ep_stamped);
+
+      if (res) {
+        Ep_fcu_untilted[0] = res.value().vector.x;
+        Ep_fcu_untilted[1] = res.value().vector.y;
+      } else {
+        ROS_ERROR_THROTTLE(1.0, "[Se3Controller]: could not transform the position error to fcu_untilted");
+      }
+    }
+
+    // get the velocity control error in the fcu_untilted frame
+    {
+      geometry_msgs::Vector3Stamped Ev_stamped;
+
+      Ev_stamped.header.stamp    = ros::Time::now();
+      Ev_stamped.header.frame_id = uav_state_.header.frame_id;
+      Ev_stamped.vector.x        = Ev(0);
+      Ev_stamped.vector.y        = Ev(1);
+      Ev_stamped.vector.z        = Ev(2);
+
+      auto res = common_handlers_->transformer->transformSingle("fcu_untilted", Ev_stamped);
+
+      if (res) {
+        Ev_fcu_untilted[0] = res.value().vector.x;
+        Ev_fcu_untilted[1] = res.value().vector.x;
+      } else {
+        ROS_ERROR_THROTTLE(1.0, "[Se3Controller]: could not transform the velocity error to fcu_untilted");
+      }
+    }
+
+    // integrate the body error
+    if (position_cmd.use_position_horizontal) {
+      Ib_b_ -= kibxy_ * Ep_fcu_untilted * dt;
+    } else if (position_cmd.use_velocity_horizontal) {
+      Ib_b_ -= kibxy_ * Ev_fcu_untilted * dt;
+    }
+
+    // saturate the body
+    double body_integral_saturated = false;
+    if (!std::isfinite(Ib_b_[0])) {
+      Ib_b_[0] = 0;
+      ROS_ERROR_THROTTLE(1.0, "[Se3Controller]: NaN detected in variable 'Ib_b_[0]', setting it to 0!!!");
+    } else if (Ib_b_[0] > kibxy_lim_) {
+      Ib_b_[0]                = kibxy_lim_;
+      body_integral_saturated = true;
+    } else if (Ib_b_[0] < -kibxy_lim_) {
+      Ib_b_[0]                = -kibxy_lim_;
+      body_integral_saturated = true;
+    }
+
+    if (kibxy_lim_ > 0 && body_integral_saturated) {
+      ROS_WARN_THROTTLE(1.0, "[Se3Controller]: SE3's body pitch integral is being saturated!");
+    }
+
+    // saturate the body
+    body_integral_saturated = false;
+    if (!std::isfinite(Ib_b_[1])) {
+      Ib_b_[1] = 0;
+      ROS_ERROR_THROTTLE(1.0, "[Se3Controller]: NaN detected in variable 'Ib_b_[1]', setting it to 0!!!");
+    } else if (Ib_b_[1] > kibxy_lim_) {
+      Ib_b_[1]                = kibxy_lim_;
+      body_integral_saturated = true;
+    } else if (Ib_b_[1] < -kibxy_lim_) {
+      Ib_b_[1]                = -kibxy_lim_;
+      body_integral_saturated = true;
+    }
+
+    if (kibxy_lim_ > 0 && body_integral_saturated) {
+      ROS_WARN_THROTTLE(1.0, "[Se3Controller]: SE3's body roll integral is being saturated!");
+    }
+  }
+
+  //}
 
 
 
