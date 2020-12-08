@@ -75,7 +75,7 @@ private:
 
   mrs_msgs::DynamicsConstraints constraints_;
   std::mutex                    mutex_constraints_;
-  //bool                          got_constraints_ = false;
+  bool                          got_constraints_ = false;
 
 
   // | ---------- thrust generation and mass estimation --------- |
@@ -1081,6 +1081,33 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
     }
   }
 
+  // | --------------- saturate the attitude rate --------------- |
+
+  if (got_constraints_) {
+
+    auto constraints = mrs_lib::get_mutexed(mutex_constraints_, constraints_);
+
+    if (t[0] > constraints.roll_rate) {
+      t[0] = constraints.roll_rate;
+    } else if (t[0] < -constraints.roll_rate) {
+      t[0] = -constraints.roll_rate;
+    }
+
+    if (t[1] > constraints.pitch_rate) {
+      t[1] = constraints.pitch_rate;
+    } else if (t[1] < -constraints.pitch_rate) {
+      t[1] = -constraints.pitch_rate;
+    }
+
+    if (t[2] > constraints.yaw_rate) {
+      t[2] = constraints.yaw_rate;
+    } else if (t[2] < -constraints.yaw_rate) {
+      t[2] = -constraints.yaw_rate;
+    }
+  } else {
+    ROS_WARN_THROTTLE(1.0, "[Se3Controller]: missing dynamics constraints");
+  }
+
 
 
 
@@ -1165,12 +1192,21 @@ const std_srvs::TriggerResponse::ConstPtr DergbryanTracker::gotoTrajectoryStart(
 //}
 
 /*setConstraints()//{*/
-const mrs_msgs::DynamicsConstraintsSrvResponse::ConstPtr DergbryanTracker::setConstraints(const mrs_msgs::DynamicsConstraintsSrvRequest::ConstPtr &cmd) {
+const mrs_msgs::DynamicsConstraintsSrvResponse::ConstPtr DergbryanTracker::setConstraints(const mrs_msgs::DynamicsConstraintsSrvRequest::ConstPtr &constraints) {
+
+  if (!is_initialized_) {
+    return mrs_msgs::DynamicsConstraintsSrvResponse::ConstPtr(new mrs_msgs::DynamicsConstraintsSrvResponse());
+  }
+
+  mrs_lib::set_mutexed(mutex_constraints_, constraints->constraints, constraints_);
+
+  got_constraints_ = true;
+
+   ROS_INFO("[Se3Controller]: updating constraints");
 
   mrs_msgs::DynamicsConstraintsSrvResponse res;
-
   res.success = true;
-  res.message = "No constraints to update";
+  res.message = "constraints updated";
 
   return mrs_msgs::DynamicsConstraintsSrvResponse::ConstPtr(new mrs_msgs::DynamicsConstraintsSrvResponse(res));
 }
