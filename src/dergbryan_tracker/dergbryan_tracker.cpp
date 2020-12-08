@@ -90,9 +90,9 @@ private:
   double kpxy_;       // position xy gain
   double kvxy_;       // velocity xy gain
   double kaxy_;       // acceleration xy gain (feed forward, =1)
-  // double kiwxy_;      // world xy integral gain
+  double kiwxy_;      // world xy integral gain
   // double kibxy_;      // body xy integral gain
-  // double kiwxy_lim_;  // world xy integral limit
+  double kiwxy_lim_;  // world xy integral limit
   // double kibxy_lim_;  // body xy integral limit
   double kpz_;        // position z gain
   double kvz_;        // velocity z gain
@@ -173,6 +173,9 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   param_loader.loadParam("default_gains/horizontal/kv", kvxy_);
   param_loader.loadParam("default_gains/horizontal/ka", kaxy_);
 
+  param_loader.loadParam("default_gains/horizontal/kiw", kiwxy_);
+  //param_loader.loadParam("default_gains/horizontal/kib", kibxy_);
+
   // height gains
   param_loader.loadParam("default_gains/vertical/kp", kpz_);
   param_loader.loadParam("default_gains/vertical/kv", kvz_);
@@ -181,6 +184,10 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   // attitude gains
   param_loader.loadParam("default_gains/horizontal/attitude/kq", kqxy_);
   param_loader.loadParam("default_gains/vertical/attitude/kq", kqz_);
+
+  // integrator limits
+  param_loader.loadParam("default_gains/horizontal/kiw_lim", kiwxy_lim_);
+  //param_loader.loadParam("default_gains/horizontal/kib_lim", kibxy_lim_);
 
   // constraints
   param_loader.loadParam("constraints/tilt_angle_failsafe", _tilt_angle_failsafe_);
@@ -723,9 +730,182 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
       Rd.col(1).normalize();
     }
   }
-
   // test printing Rd:
-  ROS_INFO_STREAM("Rd = \n" << Rd);
+  // ROS_INFO_STREAM("Rd = \n" << Rd);
+
+  // --------------------------------------------------------------
+  // |                      orientation error                     |
+  // --------------------------------------------------------------
+
+  /* orientation error */
+  Eigen::Matrix3d E = 0.5 * (Rd.transpose() * R - R.transpose() * Rd);
+
+  Eigen::Vector3d Eq;
+
+  // clang-format off
+  Eq << (E(2, 1) - E(1, 2)) / 2.0,
+        (E(0, 2) - E(2, 0)) / 2.0,
+        (E(1, 0) - E(0, 1)) / 2.0;
+  // clang-format on
+
+  /* output */
+  double thrust_force = f.dot(R.col(2));
+
+  double thrust = 0;
+
+  if (thrust_force >= 0) {
+    /*QUESTION: how to acces in the tracker code: _motor_params_.A + _motor_params_.B??*/
+    //thrust = sqrt(thrust_force) * _motor_params_.A + _motor_params_.B;
+    /*TODO change code below unhardcoded*/
+    double Aparam = 0.01;
+    double Bparam = 0.0001;
+    thrust = sqrt(thrust_force) * Aparam + Bparam;
+  } else {
+    ROS_WARN_THROTTLE(1.0, "[Se3Controller]: just so you know, the desired thrust force is negative (%.2f)", thrust_force);
+  }
+
+  // saturate the thrust
+  if (!std::isfinite(thrust)) {
+
+    thrust = 0;
+    ROS_ERROR("[Se3Controller]: NaN detected in variable 'thrust', setting it to 0 and returning!!!");
+
+  } else if (thrust > _thrust_saturation_) {
+
+    thrust = _thrust_saturation_;
+    ROS_WARN_THROTTLE(1.0, "[Se3Controller]: saturating thrust to %.2f", _thrust_saturation_);
+
+  } else if (thrust < 0.0) {
+
+    thrust = 0.0;
+    ROS_WARN_THROTTLE(1.0, "[Se3Controller]: saturating thrust to 0");
+  }
+
+  // prepare the attitude feedback
+  Eigen::Vector3d q_feedback = -Kq * Eq.array();
+
+  if (position_cmd.use_attitude_rate) {
+    Rw << position_cmd.attitude_rate.x, position_cmd.attitude_rate.y, position_cmd.attitude_rate.z;
+  } else if (position_cmd.use_heading_rate) {
+
+    // to fill in the feed forward yaw rate
+    double desired_yaw_rate = 0;
+
+    try {
+      desired_yaw_rate = mrs_lib::AttitudeConverter(Rd).getYawRateIntrinsic(position_cmd.heading_rate);
+    }
+    catch (...) {
+      ROS_ERROR("[Se3Controller]: exception caught while calculating the desired_yaw_rate feedforward");
+    }
+
+    Rw << 0, 0, desired_yaw_rate;
+  }
+
+  // feedforward angular acceleration
+  Eigen::Vector3d q_feedforward = Eigen::Vector3d(0, 0, 0);
+
+  /* TODO: change if case using drs_params */
+  //if (drs_params.jerk_feedforward) {
+  if (false) {
+
+    Eigen::Matrix3d I;
+    I << 0, 1, 0, -1, 0, 0, 0, 0, 0;
+    Eigen::Vector3d desired_jerk = Eigen::Vector3d(position_cmd.jerk.x, position_cmd.jerk.y, position_cmd.jerk.z);
+    q_feedforward                = (I.transpose() * Rd.transpose() * desired_jerk) / (thrust_force / total_mass);
+  }
+
+  // angular feedback + angular rate feedforward
+  Eigen::Vector3d t = q_feedback + Rw + q_feedforward;
+
+
+  // compensate for the parasitic heading rate created by the desired pitch and roll rate
+  Eigen::Vector3d rp_heading_rate_compensation = Eigen::Vector3d(0, 0, 0);
+
+  /* TODO: change if case using drs_params */
+  if (true) {
+  //if (drs_params.pitch_roll_heading_rate_compensation) {
+
+    Eigen::Vector3d q_feedback_yawless = t;
+    q_feedback_yawless(2)              = 0;  // nullyfy the effect of the original yaw feedback
+
+    double parasitic_heading_rate = 0;
+
+    try {
+      parasitic_heading_rate = mrs_lib::AttitudeConverter(uav_state->pose.orientation).getHeadingRate(q_feedback_yawless);
+    }
+    catch (...) {
+      ROS_ERROR("[Se3Controller]: exception caught while calculating the parasitic heading rate!");
+    }
+
+    try {
+      rp_heading_rate_compensation(2) = mrs_lib::AttitudeConverter(uav_state->pose.orientation).getYawRateIntrinsic(-parasitic_heading_rate);
+    }
+    catch (...) {
+      ROS_ERROR("[Se3Controller]: exception caught while calculating the parasitic heading rate compensation!");
+    }
+  }
+
+  t += rp_heading_rate_compensation;
+
+
+  // --------------------------------------------------------------
+  // |                      update parameters                     |
+  // --------------------------------------------------------------
+
+  /* world error integrator //{ */
+
+  // --------------------------------------------------------------
+  // |                  integrate the world error                 |
+  // --------------------------------------------------------------
+
+  {
+    std::scoped_lock lock(mutex_gains_, mutex_integrals_);
+
+    Eigen::Vector3d integration_switch(1, 1, 0);
+
+    // integrate the world error
+    if (position_cmd.use_position_horizontal) {
+      Iw_w_ -= kiwxy_ * Ep.head(2) * dt;
+    } else if (position_cmd.use_velocity_horizontal) {
+      Iw_w_ -= kiwxy_ * Ev.head(2) * dt;
+    }
+
+    // saturate the world X
+    double world_integral_saturated = false;
+    if (!std::isfinite(Iw_w_[0])) {
+      Iw_w_[0] = 0;
+      ROS_ERROR_THROTTLE(1.0, "[Se3Controller]: NaN detected in variable 'Iw_w_[0]', setting it to 0!!!");
+    } else if (Iw_w_[0] > kiwxy_lim_) {
+      Iw_w_[0]                 = kiwxy_lim_;
+      world_integral_saturated = true;
+    } else if (Iw_w_[0] < -kiwxy_lim_) {
+      Iw_w_[0]                 = -kiwxy_lim_;
+      world_integral_saturated = true;
+    }
+
+    if (kiwxy_lim_ >= 0 && world_integral_saturated) {
+      ROS_WARN_THROTTLE(1.0, "[Se3Controller]: SE3's world X integral is being saturated!");
+    }
+
+    // saturate the world Y
+    world_integral_saturated = false;
+    if (!std::isfinite(Iw_w_[1])) {
+      Iw_w_[1] = 0;
+      ROS_ERROR_THROTTLE(1.0, "[Se3Controller]: NaN detected in variable 'Iw_w_[1]', setting it to 0!!!");
+    } else if (Iw_w_[1] > kiwxy_lim_) {
+      Iw_w_[1]                 = kiwxy_lim_;
+      world_integral_saturated = true;
+    } else if (Iw_w_[1] < -kiwxy_lim_) {
+      Iw_w_[1]                 = -kiwxy_lim_;
+      world_integral_saturated = true;
+    }
+
+    if (kiwxy_lim_ >= 0 && world_integral_saturated) {
+      ROS_WARN_THROTTLE(1.0, "[Se3Controller]: SE3's world Y integral is being saturated!");
+    }
+  }
+  
+
 
 
 
