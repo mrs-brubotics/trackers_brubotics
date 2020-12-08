@@ -12,6 +12,8 @@
 /*end includes added by bryan:*/
 
 //}
+#define OUTPUT_ATTITUDE_RATE 0
+#define OUTPUT_ATTITUDE_QUATERNION 1
 
 namespace mrs_uav_trackers
 {
@@ -110,6 +112,20 @@ private:
   double _tilt_angle_failsafe_;
   double _thrust_saturation_;
 
+  // | ------------------ activation and output ----------------- |
+
+  mrs_msgs::AttitudeCommand::ConstPtr last_attitude_cmd_;
+  //mrs_msgs::AttitudeCommand           activation_attitude_cmd_;
+
+  //ros::Time last_update_time_;
+  //bool      first_iteration_ = true;
+
+  // | ----------------------- output mode ---------------------- |
+
+  int        output_mode_;  // attitude_rate / acceleration
+  std::mutex mutex_output_mode_;
+
+
   // | ------------------------ profiler_ ------------------------ |
   mrs_lib::Profiler profiler_;
   bool              _profiler_enabled_ = false;
@@ -197,6 +213,12 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   param_loader.loadParam("constraints/tilt_angle_failsafe", _tilt_angle_failsafe_);
   param_loader.loadParam("constraints/thrust_saturation", _thrust_saturation_);
 
+  // output mode
+  param_loader.loadParam("output_mode", output_mode_);
+
+  //param_loader.loadParam("rotation_matrix", drs_params_.rotation_type);
+
+
 
   if (!param_loader.loadedSuccessfully()) {
     ROS_ERROR("[DergbryanTracker]: could not load all parameters!");
@@ -205,10 +227,10 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   // | ---------------- prepare stuff from params --------------- |
 
   /* QUESTION: do we need this? */
-  // if (!(output_mode_ == OUTPUT_ATTITUDE_RATE || output_mode_ == OUTPUT_ATTITUDE_QUATERNION)) {
-  //   ROS_ERROR("[Se3Controller]: output mode has to be {0, 1}!");
-  //   ros::shutdown();
-  // }
+  if (!(output_mode_ == OUTPUT_ATTITUDE_RATE || output_mode_ == OUTPUT_ATTITUDE_QUATERNION)) {
+    ROS_ERROR("[Se3Controller]: output mode has to be {0, 1}!");
+    ros::shutdown();
+  }
 
   // convert to radians
   _tilt_angle_failsafe_ = (_tilt_angle_failsafe_ / 180.0) * M_PI;
@@ -1107,6 +1129,86 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
   } else {
     ROS_WARN_THROTTLE(1.0, "[Se3Controller]: missing dynamics constraints");
   }
+
+  
+  // | --------------- fill the resulting command --------------- |
+
+  auto output_mode = mrs_lib::get_mutexed(mutex_output_mode_, output_mode_);
+
+  // fill in the desired attitude anyway, since we know it
+  output_command->attitude = mrs_lib::AttitudeConverter(Rd);
+
+  if (output_mode == OUTPUT_ATTITUDE_RATE) {
+
+    // output the desired attitude rate
+    output_command->attitude_rate.x = t[0];
+    output_command->attitude_rate.y = t[1];
+    output_command->attitude_rate.z = t[2];
+
+    output_command->mode_mask = output_command->MODE_ATTITUDE_RATE;
+
+  } else if (output_mode == OUTPUT_ATTITUDE_QUATERNION) {
+
+    output_command->mode_mask = output_command->MODE_ATTITUDE;
+
+    ROS_WARN_THROTTLE(1.0, "[Se3Controller]: outputting desired orientation (this is not normal)");
+  }
+
+  output_command->desired_acceleration.x = desired_x_accel;
+  output_command->desired_acceleration.y = desired_y_accel;
+  output_command->desired_acceleration.z = desired_z_accel;
+
+  /*QUESTION: do we need rampup_active_ in traj prediction? now commented*/
+  // if (rampup_active_) {
+
+  //   // deactivate the rampup when the times up
+  //   if (fabs((ros::Time::now() - rampup_start_time_).toSec()) >= rampup_duration_) {
+
+  //     rampup_active_         = false;
+  //     output_command->thrust = thrust;
+
+  //     ROS_INFO("[Se3Controller]: rampup finished");
+
+  //   } else {
+
+  //     double rampup_dt = (ros::Time::now() - rampup_last_time_).toSec();
+
+  //     rampup_thrust_ += double(rampup_direction_) * _rampup_speed_ * rampup_dt;
+
+  //     rampup_last_time_ = ros::Time::now();
+
+  //     output_command->thrust = rampup_thrust_;
+
+  //     ROS_INFO_THROTTLE(0.1, "[Se3Controller]: ramping up thrust, %.4f", output_command->thrust);
+  //   }
+
+  // } else {
+  //   output_command->thrust = thrust;
+  // }
+  output_command->thrust = thrust;
+  /*QUESTION: do we need rampup_active_ in traj prediction? now commented*/
+  // output_command->ramping_up = rampup_active_;
+
+  output_command->mass_difference = uav_mass_difference_;
+  output_command->total_mass      = total_mass;
+
+  output_command->disturbance_bx_b = -Ib_b_[0];
+  output_command->disturbance_by_b = -Ib_b_[1];
+
+  output_command->disturbance_bx_w = -Ib_w[0];
+  output_command->disturbance_by_w = -Ib_w[1];
+
+  output_command->disturbance_wx_w = -Iw_w_[0];
+  output_command->disturbance_wy_w = -Iw_w_[1];
+
+  output_command->controller_enforcing_constraints = false;
+
+  output_command->controller = "Se3Controller";
+
+  last_attitude_cmd_ = output_command;
+
+  /*QUESTION: what to do now with the output_command?*/
+  //return output_command;
 
 
 
