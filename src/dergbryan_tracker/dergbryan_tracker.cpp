@@ -97,8 +97,8 @@ private:
   double kpz_;        // position z gain
   double kvz_;        // velocity z gain
   double kaz_;        // acceleration z gain (feed forward, =1)
-  // double km_;         // mass estimator gain
-  // double km_lim_;     // mass estimator limit
+  double km_;         // mass estimator gain
+  double km_lim_;     // mass estimator limit
   double kqxy_;       // pitch/roll attitude gain
   double kqz_;        // yaw attitude gain
 
@@ -184,6 +184,10 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   // attitude gains
   param_loader.loadParam("default_gains/horizontal/attitude/kq", kqxy_);
   param_loader.loadParam("default_gains/vertical/attitude/kq", kqz_);
+
+  // mass estimator
+  param_loader.loadParam("default_gains/mass_estimator/km", km_);
+  param_loader.loadParam("default_gains/mass_estimator/km_lim", km_lim_);
 
   // integrator limits
   param_loader.loadParam("default_gains/horizontal/kiw_lim", kiwxy_lim_);
@@ -1004,6 +1008,40 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
 
   //}
 
+  /* mass estimatior //{ */
+
+  // --------------------------------------------------------------
+  // |                integrate the mass difference               |
+  // --------------------------------------------------------------
+
+  {
+    std::scoped_lock lock(mutex_gains_);
+    /*QUESTION: do we need to make it work with rampup_active_ or do we assume erg does not need to simulate this phase? */
+    if (position_cmd.use_position_vertical){// && !rampup_active_) {
+      uav_mass_difference_ -= km_ * Ep[2] * dt;
+    }
+
+    // saturate the mass estimator
+    bool uav_mass_saturated = false;
+    if (!std::isfinite(uav_mass_difference_)) {
+      uav_mass_difference_ = 0;
+      ROS_WARN_THROTTLE(1.0, "[Se3Controller]: NaN detected in variable 'uav_mass_difference_', setting it to 0 and returning!!!");
+    } else if (uav_mass_difference_ > km_lim_) {
+      uav_mass_difference_ = km_lim_;
+      uav_mass_saturated   = true;
+    } else if (uav_mass_difference_ < -km_lim_) {
+      uav_mass_difference_ = -km_lim_;
+      uav_mass_saturated   = true;
+    }
+
+    if (uav_mass_saturated) {
+      ROS_WARN_THROTTLE(1.0, "[Se3Controller]: The UAV mass difference is being saturated to %.2f!", uav_mass_difference_);
+    }
+  }
+
+  //}
+
+  
 
 
 /* end copy of se3controller*/
