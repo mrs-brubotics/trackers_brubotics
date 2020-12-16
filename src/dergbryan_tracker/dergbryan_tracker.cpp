@@ -9,11 +9,16 @@
 
 /*begin includes added by bryan:*/
 #include <mrs_lib/attitude_converter.h>
+#include <geometry_msgs/PoseArray.h>
 /*end includes added by bryan:*/
 
 //}
 #define OUTPUT_ATTITUDE_RATE 0
 #define OUTPUT_ATTITUDE_QUATERNION 1
+
+
+using namespace Eigen; //added by bryan
+
 
 namespace mrs_uav_trackers
 {
@@ -45,6 +50,7 @@ public:
   const std_srvs::TriggerResponse::ConstPtr resumeTrajectoryTracking(const std_srvs::TriggerRequest::ConstPtr &cmd);
   const std_srvs::TriggerResponse::ConstPtr gotoTrajectoryStart(const std_srvs::TriggerRequest::ConstPtr &cmd);
 
+  void trajectory_prediction_general();
 private:
   ros::NodeHandle                                     nh_;
   std::shared_ptr<mrs_uav_managers::CommonHandlers_t> common_handlers_;
@@ -151,6 +157,35 @@ private:
   bool hover_          = false;
 
   bool starting_bool=true;
+
+  // added by Bryan
+  double time_for_sinus_bryan = 0;
+  ros::Publisher pub_goal_pose_;
+
+  geometry_msgs::PoseArray predicted_thrust_out;  // array of thrust predictions
+  geometry_msgs::PoseArray custom_trajectory_out; // array of traj predictions
+  
+
+  float custom_dt = 0.010; // controller sampling time (in seconds) used in prediction
+  float pred_horizon = 0.4; //0.4; // prediction horizon (in seconds)
+  float num_pred_samples = pred_horizon/custom_dt; // number of prediction samples
+
+
+  MatrixXd init_pos = MatrixXd::Zero(3, 1);
+  MatrixXd init_vel = MatrixXd::Zero(3, 1);
+  MatrixXd init_accel = MatrixXd::Zero(3, 1);
+
+  ros::Publisher custom_predicted_traj_publisher;
+  ros::Publisher custom_predicted_thrust_publisher;
+  double _g_ = -9.81;
+  double total_mass_;
+  
+  double applied_ref_x_;
+  double applied_ref_y_;
+  double applied_ref_z_;
+
+
+  // finish added by bryan
 };
 //}
 
@@ -224,6 +259,12 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
     ROS_ERROR("[DergbryanTracker]: could not load all parameters!");
     ros::shutdown();
   }
+
+  // create publishers
+  pub_goal_pose_ = nh_.advertise<mrs_msgs::ReferenceStamped>("goal_pose", 10);
+  custom_predicted_traj_publisher = nh_.advertise<geometry_msgs::PoseArray>("custom_predicted_traj", 1);
+  custom_predicted_thrust_publisher = nh_.advertise<geometry_msgs::PoseArray>("custom_predicted_thrust", 1);
+
   // | ---------------- prepare stuff from params --------------- |
 
   /* QUESTION: do we need this? */
@@ -300,6 +341,20 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
   }
   mrs_msgs::PositionCommand position_cmd;
 
+
+  init_pos(0,0)=uav_state->pose.position.x;
+  init_pos(1,0)=uav_state->pose.position.y;
+  init_pos(2,0)=uav_state->pose.position.z;
+
+  init_vel(0,0)=uav_state->velocity.linear.x;
+  init_vel(1,0)=uav_state->velocity.linear.y;
+  init_vel(2,0)=uav_state->velocity.linear.z;
+  //trajectory_prediction_general();
+
+
+
+
+
   // set the header
   position_cmd.header.stamp    = uav_state->header.stamp;
   position_cmd.header.frame_id = uav_state->header.frame_id;
@@ -333,6 +388,7 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
     position_cmd.use_heading_rate        = 1;
 
     starting_bool=false;
+    time_for_sinus_bryan = 0;
 
     ROS_INFO("[Dergbryan tracker - odom]: [goal_x_=%.2f],[goal_y_=%.2f],[goal_z_=%.2f, goal_heading_=%.2f]",goal_x_,goal_y_,goal_z_,goal_heading_);
  
@@ -420,10 +476,34 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
   position_cmd.use_heading_rate        = 1;
 
   /*TODO,ADDED: SET THE APPLIED REFERNECE POSE (POSITION & HEADING) TEMPORARILY TO THE DESIRED GOAL*/
-  position_cmd.position.x     = goal_x_;
-  position_cmd.position.y     = goal_y_;
-  position_cmd.position.z     = goal_z_;
+
+
+
+  // publish the goal pose to a custom topic
+  mrs_msgs::ReferenceStamped goal_pose;
+  // goal_pose.header.stamp          = ros::Time::now();
+  // goal_pose.header.frame_id  = "fcu_untilted";
+  goal_pose.header.stamp    = uav_state->header.stamp;
+  goal_pose.header.frame_id = uav_state->header.frame_id;
+  goal_pose.reference.position.x  = goal_x_;
+  goal_pose.reference.position.y  = goal_y_;
+  goal_pose.reference.position.z  = goal_z_;
+  goal_pose.reference.heading = goal_heading_;
+  pub_goal_pose_.publish(goal_pose);
+
+  // set applied ref = desired goal ref (bypass tracker)
+  position_cmd.position.x     = goal_x_;//+ 0.1*sin(3.14*time_for_sinus_bryan);
+  position_cmd.position.y     = goal_y_;//+ 0.1*sin(3.14*time_for_sinus_bryan);
+  time_for_sinus_bryan = time_for_sinus_bryan + dt;
+  position_cmd.position.z     = goal_z_;//+ 0.1*sin(3.14*time_for_sinus_bryan);
   position_cmd.heading        = goal_heading_;
+  // change later to real applied_ref_
+  applied_ref_x_ = position_cmd.position.x;
+  applied_ref_y_ = position_cmd.position.y;
+  applied_ref_z_ = position_cmd.position.z;
+  //
+
+
 
   /* NOTE: replaced control_reference -> (input of controller) by position_cmd.use_ defined above in the update function*/
   if (position_cmd.use_position_vertical || position_cmd.use_position_horizontal) {
@@ -563,9 +643,15 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
 
   
   /*TODO: answer question below and define Kp, Kv accordingly, for now deined hardcoded*/
-  double _uav_mass_ = 2.0; // TODO: change later
-  double uav_mass_difference_ = 0.0;  // TODO: change later
+  _uav_mass_ = 2.0; // TODO: change later
+  uav_mass_difference_ = 0.0;  // TODO: change later
   // QUESTION: how to get _uav_mass_ analoguous to controllers, in the controllers ?
+
+
+  trajectory_prediction_general();
+
+
+
   Kp = Kp * (_uav_mass_ + uav_mass_difference_);
   Kv = Kv * (_uav_mass_ + uav_mass_difference_);
 
@@ -619,9 +705,14 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
 
 
   // construct the desired force vector
-  /* TODO: define _g_ as done in controllers */
-  double _g_ = -9.81;
+  /* TODO: define _g_ and uav mass as done in controllers */
+  //double _g_ = -9.81; now globally defined
   double total_mass = _uav_mass_ + uav_mass_difference_;
+
+  // global total mass created by bryan
+  total_mass_= total_mass;
+
+
 
   Eigen::Vector3d feed_forward      = total_mass * (Eigen::Vector3d(0, 0, _g_) + Ra);
   Eigen::Vector3d position_feedback = -Kp * Ep.array();
@@ -783,8 +874,8 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
     /*QUESTION: how to acces in the tracker code: _motor_params_.A + _motor_params_.B??*/
     //thrust = sqrt(thrust_force) * _motor_params_.A + _motor_params_.B;
     /*TODO change code below unhardcoded*/
-    double Aparam = 0.01;
-    double Bparam = 0.0001;
+    double Aparam = 0.175; // value from printen inside se3controllerbrubotics
+    double Bparam = -0.148; // value from printen inside se3controllerbrubotics
     thrust = sqrt(thrust_force) * Aparam + Bparam;
   } else {
     ROS_WARN_THROTTLE(1.0, "[Se3Controller]: just so you know, the desired thrust force is negative (%.2f)", thrust_force);
@@ -1344,6 +1435,82 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
   return mrs_msgs::TrajectoryReferenceSrvResponse::Ptr();
 }
 //}
+
+
+void DergbryanTracker::trajectory_prediction_general(){
+// Discrete trajectory prediction using the forward Euler formula's
+
+custom_trajectory_out.header.stamp = ros::Time::now();
+custom_trajectory_out.header.frame_id = uav_state_.header.frame_id;
+
+predicted_thrust_out.header.stamp = ros::Time::now();
+predicted_thrust_out.header.frame_id = uav_state_.header.frame_id;
+
+geometry_msgs::Pose custom_pose;
+geometry_msgs::Pose custom_vel;
+geometry_msgs::Pose custom_acceleration;
+geometry_msgs::Pose predicted_thrust; 
+geometry_msgs::Pose predicted_thrust_norm; 
+
+
+for (int i = 0; i < num_pred_samples; i++) {
+  if(i==0){
+
+    //Initial conditions for first iteration
+    custom_pose.position.x = init_pos(0,0);
+    custom_pose.position.y = init_pos(1,0);
+    custom_pose.position.z = init_pos(2,0);
+
+    custom_vel.position.x = init_vel(0,0);
+    custom_vel.position.y = init_vel(1,0);
+    custom_vel.position.z = init_vel(2,0);
+  } 
+  else{ // shouldn't we change the order of what is inside this else? we changed order
+    custom_vel.position.x = custom_acceleration.position.x*custom_dt+custom_vel.position.x;
+    custom_vel.position.y = custom_acceleration.position.y*custom_dt+custom_vel.position.y;
+    custom_vel.position.z = custom_acceleration.position.z*custom_dt+custom_vel.position.z;
+
+    custom_pose.position.x = custom_vel.position.x*custom_dt+custom_pose.position.x;
+    custom_pose.position.y = custom_vel.position.y*custom_dt+custom_pose.position.y;
+    custom_pose.position.z = custom_vel.position.z*custom_dt+custom_pose.position.z;
+
+    
+} 
+
+
+  custom_acceleration.position.x = kpxy_*(applied_ref_x_-custom_pose.position.x)-kvxy_*custom_vel.position.x;
+  custom_acceleration.position.y = kpxy_*(applied_ref_y_-custom_pose.position.y)-kvxy_*custom_vel.position.y;
+  custom_acceleration.position.z = kpz_*(applied_ref_z_-custom_pose.position.z)-kvz_*custom_vel.position.z;
+  
+
+  // predicted_thrust.position.x = -total_mass_*(kpxy_*(applied_ref_x_-custom_pose.position.x)-kvxy_*custom_vel.position.x);
+  // predicted_thrust.position.y = -total_mass_*(kpxy_*(applied_ref_y_-custom_pose.position.y)-kvxy_*custom_vel.position.y);
+  // predicted_thrust.position.z = -total_mass_*(kpz_*(applied_ref_z_-custom_pose.position.z)-kvz_*custom_vel.position.z) + total_mass_*_g_;
+  predicted_thrust.position.x = -_uav_mass_*(kpxy_*(applied_ref_x_-custom_pose.position.x)-kvxy_*custom_vel.position.x);
+  predicted_thrust.position.y = -_uav_mass_*(kpxy_*(applied_ref_y_-custom_pose.position.y)-kvxy_*custom_vel.position.y);
+  predicted_thrust.position.z = -_uav_mass_*(kpz_*(applied_ref_z_-custom_pose.position.z)-kvz_*custom_vel.position.z) + _uav_mass_*_g_;
+
+
+
+  //change later to list of double values []
+  predicted_thrust_norm.position.x= sqrt(predicted_thrust.position.x*predicted_thrust.position.x+predicted_thrust.position.y*predicted_thrust.position.y+predicted_thrust.position.z*predicted_thrust.position.z);
+
+
+  predicted_thrust_out.poses.push_back(predicted_thrust_norm);
+  custom_trajectory_out.poses.push_back(custom_pose);
+}
+try {
+  custom_predicted_traj_publisher.publish(custom_trajectory_out);
+  custom_predicted_thrust_publisher.publish(predicted_thrust_out);
+
+
+}
+catch (...) {
+  ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", custom_predicted_traj_publisher.getTopic().c_str());
+}
+custom_trajectory_out.poses.clear();
+predicted_thrust_out.poses.clear();
+}
 
 }  // namespace dergbryan_tracker
 }  // namespace mrs_uav_trackers
