@@ -163,11 +163,14 @@ private:
   ros::Publisher pub_goal_pose_;
 
   geometry_msgs::PoseArray predicted_thrust_out;  // array of thrust predictions
-  geometry_msgs::PoseArray custom_trajectory_out; // array of traj predictions
+  // geometry_msgs::PoseArray custom_trajectory_out; // array of pose traj predictions
+  geometry_msgs::PoseArray predicted_poses_out; // array of predicted poses
+  geometry_msgs::PoseArray predicted_velocities_out; // array of predicted velocities
+  geometry_msgs::PoseArray predicted_accelerations_out; // array of predicted accelerations
   
 
-  float custom_dt = 0.010; // controller sampling time (in seconds) used in prediction
-  float pred_horizon = 0.4; //0.4; // prediction horizon (in seconds)
+  float custom_dt = 0.010;//0.001;//0.020; //0.010; // controller sampling time (in seconds) used in prediction
+  float pred_horizon = 1.5;//0.15;//1.5; //0.15; //1.5; //0.4; // prediction horizon (in seconds)
   float num_pred_samples = pred_horizon/custom_dt; // number of prediction samples
 
 
@@ -175,8 +178,11 @@ private:
   MatrixXd init_vel = MatrixXd::Zero(3, 1);
   MatrixXd init_accel = MatrixXd::Zero(3, 1);
 
-  ros::Publisher custom_predicted_traj_publisher;
+  // ros::Publisher custom_predicted_traj_publisher;
   ros::Publisher custom_predicted_thrust_publisher;
+  ros::Publisher custom_predicted_pose_publisher;
+  ros::Publisher custom_predicted_vel_publisher;
+  ros::Publisher custom_predicted_acc_publisher;
   double _g_ = -9.81;
   double total_mass_;
   
@@ -197,7 +203,8 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
                              [[maybe_unused]] std::shared_ptr<mrs_uav_managers::CommonHandlers_t> common_handlers) {
   /*QUESTION: using se3_controller here since I want to load the se3 controllers paramters and not overwrite them. How to add paramters specific to derg tracker? How to overwrite se3 control paramters if we would use our own se3 controller?*/
   //ros::NodeHandle nh_(parent_nh, "dergbryan_tracker");
-  ros::NodeHandle nh_(parent_nh, "se3_controller");
+  //ros::NodeHandle nh_(parent_nh, "se3_controller");
+  ros::NodeHandle nh_(parent_nh, "se3_controller_brubotics");
   common_handlers_ = common_handlers;
   /*QUESTION: how to load these paramters commented below as was done in the se3controller?*/
   // _motor_params_   = motor_params;
@@ -208,7 +215,8 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
 
   // | ------------------- loading parameters ------------------- |
   //mrs_lib::ParamLoader param_loader(nh_, "DergbryanTracker");
-  mrs_lib::ParamLoader param_loader(nh_, "Se3Controller");
+  // mrs_lib::ParamLoader param_loader(nh_, "Se3Controller");
+  mrs_lib::ParamLoader param_loader(nh_, "Se3ControllerBrubotics");
 
   param_loader.loadParam("version", _version_);
 
@@ -262,8 +270,11 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
 
   // create publishers
   pub_goal_pose_ = nh_.advertise<mrs_msgs::ReferenceStamped>("goal_pose", 10);
-  custom_predicted_traj_publisher = nh_.advertise<geometry_msgs::PoseArray>("custom_predicted_traj", 1);
+  // custom_predicted_traj_publisher = nh_.advertise<geometry_msgs::PoseArray>("custom_predicted_traj", 1);
   custom_predicted_thrust_publisher = nh_.advertise<geometry_msgs::PoseArray>("custom_predicted_thrust", 1);
+  custom_predicted_pose_publisher = nh_.advertise<geometry_msgs::PoseArray>("custom_predicted_poses", 1);
+  custom_predicted_vel_publisher = nh_.advertise<geometry_msgs::PoseArray>("custom_predicted_vels", 1);
+  custom_predicted_acc_publisher = nh_.advertise<geometry_msgs::PoseArray>("custom_predicted_accs", 1);
 
   // | ---------------- prepare stuff from params --------------- |
 
@@ -656,10 +667,10 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
   Kv = Kv * (_uav_mass_ + uav_mass_difference_);
 
   // a print to test if the gains change so you know where to change:
-  // ROS_INFO_STREAM("Kp = \n" << Kp);
-  // ROS_INFO_STREAM("Kv = \n" << Kv);
-  // ROS_INFO_STREAM("Ka = \n" << Ka);
-  // ROS_INFO_STREAM("Kq = \n" << Kq);
+  ROS_INFO_STREAM("DergbryanTracker: Kp = \n" << Kp);
+  ROS_INFO_STREAM("DergbryanTracker: Kv = \n" << Kv);
+  ROS_INFO_STREAM("DergbryanTracker: Ka = \n" << Ka);
+  ROS_INFO_STREAM("DergbryanTracker: Kq = \n" << Kq);
   // QUESTION: some gains printed above do not correspond to the gains set in the yaml file (e.G. Kpz). Why is that?
 
 
@@ -1439,12 +1450,17 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
 
 void DergbryanTracker::trajectory_prediction_general(){
 // Discrete trajectory prediction using the forward Euler formula's
-
-custom_trajectory_out.header.stamp = ros::Time::now();
-custom_trajectory_out.header.frame_id = uav_state_.header.frame_id;
-
 predicted_thrust_out.header.stamp = ros::Time::now();
 predicted_thrust_out.header.frame_id = uav_state_.header.frame_id;
+
+
+predicted_poses_out.header.stamp = ros::Time::now();
+predicted_poses_out.header.frame_id = uav_state_.header.frame_id;
+predicted_velocities_out.header.stamp = ros::Time::now();
+predicted_velocities_out.header.frame_id = uav_state_.header.frame_id;
+predicted_accelerations_out.header.stamp = ros::Time::now();
+predicted_accelerations_out.header.frame_id = uav_state_.header.frame_id;
+
 
 geometry_msgs::Pose custom_pose;
 geometry_msgs::Pose custom_vel;
@@ -1477,17 +1493,18 @@ for (int i = 0; i < num_pred_samples; i++) {
     
 } 
 
-
-  custom_acceleration.position.x = kpxy_*(applied_ref_x_-custom_pose.position.x)-kvxy_*custom_vel.position.x;
-  custom_acceleration.position.y = kpxy_*(applied_ref_y_-custom_pose.position.y)-kvxy_*custom_vel.position.y;
+  double FACTOR_kpxy = 1.0;
+  double FACTOR_kvxy = 1.0;
+  custom_acceleration.position.x = FACTOR_kpxy*kpxy_*(applied_ref_x_-custom_pose.position.x)-FACTOR_kvxy*kvxy_*custom_vel.position.x;
+  custom_acceleration.position.y = FACTOR_kpxy*kpxy_*(applied_ref_y_-custom_pose.position.y)-FACTOR_kvxy*kvxy_*custom_vel.position.y;
   custom_acceleration.position.z = kpz_*(applied_ref_z_-custom_pose.position.z)-kvz_*custom_vel.position.z;
   
 
   // predicted_thrust.position.x = -total_mass_*(kpxy_*(applied_ref_x_-custom_pose.position.x)-kvxy_*custom_vel.position.x);
   // predicted_thrust.position.y = -total_mass_*(kpxy_*(applied_ref_y_-custom_pose.position.y)-kvxy_*custom_vel.position.y);
   // predicted_thrust.position.z = -total_mass_*(kpz_*(applied_ref_z_-custom_pose.position.z)-kvz_*custom_vel.position.z) + total_mass_*_g_;
-  predicted_thrust.position.x = -_uav_mass_*(kpxy_*(applied_ref_x_-custom_pose.position.x)-kvxy_*custom_vel.position.x);
-  predicted_thrust.position.y = -_uav_mass_*(kpxy_*(applied_ref_y_-custom_pose.position.y)-kvxy_*custom_vel.position.y);
+  predicted_thrust.position.x = -_uav_mass_*(FACTOR_kpxy*kpxy_*(applied_ref_x_-custom_pose.position.x)-FACTOR_kvxy*kvxy_*custom_vel.position.x);
+  predicted_thrust.position.y = -_uav_mass_*(FACTOR_kpxy*kpxy_*(applied_ref_y_-custom_pose.position.y)-FACTOR_kvxy*kvxy_*custom_vel.position.y);
   predicted_thrust.position.z = -_uav_mass_*(kpz_*(applied_ref_z_-custom_pose.position.z)-kvz_*custom_vel.position.z) + _uav_mass_*_g_;
 
 
@@ -1497,19 +1514,39 @@ for (int i = 0; i < num_pred_samples; i++) {
 
 
   predicted_thrust_out.poses.push_back(predicted_thrust_norm);
-  custom_trajectory_out.poses.push_back(custom_pose);
+  predicted_poses_out.poses.push_back(custom_pose);
+  predicted_velocities_out.poses.push_back(custom_vel);
+  predicted_accelerations_out.poses.push_back(custom_acceleration);
 }
 try {
-  custom_predicted_traj_publisher.publish(custom_trajectory_out);
   custom_predicted_thrust_publisher.publish(predicted_thrust_out);
-
-
 }
 catch (...) {
-  ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", custom_predicted_traj_publisher.getTopic().c_str());
+  ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", custom_predicted_thrust_publisher.getTopic().c_str());
 }
-custom_trajectory_out.poses.clear();
-predicted_thrust_out.poses.clear();
+try {
+  custom_predicted_pose_publisher.publish(predicted_poses_out);
+}
+catch (...) {
+  ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", custom_predicted_pose_publisher.getTopic().c_str());
+}
+try {
+  custom_predicted_vel_publisher.publish(predicted_velocities_out);
+}
+catch (...) {
+  ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", custom_predicted_vel_publisher.getTopic().c_str());
+}
+try {
+  custom_predicted_acc_publisher.publish(predicted_accelerations_out);
+}
+catch (...) {
+  ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", custom_predicted_acc_publisher.getTopic().c_str());
+}
+  predicted_thrust_out.poses.clear();
+  predicted_poses_out.poses.clear();
+  predicted_velocities_out.poses.clear();
+  predicted_accelerations_out.poses.clear();
+
 }
 
 }  // namespace dergbryan_tracker
