@@ -1759,26 +1759,19 @@ for (int i = 0; i < num_pred_samples; i++) {
   double thrust_force = f.dot(R.col(2));
 
 
-  predicted_thrust_norm.position.x = thrust_force; // change later to a non vec type
-  predicted_thrust_out.poses.push_back(predicted_thrust_norm);
-  //Eigen::Vector3d acceleration_uav = 1/_uav_mass_ * (f + _uav_mass_ * (Eigen::Vector3d(0, 0, -_g_)));
-  Eigen::Vector3d acceleration_uav = 1/_uav_mass_ * (thrust_force*R.col(2) + _uav_mass_ * (Eigen::Vector3d(0, 0, -_g_)));
-  custom_acceleration.position.x = acceleration_uav[0];
-  custom_acceleration.position.y = acceleration_uav[1];
-  custom_acceleration.position.z = acceleration_uav[2];
-  predicted_accelerations_out.poses.push_back(custom_acceleration);
+  
 
 
 
 
   double thrust = 0;
-
+  /*TODO change code below unhardcoded*/
+  double Aparam = 0.175; // value from printen inside se3controllerbrubotics
+  double Bparam = -0.148; // value from printen inside se3controllerbrubotics
   if (thrust_force >= 0) {
     /*QUESTION: how to acces in the tracker code: _motor_params_.A + _motor_params_.B??*/
     //thrust = sqrt(thrust_force) * _motor_params_.A + _motor_params_.B;
-    /*TODO change code below unhardcoded*/
-    double Aparam = 0.175; // value from printen inside se3controllerbrubotics
-    double Bparam = -0.148; // value from printen inside se3controllerbrubotics
+    
     thrust = sqrt(thrust_force) * Aparam + Bparam;
   } else {
     ROS_WARN_THROTTLE(1.0, "[Se3Controller]: just so you know, the desired thrust force is negative (%.2f)", thrust_force);
@@ -1800,6 +1793,17 @@ for (int i = 0; i < num_pred_samples; i++) {
     thrust = 0.0;
     ROS_WARN_THROTTLE(1.0, "[Se3Controller]: saturating thrust to 0");
   }
+
+  thrust_force = pow((thrust-Bparam)/Aparam, 2);
+
+  predicted_thrust_norm.position.x = thrust_force; // change later to a non vec type
+  predicted_thrust_out.poses.push_back(predicted_thrust_norm);
+  //Eigen::Vector3d acceleration_uav = 1/_uav_mass_ * (f + _uav_mass_ * (Eigen::Vector3d(0, 0, -_g_)));
+  Eigen::Vector3d acceleration_uav = 1/_uav_mass_ * (thrust_force*R.col(2) + _uav_mass_ * (Eigen::Vector3d(0, 0, -_g_)));
+  custom_acceleration.position.x = acceleration_uav[0];
+  custom_acceleration.position.y = acceleration_uav[1];
+  custom_acceleration.position.z = acceleration_uav[2];
+  predicted_accelerations_out.poses.push_back(custom_acceleration);
 
   // prepare the attitude feedback
   Eigen::Vector3d q_feedback = -Kq*(1.0) * Eq.array();
