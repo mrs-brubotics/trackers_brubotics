@@ -50,7 +50,8 @@ public:
   const std_srvs::TriggerResponse::ConstPtr resumeTrajectoryTracking(const std_srvs::TriggerRequest::ConstPtr &cmd);
   const std_srvs::TriggerResponse::ConstPtr gotoTrajectoryStart(const std_srvs::TriggerRequest::ConstPtr &cmd);
 
-  void trajectory_prediction_general(mrs_msgs::PositionCommand position_cmd, double uav_heading, double dt, const mrs_msgs::AttitudeCommand::ConstPtr &last_attitude_cmd);
+  void trajectory_prediction_general(mrs_msgs::PositionCommand position_cmd, double uav_heading, const mrs_msgs::AttitudeCommand::ConstPtr &last_attitude_cmd);
+  void DERG_computation();
 private:
   ros::NodeHandle                                     nh_;
   std::shared_ptr<mrs_uav_managers::CommonHandlers_t> common_handlers_;
@@ -169,10 +170,10 @@ private:
   geometry_msgs::PoseArray predicted_accelerations_out; // array of predicted accelerations
   geometry_msgs::PoseArray predicted_attituderate_out; // array of predicted attituderates
   
-
-  float custom_dt = 0.010;//0.001;//0.020; //0.010; // controller sampling time (in seconds) used in prediction
-  float pred_horizon = 1.5;//0.15;//1.5; //0.15; //1.5; //0.4; // prediction horizon (in seconds)
-  float num_pred_samples = pred_horizon/custom_dt; // number of prediction samples
+  double dt_ = 0.010; // ERG sample time = controller sample time
+  double custom_dt_ = 0.010;//0.001;//0.020; //0.010; // controller sampling time (in seconds) used in prediction
+  double pred_horizon_ = 1.5;//0.15;//1.5; //0.15; //1.5; //0.4; // prediction horizon (in seconds)
+  double num_pred_samples_ = pred_horizon_/custom_dt_; // number of prediction samples
 
 
   MatrixXd init_pos = MatrixXd::Zero(3, 1);
@@ -193,9 +194,16 @@ private:
   double applied_ref_y_;
   double applied_ref_z_;
 
-  
 
+  double thrust_saturation_physical_;
 
+  double DSM_total_;
+  // thrust constraints
+  double DSM_s_; // Dynamic Safety Margin for total thrust saturation
+  double kappa_s_=1.1; // kappa parameter of the DSM_s
+  double T_min_ = 0; // lower saturation limit of total thrust
+
+  double eta_ = 0.10;//0.05; // smoothing factor attraction field
   // finish added by bryan
 };
 //}
@@ -408,14 +416,19 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
     time_for_sinus_bryan = 0;
 
     ROS_INFO("[Dergbryan tracker - odom]: [goal_x_=%.2f],[goal_y_=%.2f],[goal_z_=%.2f, goal_heading_=%.2f]",goal_x_,goal_y_,goal_z_,goal_heading_);
- 
+
+    applied_ref_x_ = position_cmd.position.x;
+    applied_ref_y_ = position_cmd.position.y;
+    applied_ref_z_ = position_cmd.position.z;
+    //add heading applied ref
   return mrs_msgs::PositionCommand::ConstPtr(new mrs_msgs::PositionCommand(position_cmd));
 }
 /* begin copy of se3controller*/
 
 // | -------------------- calculate the dt -------------------- |
 
-  double dt;
+  // double dt;
+  // dt = 0.010;
   /* TODO: this if condition is commented since we will only allow this tracker to be activated if before the se3 was activated. 
   so will need to see how to use const mrs_msgs::ControllerStatus Se3Controller::getStatus() { of the controller in here to check if it is active*/
 
@@ -433,7 +446,7 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
 
   /* NOTE: assume a fixed sampling time used in the controller for this DergTracker*/
   /* TODO: load dt (se3 control sample time) as inverse of control sampling frequency defined somewhere in mrs tracker.yaml files (e.g. see mpc, line trackers) and set to 100Hz for controller (*/
-  dt = 0.010; 
+  // dt = 0.010; 
   // dt                = (uav_state->header.stamp - last_update_time_).toSec();
   // last_update_time_ = uav_state->header.stamp;
   // }
@@ -496,600 +509,49 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
   goal_pose.reference.heading = goal_heading_;
   pub_goal_pose_.publish(goal_pose);
 
+
+  
+
+  int use_derg_ = 1;
+  if (use_derg_){
+    // initially applied_ref_x_, applied_ref_y_, applied_ref_z_ is defined as stay where you are when starting_bool = 1;
+    position_cmd.position.x     = applied_ref_x_;
+    position_cmd.position.y     = applied_ref_y_;
+    position_cmd.position.z     = applied_ref_z_;
+    position_cmd.heading        = goal_heading_;
+    trajectory_prediction_general(position_cmd, uav_heading, last_attitude_cmd);
+    DERG_computation(); // modifies the applied reference
+    position_cmd.position.x     = applied_ref_x_;
+    position_cmd.position.y     = applied_ref_y_;
+    position_cmd.position.z     = applied_ref_z_;
+    position_cmd.heading        = goal_heading_;
+  }
+  else{
+    // in case the DERG isn't used
+    //time_for_sinus_bryan = time_for_sinus_bryan + dt;
+    position_cmd.position.x     = goal_x_;//+ 0.1*sin(3.14*time_for_sinus_bryan);
+    position_cmd.position.y     = goal_y_;//+ 0.1*sin(3.14*time_for_sinus_bryan);
+    position_cmd.position.z     = goal_z_;//+ 0.1*sin(3.14*time_for_sinus_bryan);
+    position_cmd.heading        = goal_heading_;
+    trajectory_prediction_general(position_cmd, uav_heading, last_attitude_cmd);
+  }
+
   // set applied ref = desired goal ref (bypass tracker)
-  position_cmd.position.x     = goal_x_;//+ 0.1*sin(3.14*time_for_sinus_bryan);
-  position_cmd.position.y     = goal_y_;//+ 0.1*sin(3.14*time_for_sinus_bryan);
-  time_for_sinus_bryan = time_for_sinus_bryan + dt;
-  position_cmd.position.z     = goal_z_;//+ 0.1*sin(3.14*time_for_sinus_bryan);
-  position_cmd.heading        = goal_heading_;
+
   // change later to real applied_ref_
   applied_ref_x_ = position_cmd.position.x;
   applied_ref_y_ = position_cmd.position.y;
   applied_ref_z_ = position_cmd.position.z;
   //
 
-  
 
 
-  trajectory_prediction_general(position_cmd, uav_heading, dt, last_attitude_cmd);
-// comment below, later delete when prediction routine works
-//   // | ------------------ limit the tilt angle ------------------ |
+  predicted_thrust_out.poses.clear();
+  predicted_poses_out.poses.clear();
+  predicted_velocities_out.poses.clear();
+  predicted_accelerations_out.poses.clear();
+  predicted_attituderate_out.poses.clear();
 
-//   Eigen::Vector3d f_norm = f.normalized();
-
-//   // calculate the force in spherical coordinates
-//   double theta = acos(f_norm[2]);
-//   double phi   = atan2(f_norm[1], f_norm[0]);
-
-//   // check for the failsafe limit
-//   if (!std::isfinite(theta)) {
-
-//     ROS_ERROR("[Se3Controller]: NaN detected in variable 'theta', returning null");
-
-//     /* TODO: return something in this function */
-//     //return mrs_msgs::AttitudeCommand::ConstPtr();
-//   }
-
-//   if (_tilt_angle_failsafe_ > 1e-3 && theta > _tilt_angle_failsafe_) {
-
-//     // ROS_ERROR("[Se3Controller]: the produced tilt angle (%.2f deg) would be over the failsafe limit (%.2f deg), returning null", (180.0 / M_PI) * theta,
-//     //           (180.0 / M_PI) * _tilt_angle_failsafe_);
-//     // ROS_INFO("[Se3Controller]: f = [%.2f, %.2f, %.2f]", f[0], f[1], f[2]);
-//     // ROS_INFO("[Se3Controller]: position feedback: [%.2f, %.2f, %.2f]", position_feedback[0], position_feedback[1], position_feedback[2]);
-//     // ROS_INFO("[Se3Controller]: velocity feedback: [%.2f, %.2f, %.2f]", velocity_feedback[0], velocity_feedback[1], velocity_feedback[2]);
-//     // ROS_INFO("[Se3Controller]: integral feedback: [%.2f, %.2f, %.2f]", integral_feedback[0], integral_feedback[1], integral_feedback[2]);
-//     // ROS_INFO("[Se3Controller]: position_cmd: x: %.2f, y: %.2f, z: %.2f, heading: %.2f", control_reference->position.x, control_reference->position.y,
-//     //          control_reference->position.z, control_reference->heading);
-//     // ROS_INFO("[Se3Controller]: odometry: x: %.2f, y: %.2f, z: %.2f, heading: %.2f", uav_state->pose.position.x, uav_state->pose.position.y,
-//     //          uav_state->pose.position.z, uav_heading);
-
-//     /* TODO: return something in this function */
-//     //return mrs_msgs::AttitudeCommand::ConstPtr();
-//   }
-
-//   // saturate the angle
-
-//   auto constraints = mrs_lib::get_mutexed(mutex_constraints_, constraints_);
-
-//   if (theta > constraints.tilt) {
-//     ROS_WARN_THROTTLE(1.0, "[Se3Controller]: tilt is being saturated, desired: %.2f deg, saturated %.2f deg", (theta / M_PI) * 180.0,
-//                       (constraints.tilt / M_PI) * 180.0);
-//     theta = constraints.tilt;
-//   }
-
-//   // reconstruct the vector
-//   f_norm[0] = sin(theta) * cos(phi);
-//   f_norm[1] = sin(theta) * sin(phi);
-//   f_norm[2] = cos(theta);
-
-//   // | ------------- construct the rotational matrix ------------ |
-
-//   Eigen::Matrix3d Rd;
-
-//   if (position_cmd.use_orientation) {
-
-//     // fill in the desired orientation based on the desired orientation from the control command
-//     Rd = mrs_lib::AttitudeConverter(position_cmd.orientation);
-
-//     if (position_cmd.use_heading) {
-//       Rd = mrs_lib::AttitudeConverter(Rd).setHeading(position_cmd.heading);
-//     }
-
-//   } else {
-
-//     Eigen::Vector3d bxd;  // desired heading vector
-
-//     if (position_cmd.use_heading) {
-//       bxd << cos(position_cmd.heading), sin(position_cmd.heading), 0;
-//     } else {
-//       ROS_ERROR_THROTTLE(1.0, "[Se3Controller]: desired heading was not specified, using current heading instead!");
-//       bxd << cos(uav_heading), sin(uav_heading), 0;
-//     }
-
-//     // fill in the desired orientation based on the state feedback
-//     /* TODO: make it compatible with DRS, now skipped first if */
-//     //if (drs_params.rotation_type == 0) {
-//       if (0) {
-
-//       Rd.col(2) = f_norm;
-//       Rd.col(1) = Rd.col(2).cross(bxd);
-//       Rd.col(1).normalize();
-//       Rd.col(0) = Rd.col(1).cross(Rd.col(2));
-//       Rd.col(0).normalize();
-
-//     } else {
-
-//       // | ------------------------- body z ------------------------- |
-//       Rd.col(2) = f_norm;
-
-//       // | ------------------------- body x ------------------------- |
-
-//       // construct the oblique projection
-//       Eigen::Matrix3d projector_body_z_compl = (Eigen::Matrix3d::Identity(3, 3) - f_norm * f_norm.transpose());
-
-//       // create a basis of the body-z complement subspace
-//       Eigen::MatrixXd A = Eigen::MatrixXd(3, 2);
-//       A.col(0)          = projector_body_z_compl.col(0);
-//       A.col(1)          = projector_body_z_compl.col(1);
-
-//       // create the basis of the projection null-space complement
-//       Eigen::MatrixXd B = Eigen::MatrixXd(3, 2);
-//       B.col(0)          = Eigen::Vector3d(1, 0, 0);
-//       B.col(1)          = Eigen::Vector3d(0, 1, 0);
-
-//       // oblique projector to <range_basis>
-//       Eigen::MatrixXd Bt_A               = B.transpose() * A;
-//       Eigen::MatrixXd Bt_A_pseudoinverse = ((Bt_A.transpose() * Bt_A).inverse()) * Bt_A.transpose();
-//       Eigen::MatrixXd oblique_projector  = A * Bt_A_pseudoinverse * B.transpose();
-
-//       Rd.col(0) = oblique_projector * bxd;
-//       Rd.col(0).normalize();
-
-//       // | ------------------------- body y ------------------------- |
-
-//       Rd.col(1) = Rd.col(2).cross(Rd.col(0));
-//       Rd.col(1).normalize();
-//     }
-//   }
-//   // test printing Rd:
-//   // ROS_INFO_STREAM("Rd = \n" << Rd);
-
-//   // --------------------------------------------------------------
-//   // |                      orientation error                     |
-//   // --------------------------------------------------------------
-
-//   /* orientation error */
-//   Eigen::Matrix3d E = 0.5 * (Rd.transpose() * R - R.transpose() * Rd);
-
-//   Eigen::Vector3d Eq;
-
-//   // clang-format off
-//   Eq << (E(2, 1) - E(1, 2)) / 2.0,
-//         (E(0, 2) - E(2, 0)) / 2.0,
-//         (E(1, 0) - E(0, 1)) / 2.0;
-//   // clang-format on
-
-//   /* output */
-//   double thrust_force = f.dot(R.col(2));
-
-//   double thrust = 0;
-
-//   if (thrust_force >= 0) {
-//     /*QUESTION: how to acces in the tracker code: _motor_params_.A + _motor_params_.B??*/
-//     //thrust = sqrt(thrust_force) * _motor_params_.A + _motor_params_.B;
-//     /*TODO change code below unhardcoded*/
-//     double Aparam = 0.175; // value from printen inside se3controllerbrubotics
-//     double Bparam = -0.148; // value from printen inside se3controllerbrubotics
-//     thrust = sqrt(thrust_force) * Aparam + Bparam;
-//   } else {
-//     ROS_WARN_THROTTLE(1.0, "[Se3Controller]: just so you know, the desired thrust force is negative (%.2f)", thrust_force);
-//   }
-
-//   // saturate the thrust
-//   if (!std::isfinite(thrust)) {
-
-//     thrust = 0;
-//     ROS_ERROR("[Se3Controller]: NaN detected in variable 'thrust', setting it to 0 and returning!!!");
-
-//   } else if (thrust > _thrust_saturation_) {
-
-//     thrust = _thrust_saturation_;
-//     ROS_WARN_THROTTLE(1.0, "[Se3Controller]: saturating thrust to %.2f", _thrust_saturation_);
-
-//   } else if (thrust < 0.0) {
-
-//     thrust = 0.0;
-//     ROS_WARN_THROTTLE(1.0, "[Se3Controller]: saturating thrust to 0");
-//   }
-
-//   // prepare the attitude feedback
-//   Eigen::Vector3d q_feedback = -Kq * Eq.array();
-
-//   if (position_cmd.use_attitude_rate) {
-//     Rw << position_cmd.attitude_rate.x, position_cmd.attitude_rate.y, position_cmd.attitude_rate.z;
-//   } else if (position_cmd.use_heading_rate) {
-
-//     // to fill in the feed forward yaw rate
-//     double desired_yaw_rate = 0;
-
-//     try {
-//       desired_yaw_rate = mrs_lib::AttitudeConverter(Rd).getYawRateIntrinsic(position_cmd.heading_rate);
-//     }
-//     catch (...) {
-//       ROS_ERROR("[Se3Controller]: exception caught while calculating the desired_yaw_rate feedforward");
-//     }
-
-//     Rw << 0, 0, desired_yaw_rate;
-//   }
-
-//   // feedforward angular acceleration
-//   Eigen::Vector3d q_feedforward = Eigen::Vector3d(0, 0, 0);
-
-//   /* TODO: change if case using drs_params */
-//   //if (drs_params.jerk_feedforward) {
-//   if (false) {
-
-//     Eigen::Matrix3d I;
-//     I << 0, 1, 0, -1, 0, 0, 0, 0, 0;
-//     Eigen::Vector3d desired_jerk = Eigen::Vector3d(position_cmd.jerk.x, position_cmd.jerk.y, position_cmd.jerk.z);
-//     q_feedforward                = (I.transpose() * Rd.transpose() * desired_jerk) / (thrust_force / total_mass);
-//   }
-
-//   // angular feedback + angular rate feedforward
-//   Eigen::Vector3d t = q_feedback + Rw + q_feedforward;
-
-
-//   // compensate for the parasitic heading rate created by the desired pitch and roll rate
-//   Eigen::Vector3d rp_heading_rate_compensation = Eigen::Vector3d(0, 0, 0);
-
-//   /* TODO: change if case using drs_params */
-//   if (true) {
-//   //if (drs_params.pitch_roll_heading_rate_compensation) {
-
-//     Eigen::Vector3d q_feedback_yawless = t;
-//     q_feedback_yawless(2)              = 0;  // nullyfy the effect of the original yaw feedback
-
-//     double parasitic_heading_rate = 0;
-
-//     try {
-//       parasitic_heading_rate = mrs_lib::AttitudeConverter(uav_state->pose.orientation).getHeadingRate(q_feedback_yawless);
-//     }
-//     catch (...) {
-//       ROS_ERROR("[Se3Controller]: exception caught while calculating the parasitic heading rate!");
-//     }
-
-//     try {
-//       rp_heading_rate_compensation(2) = mrs_lib::AttitudeConverter(uav_state->pose.orientation).getYawRateIntrinsic(-parasitic_heading_rate);
-//     }
-//     catch (...) {
-//       ROS_ERROR("[Se3Controller]: exception caught while calculating the parasitic heading rate compensation!");
-//     }
-//   }
-
-//   t += rp_heading_rate_compensation;
-
-
-//   // --------------------------------------------------------------
-//   // |                      update parameters                     |
-//   // --------------------------------------------------------------
-
-//   /* world error integrator //{ */
-
-//   // --------------------------------------------------------------
-//   // |                  integrate the world error                 |
-//   // --------------------------------------------------------------
-
-//   {
-//     std::scoped_lock lock(mutex_gains_, mutex_integrals_);
-
-//     Eigen::Vector3d integration_switch(1, 1, 0);
-
-//     // integrate the world error
-//     if (position_cmd.use_position_horizontal) {
-//       Iw_w_ -= kiwxy_ * Ep.head(2) * dt;
-//     } else if (position_cmd.use_velocity_horizontal) {
-//       Iw_w_ -= kiwxy_ * Ev.head(2) * dt;
-//     }
-
-//     // saturate the world X
-//     double world_integral_saturated = false;
-//     if (!std::isfinite(Iw_w_[0])) {
-//       Iw_w_[0] = 0;
-//       ROS_ERROR_THROTTLE(1.0, "[Se3Controller]: NaN detected in variable 'Iw_w_[0]', setting it to 0!!!");
-//     } else if (Iw_w_[0] > kiwxy_lim_) {
-//       Iw_w_[0]                 = kiwxy_lim_;
-//       world_integral_saturated = true;
-//     } else if (Iw_w_[0] < -kiwxy_lim_) {
-//       Iw_w_[0]                 = -kiwxy_lim_;
-//       world_integral_saturated = true;
-//     }
-
-//     if (kiwxy_lim_ >= 0 && world_integral_saturated) {
-//       ROS_WARN_THROTTLE(1.0, "[Se3Controller]: SE3's world X integral is being saturated!");
-//     }
-
-//     // saturate the world Y
-//     world_integral_saturated = false;
-//     if (!std::isfinite(Iw_w_[1])) {
-//       Iw_w_[1] = 0;
-//       ROS_ERROR_THROTTLE(1.0, "[Se3Controller]: NaN detected in variable 'Iw_w_[1]', setting it to 0!!!");
-//     } else if (Iw_w_[1] > kiwxy_lim_) {
-//       Iw_w_[1]                 = kiwxy_lim_;
-//       world_integral_saturated = true;
-//     } else if (Iw_w_[1] < -kiwxy_lim_) {
-//       Iw_w_[1]                 = -kiwxy_lim_;
-//       world_integral_saturated = true;
-//     }
-
-//     if (kiwxy_lim_ >= 0 && world_integral_saturated) {
-//       ROS_WARN_THROTTLE(1.0, "[Se3Controller]: SE3's world Y integral is being saturated!");
-//     }
-//   }
-
-//    //}
-
-//   /* body error integrator //{ */
-
-//   // --------------------------------------------------------------
-//   // |                  integrate the body error                  |
-//   // --------------------------------------------------------------
-
-//   {
-//     std::scoped_lock lock(mutex_gains_);
-
-//     Eigen::Vector2d Ep_fcu_untilted = Eigen::Vector2d(0, 0);  // position error in the untilted frame of the UAV
-//     Eigen::Vector2d Ev_fcu_untilted = Eigen::Vector2d(0, 0);  // velocity error in the untilted frame of the UAV
-
-//     // get the position control error in the fcu_untilted frame
-//     {
-
-//       geometry_msgs::Vector3Stamped Ep_stamped;
-
-//       Ep_stamped.header.stamp    = ros::Time::now();
-//       Ep_stamped.header.frame_id = uav_state_.header.frame_id;
-//       Ep_stamped.vector.x        = Ep(0);
-//       Ep_stamped.vector.y        = Ep(1);
-//       Ep_stamped.vector.z        = Ep(2);
-
-//       auto res = common_handlers_->transformer->transformSingle("fcu_untilted", Ep_stamped);
-
-//       if (res) {
-//         Ep_fcu_untilted[0] = res.value().vector.x;
-//         Ep_fcu_untilted[1] = res.value().vector.y;
-//       } else {
-//         ROS_ERROR_THROTTLE(1.0, "[Se3Controller]: could not transform the position error to fcu_untilted");
-//       }
-//     }
-
-//     // get the velocity control error in the fcu_untilted frame
-//     {
-//       geometry_msgs::Vector3Stamped Ev_stamped;
-
-//       Ev_stamped.header.stamp    = ros::Time::now();
-//       Ev_stamped.header.frame_id = uav_state_.header.frame_id;
-//       Ev_stamped.vector.x        = Ev(0);
-//       Ev_stamped.vector.y        = Ev(1);
-//       Ev_stamped.vector.z        = Ev(2);
-
-//       auto res = common_handlers_->transformer->transformSingle("fcu_untilted", Ev_stamped);
-
-//       if (res) {
-//         Ev_fcu_untilted[0] = res.value().vector.x;
-//         Ev_fcu_untilted[1] = res.value().vector.x;
-//       } else {
-//         ROS_ERROR_THROTTLE(1.0, "[Se3Controller]: could not transform the velocity error to fcu_untilted");
-//       }
-//     }
-
-//     // integrate the body error
-//     if (position_cmd.use_position_horizontal) {
-//       Ib_b_ -= kibxy_ * Ep_fcu_untilted * dt;
-//     } else if (position_cmd.use_velocity_horizontal) {
-//       Ib_b_ -= kibxy_ * Ev_fcu_untilted * dt;
-//     }
-
-//     // saturate the body
-//     double body_integral_saturated = false;
-//     if (!std::isfinite(Ib_b_[0])) {
-//       Ib_b_[0] = 0;
-//       ROS_ERROR_THROTTLE(1.0, "[Se3Controller]: NaN detected in variable 'Ib_b_[0]', setting it to 0!!!");
-//     } else if (Ib_b_[0] > kibxy_lim_) {
-//       Ib_b_[0]                = kibxy_lim_;
-//       body_integral_saturated = true;
-//     } else if (Ib_b_[0] < -kibxy_lim_) {
-//       Ib_b_[0]                = -kibxy_lim_;
-//       body_integral_saturated = true;
-//     }
-
-//     if (kibxy_lim_ > 0 && body_integral_saturated) {
-//       ROS_WARN_THROTTLE(1.0, "[Se3Controller]: SE3's body pitch integral is being saturated!");
-//     }
-
-//     // saturate the body
-//     body_integral_saturated = false;
-//     if (!std::isfinite(Ib_b_[1])) {
-//       Ib_b_[1] = 0;
-//       ROS_ERROR_THROTTLE(1.0, "[Se3Controller]: NaN detected in variable 'Ib_b_[1]', setting it to 0!!!");
-//     } else if (Ib_b_[1] > kibxy_lim_) {
-//       Ib_b_[1]                = kibxy_lim_;
-//       body_integral_saturated = true;
-//     } else if (Ib_b_[1] < -kibxy_lim_) {
-//       Ib_b_[1]                = -kibxy_lim_;
-//       body_integral_saturated = true;
-//     }
-
-//     if (kibxy_lim_ > 0 && body_integral_saturated) {
-//       ROS_WARN_THROTTLE(1.0, "[Se3Controller]: SE3's body roll integral is being saturated!");
-//     }
-//   }
-
-//   //}
-
-//   /* mass estimatior //{ */
-
-//   // --------------------------------------------------------------
-//   // |                integrate the mass difference               |
-//   // --------------------------------------------------------------
-
-//   {
-//     std::scoped_lock lock(mutex_gains_);
-//     /*QUESTION: do we need to make it work with rampup_active_ or do we assume erg does not need to simulate this phase? */
-//     if (position_cmd.use_position_vertical){// && !rampup_active_) {
-//       uav_mass_difference_ -= km_ * Ep[2] * dt;
-//     }
-
-//     // saturate the mass estimator
-//     bool uav_mass_saturated = false;
-//     if (!std::isfinite(uav_mass_difference_)) {
-//       uav_mass_difference_ = 0;
-//       ROS_WARN_THROTTLE(1.0, "[Se3Controller]: NaN detected in variable 'uav_mass_difference_', setting it to 0 and returning!!!");
-//     } else if (uav_mass_difference_ > km_lim_) {
-//       uav_mass_difference_ = km_lim_;
-//       uav_mass_saturated   = true;
-//     } else if (uav_mass_difference_ < -km_lim_) {
-//       uav_mass_difference_ = -km_lim_;
-//       uav_mass_saturated   = true;
-//     }
-
-//     if (uav_mass_saturated) {
-//       ROS_WARN_THROTTLE(1.0, "[Se3Controller]: The UAV mass difference is being saturated to %.2f!", uav_mass_difference_);
-//     }
-//   }
-
-//   //}
-
-//   // --------------------------------------------------------------
-//   // |                 produce the control output                 |
-//   // --------------------------------------------------------------
-
-//   mrs_msgs::AttitudeCommand::Ptr output_command(new mrs_msgs::AttitudeCommand);
-//   output_command->header.stamp = ros::Time::now();
-
-//   // | ------------ compensated desired acceleration ------------ |
-
-//   double desired_x_accel = 0;
-//   double desired_y_accel = 0;
-//   double desired_z_accel = 0;
-
-//   {
-
-//     Eigen::Matrix3d des_orientation = mrs_lib::AttitudeConverter(Rd);
-//     Eigen::Vector3d thrust_vector   = thrust_force * des_orientation.col(2);
-
-//     double world_accel_x = (thrust_vector[0] / total_mass) - (Iw_w_[0] / total_mass) - (Ib_w[0] / total_mass);
-//     double world_accel_y = (thrust_vector[1] / total_mass) - (Iw_w_[1] / total_mass) - (Ib_w[1] / total_mass);
-//     double world_accel_z = (thrust_vector[2] / total_mass) - _g_;
-
-//     geometry_msgs::Vector3Stamped world_accel;
-
-//     world_accel.header.stamp    = ros::Time::now();
-//     world_accel.header.frame_id = uav_state->header.frame_id;
-//     world_accel.vector.x        = world_accel_x;
-//     world_accel.vector.y        = world_accel_y;
-//     world_accel.vector.z        = world_accel_z;
-
-//     auto res = common_handlers_->transformer->transformSingle("fcu", world_accel);
-
-//     if (res) {
-
-//       desired_x_accel = res.value().vector.x;
-//       desired_y_accel = res.value().vector.y;
-//       desired_z_accel = res.value().vector.z;
-//     }
-//   }
-
-//   // | --------------- saturate the attitude rate --------------- |
-
-//   if (got_constraints_) {
-
-//     auto constraints = mrs_lib::get_mutexed(mutex_constraints_, constraints_);
-
-//     if (t[0] > constraints.roll_rate) {
-//       t[0] = constraints.roll_rate;
-//     } else if (t[0] < -constraints.roll_rate) {
-//       t[0] = -constraints.roll_rate;
-//     }
-
-//     if (t[1] > constraints.pitch_rate) {
-//       t[1] = constraints.pitch_rate;
-//     } else if (t[1] < -constraints.pitch_rate) {
-//       t[1] = -constraints.pitch_rate;
-//     }
-
-//     if (t[2] > constraints.yaw_rate) {
-//       t[2] = constraints.yaw_rate;
-//     } else if (t[2] < -constraints.yaw_rate) {
-//       t[2] = -constraints.yaw_rate;
-//     }
-//   } else {
-//     ROS_WARN_THROTTLE(1.0, "[Se3Controller]: missing dynamics constraints");
-//   }
-
-  
-//   // | --------------- fill the resulting command --------------- |
-
-//   auto output_mode = mrs_lib::get_mutexed(mutex_output_mode_, output_mode_);
-
-//   // fill in the desired attitude anyway, since we know it
-//   output_command->attitude = mrs_lib::AttitudeConverter(Rd);
-
-//   if (output_mode == OUTPUT_ATTITUDE_RATE) {
-
-//     // output the desired attitude rate
-//     output_command->attitude_rate.x = t[0];
-//     output_command->attitude_rate.y = t[1];
-//     output_command->attitude_rate.z = t[2];
-
-//     output_command->mode_mask = output_command->MODE_ATTITUDE_RATE;
-
-//   } else if (output_mode == OUTPUT_ATTITUDE_QUATERNION) {
-
-//     output_command->mode_mask = output_command->MODE_ATTITUDE;
-
-//     ROS_WARN_THROTTLE(1.0, "[Se3Controller]: outputting desired orientation (this is not normal)");
-//   }
-
-//   output_command->desired_acceleration.x = desired_x_accel;
-//   output_command->desired_acceleration.y = desired_y_accel;
-//   output_command->desired_acceleration.z = desired_z_accel;
-
-//   /*QUESTION: do we need rampup_active_ in traj prediction? now commented*/
-//   // if (rampup_active_) {
-
-//   //   // deactivate the rampup when the times up
-//   //   if (fabs((ros::Time::now() - rampup_start_time_).toSec()) >= rampup_duration_) {
-
-//   //     rampup_active_         = false;
-//   //     output_command->thrust = thrust;
-
-//   //     ROS_INFO("[Se3Controller]: rampup finished");
-
-//   //   } else {
-
-//   //     double rampup_dt = (ros::Time::now() - rampup_last_time_).toSec();
-
-//   //     rampup_thrust_ += double(rampup_direction_) * _rampup_speed_ * rampup_dt;
-
-//   //     rampup_last_time_ = ros::Time::now();
-
-//   //     output_command->thrust = rampup_thrust_;
-
-//   //     ROS_INFO_THROTTLE(0.1, "[Se3Controller]: ramping up thrust, %.4f", output_command->thrust);
-//   //   }
-
-//   // } else {
-//   //   output_command->thrust = thrust;
-//   // }
-//   output_command->thrust = thrust;
-//   /*QUESTION: do we need rampup_active_ in traj prediction? now commented*/
-//   // output_command->ramping_up = rampup_active_;
-
-//   output_command->mass_difference = uav_mass_difference_;
-//   output_command->total_mass      = total_mass;
-
-//   output_command->disturbance_bx_b = -Ib_b_[0];
-//   output_command->disturbance_by_b = -Ib_b_[1];
-
-//   output_command->disturbance_bx_w = -Ib_w[0];
-//   output_command->disturbance_by_w = -Ib_w[1];
-
-//   output_command->disturbance_wx_w = -Iw_w_[0];
-//   output_command->disturbance_wy_w = -Iw_w_[1];
-
-//   output_command->controller_enforcing_constraints = false;
-
-//   output_command->controller = "Se3Controller";
-
-//   last_attitude_cmd_ = output_command;
-
-//   /*QUESTION: what to do now with the output_command?*/
-//   //return output_command;
-
-
-
-
-// /* end copy of se3controller*/
-//  // set the desired states from the input of the goto function
 
 
   
@@ -1221,7 +683,7 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
 //}
 
 
-void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand position_cmd, double uav_heading, double dt, const mrs_msgs::AttitudeCommand::ConstPtr &last_attitude_cmd){
+void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand position_cmd, double uav_heading, const mrs_msgs::AttitudeCommand::ConstPtr &last_attitude_cmd){
   // --------------------------------------------------------------
   // |          load the control reference and estimates          | --> the reference is assumed constant over the prediction
   // --------------------------------------------------------------
@@ -1328,7 +790,7 @@ Eigen::Matrix3d Rdot;
 Eigen::Matrix3d skew_Ow;
 Eigen::Vector3d attitude_rate_pred;
 
-for (int i = 0; i < num_pred_samples; i++) {
+for (int i = 0; i < num_pred_samples_; i++) {
   if(i==0){
 
     //Initial conditions for first iteration
@@ -1353,22 +815,22 @@ for (int i = 0; i < num_pred_samples; i++) {
   } 
   else{
     // TODO: in control predictions define custom_acceleration also via uav_state
-    uav_state.velocity.linear.x = uav_state.velocity.linear.x + custom_acceleration.position.x*custom_dt;
+    uav_state.velocity.linear.x = uav_state.velocity.linear.x + custom_acceleration.position.x*custom_dt_;
     custom_vel.position.x = uav_state.velocity.linear.x;
 
-    uav_state.velocity.linear.y = uav_state.velocity.linear.y + custom_acceleration.position.y*custom_dt;
+    uav_state.velocity.linear.y = uav_state.velocity.linear.y + custom_acceleration.position.y*custom_dt_;
     custom_vel.position.y = uav_state.velocity.linear.y;
 
-    uav_state.velocity.linear.z = uav_state.velocity.linear.z + custom_acceleration.position.z*custom_dt;
+    uav_state.velocity.linear.z = uav_state.velocity.linear.z + custom_acceleration.position.z*custom_dt_;
     custom_vel.position.z = uav_state.velocity.linear.z;
 
-    uav_state.pose.position.x = uav_state.pose.position.x + uav_state.velocity.linear.x*custom_dt;
+    uav_state.pose.position.x = uav_state.pose.position.x + uav_state.velocity.linear.x*custom_dt_;
     custom_pose.position.x = uav_state.pose.position.x;
 
-    uav_state.pose.position.y = uav_state.pose.position.y + uav_state.velocity.linear.y*custom_dt;
+    uav_state.pose.position.y = uav_state.pose.position.y + uav_state.velocity.linear.y*custom_dt_;
     custom_pose.position.y = uav_state.pose.position.y;
 
-    uav_state.pose.position.z = uav_state.pose.position.z + uav_state.velocity.linear.z*custom_dt;
+    uav_state.pose.position.z = uav_state.pose.position.z + uav_state.velocity.linear.z*custom_dt_;
     custom_pose.position.z = uav_state.pose.position.z;
        
 
@@ -1384,7 +846,7 @@ for (int i = 0; i < num_pred_samples; i++) {
     Rdot = skew_Ow*R; // or add - (equivalent to transpose?) UNUSED
     //skew_Ow = -skew_Ow;
     // R = R + Rdot*dt; WRONG --> use exponential map
-    double custom_dt2 = custom_dt;//   /10.0;
+    double custom_dt2 = custom_dt_;//   /10.0;
     Eigen::Matrix3d I = Eigen::Matrix3d::Identity(3, 3);
 
     // R = R^T
@@ -1687,8 +1149,8 @@ for (int i = 0; i < num_pred_samples; i++) {
       // ROS_INFO_STREAM("bxd = \n" << bxd);
     } else {
       ROS_ERROR_THROTTLE(1.0, "[Se3Controller]: desired heading was not specified, using current heading instead!");
-      // bxd << cos(uav_heading), sin(uav_heading), 0;
-      bxd << cos(0.0), sin(0.0), 0; // TODO: now hardcoded uav heading to 0!
+      bxd << cos(uav_heading), sin(uav_heading), 0;
+      //bxd << cos(0.0), sin(0.0), 0; // TODO: now hardcoded uav heading to 0!
     }
 
     // fill in the desired orientation based on the state feedback
@@ -1768,6 +1230,7 @@ for (int i = 0; i < num_pred_samples; i++) {
   /*TODO change code below unhardcoded*/
   double Aparam = 0.175; // value from printen inside se3controllerbrubotics
   double Bparam = -0.148; // value from printen inside se3controllerbrubotics
+  thrust_saturation_physical_ = pow((_thrust_saturation_-Bparam)/Aparam, 2);
   if (thrust_force >= 0) {
     /*QUESTION: how to acces in the tracker code: _motor_params_.A + _motor_params_.B??*/
     //thrust = sqrt(thrust_force) * _motor_params_.A + _motor_params_.B;
@@ -1889,9 +1352,9 @@ for (int i = 0; i < num_pred_samples; i++) {
 
     // integrate the world error
     if (position_cmd.use_position_horizontal) {
-      Iw_w_ -= kiwxy_ * Ep.head(2) * dt;
+      Iw_w_ -= kiwxy_ * Ep.head(2) * custom_dt_;
     } else if (position_cmd.use_velocity_horizontal) {
-      Iw_w_ -= kiwxy_ * Ev.head(2) * dt;
+      Iw_w_ -= kiwxy_ * Ev.head(2) * custom_dt_;
     }
 
     // saturate the world X
@@ -1986,9 +1449,9 @@ for (int i = 0; i < num_pred_samples; i++) {
 
     // integrate the body error
     if (position_cmd.use_position_horizontal) {
-      Ib_b_ -= kibxy_ * Ep_fcu_untilted * dt;
+      Ib_b_ -= kibxy_ * Ep_fcu_untilted * custom_dt_;
     } else if (position_cmd.use_velocity_horizontal) {
-      Ib_b_ -= kibxy_ * Ev_fcu_untilted * dt;
+      Ib_b_ -= kibxy_ * Ev_fcu_untilted * custom_dt_;
     }
   // saturate the body
     double body_integral_saturated = false;
@@ -2037,7 +1500,7 @@ for (int i = 0; i < num_pred_samples; i++) {
     std::scoped_lock lock(mutex_gains_);
     /*QUESTION: do we need to make it work with rampup_active_ or do we assume erg does not need to simulate this phase? */
     if (position_cmd.use_position_vertical){// && !rampup_active_) {
-      uav_mass_difference_ -= km_ * Ep[2] * dt;
+      uav_mass_difference_ -= km_ * Ep[2] * custom_dt_;
     }
 
     // saturate the mass estimator
@@ -2253,12 +1716,216 @@ catch (...) {
 }
 
 
-  predicted_thrust_out.poses.clear();
-  predicted_poses_out.poses.clear();
-  predicted_velocities_out.poses.clear();
-  predicted_accelerations_out.poses.clear();
-  predicted_attituderate_out.poses.clear();
+  // predicted_thrust_out.poses.clear();
+  // predicted_poses_out.poses.clear();
+  // predicted_velocities_out.poses.clear();
+  // predicted_accelerations_out.poses.clear();
+  // predicted_attituderate_out.poses.clear();
 
+}
+
+
+
+void DergbryanTracker::DERG_computation(){
+
+// /////////////////////////DSM_saturation////////////////////////////////
+// limit_thrust_diff=T_max; 
+double diff_T = thrust_saturation_physical_; // initialization at the highest possible positive difference value
+for (size_t i = 0; i < num_pred_samples_; i++) {
+  double diff_Tmax = thrust_saturation_physical_-predicted_thrust_out.poses[i].position.x;
+  double diff_Tmin = predicted_thrust_out.poses[i].position.x-T_min_;
+  if (diff_Tmax < diff_T) {
+  diff_T = diff_Tmax;
+  }
+  if (diff_Tmin < diff_T) {
+  diff_T = diff_Tmin;
+  }
+}
+DSM_s_=kappa_s_*diff_T;
+
+// ////////////////////////DSM_obstacle////////////////////////////////
+// o_1(0,0)=0; // x=0
+// o_1(1,0)=40; // y=40;
+
+// dist_obs_x_1=custom_trajectory_out.poses[0].position.x-o_1(0,0);
+// dist_obs_y_1=custom_trajectory_out.poses[0].position.y-o_1(1,0);
+// dist_obs_1=sqrt(dist_obs_x_1*dist_obs_x_1+dist_obs_y_1*dist_obs_y_1);
+
+// min_obs_distance=dist_obs_1-R_o1;
+// for (size_t i = 1; i < sample_hor; i++) {
+// dist_obs_x_1=custom_trajectory_out.poses[i].position.x-o_1(0,0);
+// dist_obs_y_1=custom_trajectory_out.poses[i].position.y-o_1(1,0);
+
+// dist_obs_1=sqrt(dist_obs_x_1*dist_obs_x_1+dist_obs_y_1*dist_obs_y_1);
+// if (dist_obs_1-R_o1<min_obs_distance) {
+// min_obs_distance=dist_obs_1-R_o1;
+// }
+// }
+
+// DSM_o=kappa_o*min_obs_distance;
+
+// ////////////////////////DSM_wall////////////////////////////////
+// d_w(1,0) = 10 - arm_radius;
+
+// c_w(0,0)=1;
+// c_w(1,0)=0;
+// c_w(2,0)=0;
+
+// min_wall_distance= abs(d_w(1,0) -custom_trajectory_out.poses[0].position.x);
+// for (size_t i = 0; i < sample_hor; i++) {
+// if (abs(d_w(1,0) -custom_trajectory_out.poses[i].position.x) < min_wall_distance){
+// min_wall_distance=abs(d_w(1,0) -custom_trajectory_out.poses[i].position.x);
+// }
+// }
+// DSM_w=kappa_w*min_wall_distance;
+
+// ////////////////////////DSM_agent////////////////////////////////
+// pos_error_x= applied_ref_x - custom_trajectory_out.poses[0].position.x;
+// pos_error_y= applied_ref_y - custom_trajectory_out.poses[0].position.y;
+// pos_error_z= applied_ref_z - custom_trajectory_out.poses[0].position.z;
+// pos_error_init= sqrt(pos_error_x*pos_error_x + pos_error_y*pos_error_y + pos_error_z*pos_error_z);
+// DSM_a=kappa_a*(Sa-pos_error_init);
+
+
+
+
+// ////////////////////////Attraction part of navigation field////////////////////////////////
+MatrixXd NF_att = MatrixXd::Zero(3, 1); // attraction field
+MatrixXd ref_dist = MatrixXd::Zero(3, 1); // difference between target reference r and applied reference v
+
+ref_dist(0) = goal_x_ - applied_ref_x_;
+ref_dist(1) = goal_y_ - applied_ref_y_;
+ref_dist(2) = goal_z_ - applied_ref_z_;
+double norm_ref_dist= sqrt(pow(ref_dist(0), 2) + pow(ref_dist(1), 2)+ pow(ref_dist(2), 2));
+NF_att = ref_dist/std::max(norm_ref_dist, eta_);
+
+
+// ////////////////////////Repulsion part of navigation field_obstacle////////////////////////////////
+// // Conservative part
+// dist_ref_obs_x_1=o_1(0,0)-applied_ref_x; // x distance between v and obstacle 1
+// dist_ref_obs_y_1=o_1(1,0)-applied_ref_y; // y distance between v and obstacle 1
+// dist_ref_obs_1=sqrt(dist_ref_obs_x_1*dist_ref_obs_x_1+dist_ref_obs_y_1*dist_ref_obs_y_1);
+
+// max_repulsion_obs1=(sigma_o-(dist_ref_obs_1-R_o1))/(sigma_o-delta_o);
+// if (0>max_repulsion_obs1) {
+// max_repulsion_obs1=0;
+// }
+
+// NF_o_co(0,0)=-(max_repulsion_obs1*(dist_ref_obs_x_1/dist_ref_obs_1));
+// NF_o_co(1,0)=-(max_repulsion_obs1*(dist_ref_obs_y_1/dist_ref_obs_1));
+// NF_o_co(2,0)=0;
+
+// // Non-conservative part
+// NF_o_nco(2,0)=0;
+// if (sigma_o>=dist_ref_obs_1-R_o1) {
+// NF_o_nco(0,0)=alpha_o_1*(dist_ref_obs_y_1/dist_ref_obs_1);
+// NF_o_nco(1,0)=-alpha_o_1*(dist_ref_obs_x_1/dist_ref_obs_1);
+// } else {
+// NF_o_nco(0,0)=0;
+// NF_o_nco(1,0)=0;
+// }
+
+// // Both combined
+
+// NF_o(0,0)=NF_o_co(0,0)+NF_o_nco(0,0);
+// NF_o(1,0)=NF_o_co(1,0)+NF_o_nco(1,0);
+// NF_o(2,0)=NF_o_co(2,0)+NF_o_nco(2,0);
+// ////////////////////////Repulsion part of navigation field_wall////////////////////////////////
+// max_repulsion_wall1= (sigma_w-(abs(d_w(1,0)-applied_ref_x)))/(sigma_w-delta_w);
+// if (0 > max_repulsion_wall1){
+// max_repulsion_wall1=0;
+// }
+// NF_w(0,0)=-max_repulsion_wall1;
+// NF_w(1,0)=0;
+// NF_w(2,0)=0;
+// ////////////////////////Repulsion part of navigation field_agent////////////////////////////////
+// NF_a_co(0,0)=0;
+// NF_a_co(1,0)=0;
+// NF_a_co(2,0)=0;
+
+// NF_a_nco(0,0)=0;
+// NF_a_nco(1,0)=0;
+// NF_a_nco(2,0)=0;
+
+// std::map<std::string, mrs_msgs::FutureTrajectory>::iterator u = other_drones_applied_references.begin();
+
+// while (u != other_drones_applied_references.end()) {
+// other_uav_ref_x = u->second.points[0].x;//Second means accessing the second part of the iterator. Here it is FutureTrajectory
+// other_uav_ref_y = u->second.points[0].y;
+// dist_between_ref_x = other_uav_ref_x - applied_ref_x;
+// dist_between_ref_y = other_uav_ref_y - applied_ref_y;
+// dist_between_ref= sqrt(dist_between_ref_x*dist_between_ref_x+dist_between_ref_y*dist_between_ref_y);
+
+// // Conservative part
+// max_repulsion_other_uav=(sigma_a-(dist_between_ref-2*Ra-2*Sa))/(sigma_a-delta_a);
+// if (0>max_repulsion_other_uav) {
+// max_repulsion_other_uav=0;
+// }
+
+// NF_a_co(0,0)=NF_a_co(0,0)-max_repulsion_other_uav*(dist_between_ref_x/dist_between_ref);
+// NF_a_co(1,0)=NF_a_co(1,0)-max_repulsion_other_uav*(dist_between_ref_y/dist_between_ref);
+
+// // Non-conservative part
+// if (sigma_a >= dist_between_ref-2*Ra-2*Sa) {
+// NF_a_nco(0,0)=NF_a_nco(0,0) + alpha_a*(dist_between_ref_y/dist_between_ref);
+// NF_a_nco(1,0)=NF_a_nco(1,0) -alpha_a*(dist_between_ref_x/dist_between_ref);
+// }
+// u++;
+// }
+// // Both combined
+// NF_a(0,0)=NF_a_co(0,0)+ NF_a_nco(0,0);
+// NF_a(1,0)=NF_a_co(1,0) + NF_a_nco(1,0);
+// NF_a(2,0)=NF_a_co(2,0) + NF_a_nco(2,0);
+
+
+// ////////////////////////Total navigation field////////////////////////////////
+MatrixXd NF_total = MatrixXd::Zero(3, 1);
+// NF_total(0,0)=NF_att(0,0)+ NF_a(0,0) +NF_o(0,0) + NF_w(0,0);
+// NF_total(1,0)=NF_att(1,0) + NF_a(1,0) +NF_o(1,0) + NF_w(1,0);
+// NF_total(2,0)=NF_att(2,0) + NF_a(2,0) +NF_o(2,0) + NF_w(2,0);
+NF_total = NF_att;
+
+// //////////////////////// Determining DSM_total= minimum {DSM_a,DSM_s,DSM_o,DSM_w}////////////////////////////////
+DSM_total_ = DSM_s_;
+// if(DSM_w <= DSM_total){
+// DSM_total=DSM_w;
+// }
+
+// if(DSM_o <= DSM_total){
+// DSM_total=DSM_o;
+// }
+
+// if(DSM_a <= DSM_total){
+// DSM_total=DSM_a;
+// }
+if(DSM_total_ < 0){
+DSM_total_ = 0;
+}
+
+ROS_INFO("DSM_total_ is  %f", DSM_total_);
+ROS_INFO("DSM_s_ is  %f", DSM_s_);
+
+
+// //TODO Adding terminal constraint
+
+// //////////////////////// Computation of v_dot////////////////////////////////
+MatrixXd v_dot=MatrixXd::Zero(3, 1);// derivative of the applied reference
+v_dot = DSM_total_*NF_total;
+
+
+applied_ref_x_ = applied_ref_x_ + v_dot(0)*dt_;
+applied_ref_y_ = applied_ref_y_ + v_dot(1)*dt_;
+applied_ref_z_ = applied_ref_z_ + v_dot(2)*dt_;
+
+// custom_new_point.x=applied_ref_x;
+// custom_new_point.y=applied_ref_y;
+// custom_new_point.z=applied_ref_z;
+
+// uav_applied_ref_out.points.push_back(custom_new_point);
+// uav_applied_ref_message_publisher.publish(uav_applied_ref_out);
+// uav_applied_ref_out.points.clear();
+
+// custom_trajectory_out.poses.clear();
 }
 
 }  // namespace dergbryan_tracker
