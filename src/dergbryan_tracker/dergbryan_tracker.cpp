@@ -11,6 +11,7 @@
 /*begin includes added by bryan:*/
 #include <mrs_lib/attitude_converter.h>
 #include <geometry_msgs/PoseArray.h>
+#include <geometry_msgs/Pose.h>
 #include <mrs_msgs/FutureTrajectory.h>
 #include <mrs_msgs/FuturePoint.h>
 #include <ros/console.h>
@@ -230,11 +231,11 @@ private:
 
   double zeta_a=1.0;
   double delta_a=0.01;
-  double Ra=0.4;
+  double Ra=0.35;
   double Sa=1.0;
   double kappa_a=10; // decrease if propblems persist
   double DSM_a_;
-
+  double alpha_a=0.1;
 };
 //}
 
@@ -370,7 +371,8 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
 
   for (int i = 0; i < int(_avoidance_other_uav_names_.size()); i++) {
 
-    std::string applied_ref_topic_name = std::string("/") + _avoidance_other_uav_names_[i] + std::string("/") + std::string("control_manager/dergbryan_tracker/uav_applied_ref");
+    // std::string applied_ref_topic_name = std::string("/") + _avoidance_other_uav_names_[i] + std::string("/") + std::string("control_manager/dergbryan_tracker/uav_applied_ref");
+    std::string applied_ref_topic_name = std::string("/") + _avoidance_other_uav_names_[i] + std::string("/") + std::string("control_manager/se3_controller_brubotics/uav_applied_ref");
     
     applied_ref_topic_name_globalbryan = applied_ref_topic_name; 
     ROS_INFO("[DergbryanTracker]: subscribing to %s", applied_ref_topic_name.c_str());
@@ -1968,11 +1970,9 @@ void DergbryanTracker::DERG_computation(){
   // NF_w(2,0)=0;
   ////////////////////////Repulsion part of navigation field_agent////////////////////////////////
   MatrixXd NF_a_co = MatrixXd::Zero(3, 1); // conservative part
+  MatrixXd NF_a_nco = MatrixXd::Zero(3, 1); // non-conservative part
 
 
-  // NF_a_nco(0,0)=0;
-  // NF_a_nco(1,0)=0;
-  // NF_a_nco(2,0)=0;
 
   std::map<std::string, mrs_msgs::FutureTrajectory>::iterator u = other_drones_applied_references_.begin();
   //ROS_INFO_STREAM("outside \n");
@@ -1983,15 +1983,15 @@ void DergbryanTracker::DERG_computation(){
   // ROS_INFO_STREAM("it y = \n" << it->second.points[0].y);
 
   while (u != other_drones_applied_references_.end()) {
-    ROS_INFO_STREAM("inside \n");
+    //ROS_INFO_STREAM("inside \n");
     double other_uav_ref_x = u->second.points[0].x;//Second means accessing the second part of the iterator. Here it is FutureTrajectory
     double other_uav_ref_y = u->second.points[0].y;
   
     double dist_between_ref_x = other_uav_ref_x - applied_ref_x_;
     double dist_between_ref_y = other_uav_ref_y - applied_ref_y_;
     double dist_between_ref = sqrt(dist_between_ref_x*dist_between_ref_x+dist_between_ref_y*dist_between_ref_y);
-    ROS_INFO_STREAM("other_uav_ref_x = \n" << other_uav_ref_x);
-    ROS_INFO_STREAM("other_uav_ref_y = \n" << other_uav_ref_y);
+    //ROS_INFO_STREAM("other_uav_ref_x = \n" << other_uav_ref_x);
+    //ROS_INFO_STREAM("other_uav_ref_y = \n" << other_uav_ref_y);
     // Conservative part
     double max_repulsion_other_uav = (zeta_a-(dist_between_ref-2*Ra-2*Sa))/(zeta_a-delta_a);
     if (0 > max_repulsion_other_uav) {
@@ -2001,15 +2001,15 @@ void DergbryanTracker::DERG_computation(){
     NF_a_co(0,0)=NF_a_co(0,0)-max_repulsion_other_uav*(dist_between_ref_x/dist_between_ref);
     NF_a_co(1,0)=NF_a_co(1,0)-max_repulsion_other_uav*(dist_between_ref_y/dist_between_ref);
 
-    // // Non-conservative part
-    // if (zeta_a >= dist_between_ref-2*Ra-2*Sa) {
-    // NF_a_nco(0,0)=NF_a_nco(0,0) + alpha_a*(dist_between_ref_y/dist_between_ref);
-    // NF_a_nco(1,0)=NF_a_nco(1,0) -alpha_a*(dist_between_ref_x/dist_between_ref);
-    // }
+    // Non-conservative part
+    if (zeta_a >= dist_between_ref-2*Ra-2*Sa) {
+      NF_a_nco(0,0)=NF_a_nco(0,0) + alpha_a*(dist_between_ref_y/dist_between_ref);
+      NF_a_nco(1,0)=NF_a_nco(1,0) -alpha_a*(dist_between_ref_x/dist_between_ref);
+    }
     u++;
   }
   // Both combined
-  MatrixXd NF_a = NF_a_co; // + NF_a_nco
+  MatrixXd NF_a = NF_a_co + NF_a_nco;
   // NF_a(0,0)=NF_a_co(0,0)+ NF_a_nco(0,0);
   // NF_a(1,0)=NF_a_co(1,0) + NF_a_nco(1,0);
   // NF_a(2,0)=NF_a_co(2,0) + NF_a_nco(2,0);
@@ -2020,7 +2020,7 @@ void DergbryanTracker::DERG_computation(){
   // NF_total(0,0)=NF_att(0,0)+ NF_a(0,0) +NF_o(0,0) + NF_w(0,0);
   // NF_total(1,0)=NF_att(1,0) + NF_a(1,0) +NF_o(1,0) + NF_w(1,0);
   // NF_total(2,0)=NF_att(2,0) + NF_a(2,0) +NF_o(2,0) + NF_w(2,0);
-  NF_total = NF_att + 5*NF_a; // UNDO 2* when collisionproblem solved!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+  NF_total = NF_att + 1*NF_a; // UNDO 2* when collisionproblem solved!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
   // //////////////////////// Determining DSM_total= minimum {DSM_a,DSM_s,DSM_o,DSM_w}////////////////////////////////
   DSM_total_ = DSM_s_;
@@ -2038,10 +2038,10 @@ void DergbryanTracker::DERG_computation(){
   if(DSM_total_ < 0){
     DSM_total_ = 0;
   }
-  // ROS_INFO_STREAM("DSM_total_ = \n" << DSM_total_);
+  ROS_INFO_STREAM("DSM_total_ = \n" << DSM_total_);
   // ROS_INFO_STREAM("DSM_s_ = \n" << DSM_s_);
   // ROS_INFO_STREAM("DSM_a_ = \n" << DSM_a_);
-  // ROS_INFO_STREAM("NF_total = \n" << NF_total);
+  ROS_INFO_STREAM("NF_total = \n" << NF_total);
   // ROS_INFO_STREAM("NF_a = \n" << NF_a);
  
   
@@ -2071,7 +2071,7 @@ void DergbryanTracker::DERG_computation(){
 void DergbryanTracker::callbackOtherUavAppliedRef(const mrs_msgs::FutureTrajectoryConstPtr& msg) {
 
   mrs_lib::Routine profiler_routine = profiler.createRoutine("callbackOtherUavAppliedRef");
-  ROS_INFO_STREAM("in callbackOtherUavAppliedRef!! \n");
+  // ROS_INFO_STREAM("in callbackOtherUavAppliedRef!! \n");
   mrs_msgs::FutureTrajectory temp_pose= *msg;
   other_drones_applied_references_[msg->uav_name] = temp_pose;
 }
