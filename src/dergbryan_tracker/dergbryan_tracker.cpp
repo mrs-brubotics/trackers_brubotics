@@ -207,7 +207,7 @@ private:
   double DSM_total_;
   // thrust constraints
   double DSM_s_; // Dynamic Safety Margin for total thrust saturation
-  double kappa_s_=1.1; // kappa parameter of the DSM_s
+  double kappa_s_= 1.1; //1.1; // kappa parameter of the DSM_s
   double T_min_ = 0; // lower saturation limit of total thrust
 
   double eta_ = 0.10;//0.05; // smoothing factor attraction field
@@ -1986,10 +1986,13 @@ void DergbryanTracker::DERG_computation(){
     //ROS_INFO_STREAM("inside \n");
     double other_uav_ref_x = u->second.points[0].x;//Second means accessing the second part of the iterator. Here it is FutureTrajectory
     double other_uav_ref_y = u->second.points[0].y;
+    double other_uav_ref_z = u->second.points[0].z;
   
     double dist_between_ref_x = other_uav_ref_x - applied_ref_x_;
     double dist_between_ref_y = other_uav_ref_y - applied_ref_y_;
-    double dist_between_ref = sqrt(dist_between_ref_x*dist_between_ref_x+dist_between_ref_y*dist_between_ref_y);
+    double dist_between_ref_z = other_uav_ref_z - applied_ref_z_;
+
+    double dist_between_ref = sqrt(dist_between_ref_x*dist_between_ref_x + dist_between_ref_y*dist_between_ref_y + dist_between_ref_z*dist_between_ref_z);
     //ROS_INFO_STREAM("other_uav_ref_x = \n" << other_uav_ref_x);
     //ROS_INFO_STREAM("other_uav_ref_y = \n" << other_uav_ref_y);
     // Conservative part
@@ -2000,11 +2003,20 @@ void DergbryanTracker::DERG_computation(){
 
     NF_a_co(0,0)=NF_a_co(0,0)-max_repulsion_other_uav*(dist_between_ref_x/dist_between_ref);
     NF_a_co(1,0)=NF_a_co(1,0)-max_repulsion_other_uav*(dist_between_ref_y/dist_between_ref);
+    NF_a_co(2,0)=NF_a_co(2,0)-max_repulsion_other_uav*(dist_between_ref_z/dist_between_ref);
 
     // Non-conservative part
     if (zeta_a >= dist_between_ref-2*Ra-2*Sa) {
-      NF_a_nco(0,0)=NF_a_nco(0,0) + alpha_a*(dist_between_ref_y/dist_between_ref);
-      NF_a_nco(1,0)=NF_a_nco(1,0) -alpha_a*(dist_between_ref_x/dist_between_ref);
+      // xy circulation:
+      // NF_a_nco(0,0) = NF_a_nco(0,0) + alpha_a*(dist_between_ref_y/dist_between_ref);
+      // NF_a_nco(1,0) = NF_a_nco(1,0) -alpha_a*(dist_between_ref_x/dist_between_ref);
+      // xz circulation:
+      // NF_a_nco(0,0) = NF_a_nco(0,0) + alpha_a*(dist_between_ref_z/dist_between_ref);
+      // NF_a_nco(2,0) = NF_a_nco(2,0) -alpha_a*(dist_between_ref_x/dist_between_ref);
+      // xz circulation:
+      NF_a_nco(0,0) = NF_a_nco(0,0) + alpha_a*(-dist_between_ref_y + dist_between_ref_z)/dist_between_ref;
+      NF_a_nco(1,0) = NF_a_nco(1,0) + alpha_a*( dist_between_ref_x - dist_between_ref_z)/dist_between_ref;
+      NF_a_nco(2,0) = NF_a_nco(2,0) + alpha_a*(-dist_between_ref_x + dist_between_ref_y)/dist_between_ref;
     }
     u++;
   }
