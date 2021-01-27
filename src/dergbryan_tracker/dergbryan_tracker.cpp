@@ -96,9 +96,9 @@ private:
 
   // | ---------- thrust generation and mass estimation --------- |
 
-  double                        _uav_mass_;
+  //OLD double                        _uav_mass_;
   double                        uav_mass_difference_;
-  // double                        _g_;
+  // OLD double                        _g_;
   // mrs_uav_managers::MotorParams _motor_params_;
 
 
@@ -194,7 +194,6 @@ private:
   ros::Publisher custom_predicted_acc_publisher;
   ros::Publisher custom_predicted_attrate_publisher;
  
-  double _g_ = 9.81;
   double total_mass_;
   
   double applied_ref_x_;
@@ -252,9 +251,8 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   common_handlers_ = common_handlers;
   _uav_name_       = uav_name;
   /*QUESTION: how to load these paramters commented below as was done in the se3controller?*/
-  // _motor_params_   = motor_params;
   // _uav_mass_       = uav_mass;
-  // _g_              = g;
+
 
   ros::Time::waitForValid();
 
@@ -1093,11 +1091,26 @@ for (int i = 0; i < num_pred_samples_; i++) {
     Kq << kqxy_, kqxy_, kqz_;
   }
   /*TODO: answer question below and define Kp, Kv accordingly, for now deined hardcoded*/
-  _uav_mass_ = 2.0; // TODO: change later, see issue Thomas Baca, this is mass of F450
-  uav_mass_difference_ = 0.0;  // TODO: change later, see issue Thomas Baca
+  // _uav_mass_ = 2.0; // TODO: change later, see issue Thomas Baca, this is mass of F450
+  // uav_mass_difference_ = 0.0;  // TODO: change later, see issue Thomas Baca
   // QUESTION: how to get _uav_mass_ analoguous to controllers, in the controllers ?
-  Kp = Kp * (_uav_mass_ + uav_mass_difference_);
-  Kv = Kv * (_uav_mass_ + uav_mass_difference_);
+  // Kp = Kp * (_uav_mass_ + uav_mass_difference_);
+  // Kv = Kv * (_uav_mass_ + uav_mass_difference_);
+
+  // OLD double total_mass = _uav_mass_ + uav_mass_difference_;
+  double total_mass = common_handlers_->getMass(); // total estimated mass calculated by controller
+  
+  // global total mass created by bryan
+  total_mass_= total_mass;
+  //OLD Kp = Kp * (_uav_mass_ + uav_mass_difference_);
+  //OLD Kv = Kv * (_uav_mass_ + uav_mass_difference_);
+  Kp = Kp * total_mass;
+  Kv = Kv * total_mass;
+
+
+  
+
+
   // a print to test if the gains change so you know where to change:
   // ROS_INFO_STREAM("DergbryanTracker: Kp = \n" << Kp);
   // ROS_INFO_STREAM("DergbryanTracker: Kv = \n" << Kv);
@@ -1129,13 +1142,10 @@ for (int i = 0; i < num_pred_samples_; i++) {
   }
 
   // construct the desired force vector
-  double total_mass = _uav_mass_ + uav_mass_difference_;
-  /* TODO: define _g_ and uav mass as done in controllers */
-  //double _g_ = -9.81; now globally defined
-  // global total mass created by bryan
-  total_mass_= total_mass;
+  
 
-  Eigen::Vector3d feed_forward      = total_mass * (Eigen::Vector3d(0, 0, _g_) + Ra);
+  // OLD Eigen::Vector3d feed_forward      = total_mass * (Eigen::Vector3d(0, 0, _g_) + Ra);
+  Eigen::Vector3d feed_forward      = total_mass * (Eigen::Vector3d(0, 0, common_handlers_->g) + Ra);
   Eigen::Vector3d position_feedback = -Kp * Ep.array();
   Eigen::Vector3d velocity_feedback = -Kv * Ev.array();
   Eigen::Vector3d integral_feedback;
@@ -1148,8 +1158,12 @@ for (int i = 0; i < num_pred_samples_; i++) {
   // Do you want integral feedback?
   //Eigen::Vector3d f = position_feedback + velocity_feedback + integral_feedback + feed_forward; /// yes (original)
   //Eigen::Vector3d f = position_feedback + velocity_feedback + feed_forward; /// no
-  // Eigen::Vector3d f = position_feedback + velocity_feedback + total_mass * (Eigen::Vector3d(0, 0, _g_));// custom 1
-  Eigen::Vector3d f = position_feedback + velocity_feedback + _uav_mass_ * (Eigen::Vector3d(0, 0, _g_));// custom 2
+  // OLD Eigen::Vector3d f = position_feedback + velocity_feedback + total_mass * (Eigen::Vector3d(0, 0, _g_));// custom 1
+  // Eigen::Vector3d f = position_feedback + velocity_feedback + total_mass * (Eigen::Vector3d(0, 0, common_handlers_->g));// custom 1
+  // OLD Eigen::Vector3d f = position_feedback + velocity_feedback + _uav_mass_ * (Eigen::Vector3d(0, 0, _g_));// custom 2
+  //OLD Eigen::Vector3d f = position_feedback + velocity_feedback + _uav_mass_ * (Eigen::Vector3d(0, 0, common_handlers_->g));// custom 2
+  Eigen::Vector3d f = position_feedback + velocity_feedback + total_mass * (Eigen::Vector3d(0, 0, common_handlers_->g));// custom 2
+  
   // also check line above uav_mass_difference_ = 0!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
 
@@ -1362,14 +1376,16 @@ for (int i = 0; i < num_pred_samples_; i++) {
 
   double thrust = 0;
   /*TODO change code below unhardcoded*/
-  double Aparam = 0.175; // value from printen inside se3controllerbrubotics
-  double Bparam = -0.148; // value from printen inside se3controllerbrubotics
-  thrust_saturation_physical_ = pow((_thrust_saturation_-Bparam)/Aparam, 2);
+  // OLD double Aparam = 0.175; // value from printen inside se3controllerbrubotics
+  // OLD double Bparam = -0.148; // value from printen inside se3controllerbrubotics
+  // OLD thrust_saturation_physical_ = pow((_thrust_saturation_-Bparam)/Aparam, 2);
+  thrust_saturation_physical_ = mrs_lib::quadratic_thrust_model::thrustToForce(common_handlers_->motor_params, _thrust_saturation_);
   if (thrust_force >= 0) {
-    /*QUESTION: how to acces in the tracker code: _motor_params_.A + _motor_params_.B??*/
+    /*SOLVED QUESTION: how to acces in the tracker code: _motor_params_.A + _motor_params_.B??*/
     //thrust = sqrt(thrust_force) * _motor_params_.A + _motor_params_.B;
     
-    thrust = sqrt(thrust_force) * Aparam + Bparam;
+    // OLD thrust = sqrt(thrust_force) * Aparam + Bparam;
+    thrust = mrs_lib::quadratic_thrust_model::forceToThrust(common_handlers_->motor_params, thrust_force);
   } else {
     ROS_WARN_THROTTLE(1.0, "[Se3Controller]: just so you know, the desired thrust force is negative (%.2f)", thrust_force);
   }
@@ -1391,12 +1407,15 @@ for (int i = 0; i < num_pred_samples_; i++) {
     ROS_WARN_THROTTLE(1.0, "[Se3Controller]: saturating thrust to 0");
   }
 
-  thrust_force = pow((thrust-Bparam)/Aparam, 2);
+  // OLD thrust_force = pow((thrust-Bparam)/Aparam, 2);
+  thrust_force = mrs_lib::quadratic_thrust_model::thrustToForce(common_handlers_->motor_params, thrust);
 
   predicted_thrust_norm.position.x = thrust_force; // change later to a non vec type
   predicted_thrust_out.poses.push_back(predicted_thrust_norm);
-  //Eigen::Vector3d acceleration_uav = 1/_uav_mass_ * (f + _uav_mass_ * (Eigen::Vector3d(0, 0, -_g_)));
-  Eigen::Vector3d acceleration_uav = 1/_uav_mass_ * (thrust_force*R.col(2) + _uav_mass_ * (Eigen::Vector3d(0, 0, -_g_)));
+  //Eigen::Vector3d acceleration_uav = 1/_uav_mass_ * (f + _uav_mass_ * (Eigen::Vector3d(0, 0, -common_handlers_->g)));
+  // OLD Eigen::Vector3d acceleration_uav = 1/_uav_mass_ * (thrust_force*R.col(2) + _uav_mass_ * (Eigen::Vector3d(0, 0, -common_handlers_->g)));
+  Eigen::Vector3d acceleration_uav = 1/total_mass * (thrust_force*R.col(2) + total_mass * (Eigen::Vector3d(0, 0, -common_handlers_->g)));
+  
   custom_acceleration.position.x = acceleration_uav[0];
   custom_acceleration.position.y = acceleration_uav[1];
   custom_acceleration.position.z = acceleration_uav[2];
@@ -1677,7 +1696,7 @@ for (int i = 0; i < num_pred_samples_; i++) {
 
     double world_accel_x = (thrust_vector[0] / total_mass) - (Iw_w_[0] / total_mass) - (Ib_w[0] / total_mass);
     double world_accel_y = (thrust_vector[1] / total_mass) - (Iw_w_[1] / total_mass) - (Ib_w[1] / total_mass);
-    double world_accel_z = (thrust_vector[2] / total_mass) - _g_;
+    double world_accel_z = (thrust_vector[2] / total_mass) - common_handlers_->g;
 
     geometry_msgs::Vector3Stamped world_accel;
 

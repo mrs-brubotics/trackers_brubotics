@@ -14,3 +14,6 @@ network:
 # use_cylindrical_constraints: false
 
 # use_agents_avoidence: false
+
+
+#mpc_rate: 100.0 # rate of MPC calculation, >= 10 Hz
