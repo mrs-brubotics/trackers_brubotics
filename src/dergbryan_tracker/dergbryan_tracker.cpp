@@ -57,6 +57,7 @@ public:
 
   void trajectory_prediction_general(mrs_msgs::PositionCommand position_cmd, double uav_heading, const mrs_msgs::AttitudeCommand::ConstPtr &last_attitude_cmd);
   void DERG_computation();
+  double getLambda(Eigen::Vector3d &point_link_0, Eigen::Vector3d &point_link_1, Eigen::Vector3d &point_sphere);
 private:
   ros::NodeHandle                                     nh_;
   ros::NodeHandle                                     nh2_;
@@ -225,13 +226,23 @@ private:
 
   ros::Publisher avoidance_applied_ref_publisher_;
   void callbackOtherUavAppliedRef(const mrs_msgs::FutureTrajectoryConstPtr& msg);
+  void callbackOtherUavPosition(const mrs_msgs::FutureTrajectoryConstPtr& msg);
   std::map<std::string, mrs_msgs::FutureTrajectory> other_drones_applied_references_;
+  std::map<std::string, mrs_msgs::FutureTrajectory> other_drones_positions_;
   std::string applied_ref_topic_name_globalbryan;
+  std::string applied_pos_topic_name_globalbryan;
+
 
   double zeta_a=1.0;
   double delta_a=0.01;
   double Ra=0.35;
-  double Sa=1.0;
+  int DERG_strategy_id_ = 1;
+  // original strategy: id = 0
+  double Sa=1.0; 
+  // tube strategy: id = 1
+  double Sa_perp = 1.0;
+  double Sa_long = 0.5;
+
   double kappa_a=10; // decrease if propblems persist
   double DSM_a_;
   double alpha_a=0.1;
@@ -370,12 +381,17 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   for (int i = 0; i < int(_avoidance_other_uav_names_.size()); i++) {
 
     // std::string applied_ref_topic_name = std::string("/") + _avoidance_other_uav_names_[i] + std::string("/") + std::string("control_manager/dergbryan_tracker/uav_applied_ref");
-    std::string applied_ref_topic_name = std::string("/") + _avoidance_other_uav_names_[i] + std::string("/") + std::string("control_manager/se3_controller_brubotics/uav_applied_ref");
-    
+    std::string applied_ref_topic_name = std::string("/") + _avoidance_other_uav_names_[i] + std::string("/") + std::string("control_manager/se3_controller_brubotics/uav_applied_ref");  
     applied_ref_topic_name_globalbryan = applied_ref_topic_name; 
     ROS_INFO("[DergbryanTracker]: subscribing to %s", applied_ref_topic_name.c_str());
-
     other_uav_subscribers_.push_back(nh_.subscribe(applied_ref_topic_name, 1, &DergbryanTracker::callbackOtherUavAppliedRef, this, ros::TransportHints().tcpNoDelay()));
+
+    std::string position_topic_name = std::string("/") + _avoidance_other_uav_names_[i] + std::string("/") + std::string("control_manager/se3_controller_brubotics/uav_position");
+    applied_pos_topic_name_globalbryan = position_topic_name; 
+    ROS_INFO("[DergbryanTracker]: subscribing to %s", position_topic_name.c_str());
+    other_uav_subscribers_.push_back(nh_.subscribe(position_topic_name, 1, &DergbryanTracker::callbackOtherUavPosition, this, ros::TransportHints().tcpNoDelay()));
+
+    
   }
 
 
@@ -1929,13 +1945,47 @@ void DergbryanTracker::DERG_computation(){
   // DSM_w=kappa_w*min_wall_distance;
 
   // ////////////////////////DSM_agent////////////////////////////////
-  double pos_error_x = applied_ref_x_ - predicted_poses_out.poses[0].position.x;
-  double pos_error_y = applied_ref_y_ - predicted_poses_out.poses[0].position.y;
-  double pos_error_z = applied_ref_z_ - predicted_poses_out.poses[0].position.z;
-  double pos_error_init = sqrt(pos_error_x*pos_error_x + pos_error_y*pos_error_y + pos_error_z*pos_error_z);
-  DSM_a_ = kappa_a*(Sa-pos_error_init);
 
+  if (DERG_strategy_id_ == 0) {
+    // OLD strategy
+    double pos_error_x = applied_ref_x_ - predicted_poses_out.poses[0].position.x;
+    double pos_error_y = applied_ref_y_ - predicted_poses_out.poses[0].position.y;
+    double pos_error_z = applied_ref_z_ - predicted_poses_out.poses[0].position.z;
+    double pos_error_init = sqrt(pos_error_x*pos_error_x + pos_error_y*pos_error_y + pos_error_z*pos_error_z);
+    DSM_a_ = kappa_a*(Sa-pos_error_init);
+  }
 
+  if (DERG_strategy_id_ == 1) {
+    // TUBE strategy
+    // !!!! how to initalize and avoid devision over 0 for lambda????? !!!!!!
+    // rewrite below since wrong defiend pv muyst be end of tube!!!
+    for (size_t i = 0; i < num_pred_samples_; i++) {
+      Eigen::Vector3d point_link_pos(predicted_poses_out.poses[0].position.x, predicted_poses_out.poses[0].position.y, predicted_poses_out.poses[0].position.z);
+      Eigen::Vector3d point_applied_ref(applied_ref_x_, applied_ref_y_, applied_ref_z_);
+      Eigen::Vector3d point_link_star; // lambda = 1
+      if ((point_applied_ref-point_link_pos).norm() > 0.001){
+        point_link_star = point_link_pos + Sa_long*(point_applied_ref-point_link_pos)/(point_applied_ref-point_link_pos).norm();
+      }
+      else{ // avoid devision over 0
+        point_link_star = point_link_pos;
+      }
+      Eigen::Vector3d point_sphere(predicted_poses_out.poses[i].position.x, predicted_poses_out.poses[i].position.y, predicted_poses_out.poses[i].position.z);
+      double lambda = getLambda(point_link_pos, point_link_star, point_sphere);
+      double norm;
+      if ((lambda <= 1) && (lambda >0)) {
+        Eigen::Vector3d point_link_lambda = point_link_pos + lambda*(point_link_star - point_link_pos);
+        norm = (point_link_lambda-point_sphere).norm();  
+      }
+      else if (lambda <= 0){
+        norm = (point_link_pos-point_sphere).norm(); 
+      }
+      else { // (lambda > 1)
+        norm = (point_link_star-point_sphere).norm(); 
+      }
+      DSM_a_ = kappa_a*(Sa_perp-norm);
+    }
+
+  }
 
 
   // ////////////////////////Attraction part of navigation field////////////////////////////////
@@ -2105,6 +2155,32 @@ void DergbryanTracker::callbackOtherUavAppliedRef(const mrs_msgs::FutureTrajecto
   // ROS_INFO_STREAM("in callbackOtherUavAppliedRef!! \n");
   mrs_msgs::FutureTrajectory temp_pose= *msg;
   other_drones_applied_references_[msg->uav_name] = temp_pose;
+}
+
+void DergbryanTracker::callbackOtherUavPosition(const mrs_msgs::FutureTrajectoryConstPtr& msg) {
+
+  mrs_lib::Routine profiler_routine = profiler.createRoutine("callbackOtherUavPosition");
+  // ROS_INFO_STREAM("in callbackOtherUavPosition!! \n");
+  mrs_msgs::FutureTrajectory temp_pose= *msg;
+  other_drones_positions_[msg->uav_name] = temp_pose;
+}
+
+// FROM kelly's repo
+/* The function getLambda returns the parametrization factor lambda for link i wrt spherical obstacle j */
+double DergbryanTracker::getLambda(Eigen::Vector3d &point_link_0, Eigen::Vector3d &point_link_1, Eigen::Vector3d &point_sphere){
+  double lambda;
+    double denum = (point_link_1 - point_link_0).dot(point_link_1 - point_link_0);
+    if (std::abs(denum) <0.001){ // don't devide over 0
+      return 0;
+    }
+      lambda = (point_link_1-point_link_0).dot(point_sphere-point_link_0)/denum;
+      // if (lambda(i,j) < 0) {
+      //   lambda(i,j) = 0;
+      // }
+      // else if(lambda(i,j) >1) {
+      //   lambda(i,j) = 1;
+      // }  
+  return lambda; 
 }
 
 }  // namespace dergbryan_tracker
