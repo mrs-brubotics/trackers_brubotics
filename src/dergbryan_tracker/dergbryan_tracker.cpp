@@ -240,10 +240,10 @@ private:
   // original strategy: id = 0
   double Sa=1.0; 
   // tube strategy: id = 1
-  double Sa_perp = 1.0;
-  double Sa_long = 0.5;
+  double Sa_perp = 0.20; //0.10
+  double Sa_long = 2.5;
 
-  double kappa_a=10; // decrease if propblems persist
+  double kappa_a=100;// 100 for id = 1 //10; for id = 0 // decrease if problems persist
   double DSM_a_;
   double alpha_a=0.1;
 };
@@ -1959,6 +1959,7 @@ void DergbryanTracker::DERG_computation(){
     // TUBE strategy
     // !!!! how to initalize and avoid devision over 0 for lambda????? !!!!!!
     // rewrite below since wrong defiend pv muyst be end of tube!!!
+    DSM_a_ = 100000; // large value
     for (size_t i = 0; i < num_pred_samples_; i++) {
       Eigen::Vector3d point_link_pos(predicted_poses_out.poses[0].position.x, predicted_poses_out.poses[0].position.y, predicted_poses_out.poses[0].position.z);
       Eigen::Vector3d point_applied_ref(applied_ref_x_, applied_ref_y_, applied_ref_z_);
@@ -1982,7 +1983,11 @@ void DergbryanTracker::DERG_computation(){
       else { // (lambda > 1)
         norm = (point_link_star-point_sphere).norm(); 
       }
-      DSM_a_ = kappa_a*(Sa_perp-norm);
+      double DSM_a_temp = kappa_a*(Sa_perp-norm);
+      if (DSM_a_temp < DSM_a_){  // choose smallest DSM_a_ over the predicted trajectory
+        DSM_a_ = DSM_a_temp;
+      }
+      
     }
 
   }
