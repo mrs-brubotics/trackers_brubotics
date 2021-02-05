@@ -58,6 +58,7 @@ public:
   void trajectory_prediction_general(mrs_msgs::PositionCommand position_cmd, double uav_heading, const mrs_msgs::AttitudeCommand::ConstPtr &last_attitude_cmd);
   void DERG_computation();
   double getLambda(Eigen::Vector3d &point_link_0, Eigen::Vector3d &point_link_1, Eigen::Vector3d &point_sphere);
+  std::tuple< Eigen::Vector3d, Eigen::Vector3d> getMinDistDirLineSegments(Eigen::Vector3d &point0_link0, Eigen::Vector3d &point1_link0, Eigen::Vector3d &point0_link1, Eigen::Vector3d &point1_link1);
 private:
   ros::NodeHandle                                     nh_;
   ros::NodeHandle                                     nh2_;
@@ -221,10 +222,12 @@ private:
 
   mrs_msgs::FutureTrajectory future_trajectory_out_;
   mrs_msgs::FutureTrajectory uav_applied_ref_out_;
+  mrs_msgs::FutureTrajectory uav_posistion_out_;
   std::vector<ros::Subscriber>  other_uav_subscribers_;
   std::vector<mrs_lib::SubscribeHandler<mrs_msgs::FutureTrajectory>> other_uav_trajectory_subscribers_;
 
   ros::Publisher avoidance_applied_ref_publisher_;
+  ros::Publisher avoidance_pos_publisher_;
   void callbackOtherUavAppliedRef(const mrs_msgs::FutureTrajectoryConstPtr& msg);
   void callbackOtherUavPosition(const mrs_msgs::FutureTrajectoryConstPtr& msg);
   std::map<std::string, mrs_msgs::FutureTrajectory> other_drones_applied_references_;
@@ -241,7 +244,7 @@ private:
   double Sa=1.0; 
   // tube strategy: id = 1
   double Sa_perp = 0.20; //0.10
-  double Sa_long = 2.5;
+  double Sa_long = 1.5;//2.5;
 
   double kappa_a=100;// 100 for id = 1 //10; for id = 0 // decrease if problems persist
   double DSM_a_;
@@ -377,6 +380,8 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
 
   uav_applied_ref_out_ = future_trajectory_out_; // initialize the message
   avoidance_applied_ref_publisher_ = nh_.advertise<mrs_msgs::FutureTrajectory>("uav_applied_ref", 1);
+  uav_posistion_out_ = future_trajectory_out_; // initialize the message
+  avoidance_pos_publisher_ = nh_.advertise<mrs_msgs::FutureTrajectory>("uav_position", 1); //**
 
   for (int i = 0; i < int(_avoidance_other_uav_names_.size()); i++) {
 
@@ -696,9 +701,8 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
   predicted_velocities_out.poses.clear();
   predicted_accelerations_out.poses.clear();
   predicted_attituderate_out.poses.clear();
-
   uav_applied_ref_out_.points.clear();
-
+  uav_posistion_out_.points.clear();
 
 
 
@@ -2046,56 +2050,151 @@ void DergbryanTracker::DERG_computation(){
   MatrixXd NF_a_co = MatrixXd::Zero(3, 1); // conservative part
   MatrixXd NF_a_nco = MatrixXd::Zero(3, 1); // non-conservative part
 
+  if (DERG_strategy_id_ == 0) {
+    std::map<std::string, mrs_msgs::FutureTrajectory>::iterator u = other_drones_applied_references_.begin();
+    //ROS_INFO_STREAM("outside \n");
+    // double it_x_before_while = u->second.points[0].x;
+    //std::cout << "it_x_before_while: " << it_x_before_while << std::endl;
+    //ROS_INFO_STREAM("it_x_before_while = \n" << it_x_before_while);
+    // ROS_INFO_STREAM("it x = \n" << it->second.points[0].x);
+    // ROS_INFO_STREAM("it y = \n" << it->second.points[0].y);
 
+    while (u != other_drones_applied_references_.end()) {
+      //ROS_INFO_STREAM("inside \n");
+      double other_uav_ref_x = u->second.points[0].x;//Second means accessing the second part of the iterator. Here it is FutureTrajectory
+      double other_uav_ref_y = u->second.points[0].y;
+      double other_uav_ref_z = u->second.points[0].z;
+    
+      double dist_between_ref_x = other_uav_ref_x - applied_ref_x_;
+      double dist_between_ref_y = other_uav_ref_y - applied_ref_y_;
+      double dist_between_ref_z = other_uav_ref_z - applied_ref_z_;
 
-  std::map<std::string, mrs_msgs::FutureTrajectory>::iterator u = other_drones_applied_references_.begin();
-  //ROS_INFO_STREAM("outside \n");
-  double it_x_before_while = u->second.points[0].x;
-  //std::cout << "it_x_before_while: " << it_x_before_while << std::endl;
-  //ROS_INFO_STREAM("it_x_before_while = \n" << it_x_before_while);
-  // ROS_INFO_STREAM("it x = \n" << it->second.points[0].x);
-  // ROS_INFO_STREAM("it y = \n" << it->second.points[0].y);
+      double dist_between_ref = sqrt(dist_between_ref_x*dist_between_ref_x + dist_between_ref_y*dist_between_ref_y + dist_between_ref_z*dist_between_ref_z);
+      //ROS_INFO_STREAM("other_uav_ref_x = \n" << other_uav_ref_x);
+      //ROS_INFO_STREAM("other_uav_ref_y = \n" << other_uav_ref_y);
+      // Conservative part
+      double max_repulsion_other_uav = (zeta_a-(dist_between_ref-2*Ra-2*Sa))/(zeta_a-delta_a);
+      if (0 > max_repulsion_other_uav) {
+        max_repulsion_other_uav = 0;
+      }
 
-  while (u != other_drones_applied_references_.end()) {
-    //ROS_INFO_STREAM("inside \n");
-    double other_uav_ref_x = u->second.points[0].x;//Second means accessing the second part of the iterator. Here it is FutureTrajectory
-    double other_uav_ref_y = u->second.points[0].y;
-    double other_uav_ref_z = u->second.points[0].z;
-  
-    double dist_between_ref_x = other_uav_ref_x - applied_ref_x_;
-    double dist_between_ref_y = other_uav_ref_y - applied_ref_y_;
-    double dist_between_ref_z = other_uav_ref_z - applied_ref_z_;
+      NF_a_co(0,0)=NF_a_co(0,0)-max_repulsion_other_uav*(dist_between_ref_x/dist_between_ref);
+      NF_a_co(1,0)=NF_a_co(1,0)-max_repulsion_other_uav*(dist_between_ref_y/dist_between_ref);
+      NF_a_co(2,0)=NF_a_co(2,0)-max_repulsion_other_uav*(dist_between_ref_z/dist_between_ref);
 
-    double dist_between_ref = sqrt(dist_between_ref_x*dist_between_ref_x + dist_between_ref_y*dist_between_ref_y + dist_between_ref_z*dist_between_ref_z);
-    //ROS_INFO_STREAM("other_uav_ref_x = \n" << other_uav_ref_x);
-    //ROS_INFO_STREAM("other_uav_ref_y = \n" << other_uav_ref_y);
-    // Conservative part
-    double max_repulsion_other_uav = (zeta_a-(dist_between_ref-2*Ra-2*Sa))/(zeta_a-delta_a);
-    if (0 > max_repulsion_other_uav) {
-      max_repulsion_other_uav = 0;
+      // Non-conservative part
+      if (zeta_a >= dist_between_ref-2*Ra-2*Sa) {
+        // xy circulation:
+        // NF_a_nco(0,0) = NF_a_nco(0,0) + alpha_a*(dist_between_ref_y/dist_between_ref);
+        // NF_a_nco(1,0) = NF_a_nco(1,0) -alpha_a*(dist_between_ref_x/dist_between_ref);
+        // xz circulation:
+        // NF_a_nco(0,0) = NF_a_nco(0,0) + alpha_a*(dist_between_ref_z/dist_between_ref);
+        // NF_a_nco(2,0) = NF_a_nco(2,0) -alpha_a*(dist_between_ref_x/dist_between_ref);
+        // xz circulation:
+        NF_a_nco(0,0) = NF_a_nco(0,0) + alpha_a*(-dist_between_ref_y + dist_between_ref_z)/dist_between_ref;
+        NF_a_nco(1,0) = NF_a_nco(1,0) + alpha_a*( dist_between_ref_x - dist_between_ref_z)/dist_between_ref;
+        NF_a_nco(2,0) = NF_a_nco(2,0) + alpha_a*(-dist_between_ref_x + dist_between_ref_y)/dist_between_ref;
+      }
+      u++;
     }
-
-    NF_a_co(0,0)=NF_a_co(0,0)-max_repulsion_other_uav*(dist_between_ref_x/dist_between_ref);
-    NF_a_co(1,0)=NF_a_co(1,0)-max_repulsion_other_uav*(dist_between_ref_y/dist_between_ref);
-    NF_a_co(2,0)=NF_a_co(2,0)-max_repulsion_other_uav*(dist_between_ref_z/dist_between_ref);
-
-    // Non-conservative part
-    if (zeta_a >= dist_between_ref-2*Ra-2*Sa) {
-      // xy circulation:
-      // NF_a_nco(0,0) = NF_a_nco(0,0) + alpha_a*(dist_between_ref_y/dist_between_ref);
-      // NF_a_nco(1,0) = NF_a_nco(1,0) -alpha_a*(dist_between_ref_x/dist_between_ref);
-      // xz circulation:
-      // NF_a_nco(0,0) = NF_a_nco(0,0) + alpha_a*(dist_between_ref_z/dist_between_ref);
-      // NF_a_nco(2,0) = NF_a_nco(2,0) -alpha_a*(dist_between_ref_x/dist_between_ref);
-      // xz circulation:
-      NF_a_nco(0,0) = NF_a_nco(0,0) + alpha_a*(-dist_between_ref_y + dist_between_ref_z)/dist_between_ref;
-      NF_a_nco(1,0) = NF_a_nco(1,0) + alpha_a*( dist_between_ref_x - dist_between_ref_z)/dist_between_ref;
-      NF_a_nco(2,0) = NF_a_nco(2,0) + alpha_a*(-dist_between_ref_x + dist_between_ref_y)/dist_between_ref;
-    }
-    u++;
   }
+
+  if (DERG_strategy_id_ == 1) {
+    std::map<std::string, mrs_msgs::FutureTrajectory>::iterator u1 = other_drones_applied_references_.begin();
+    std::map<std::string, mrs_msgs::FutureTrajectory>::iterator u2 = other_drones_positions_.begin();
+    
+    while ((u1 != other_drones_applied_references_.end()) || (u2 != other_drones_positions_.end()) ) {
+      ROS_INFO_STREAM("inside \n");
+      // UAV
+      Eigen::Vector3d point_link_pos(predicted_poses_out.poses[0].position.x, predicted_poses_out.poses[0].position.y, predicted_poses_out.poses[0].position.z);
+      Eigen::Vector3d point_applied_ref(applied_ref_x_, applied_ref_y_, applied_ref_z_);
+      Eigen::Vector3d point_link_star; // lambda = 1
+      if ((point_applied_ref-point_link_pos).norm() > 0.001){
+        point_link_star = point_link_pos + Sa_long*(point_applied_ref-point_link_pos)/(point_applied_ref-point_link_pos).norm();
+      }
+      else{ // avoid devision over 0
+        point_link_star = point_link_pos;
+      }
+      ROS_INFO_STREAM("pos UAV = \n" << point_link_pos);
+      ROS_INFO_STREAM("ref UAV = \n" << point_applied_ref);
+      ROS_INFO_STREAM("starpos UAV = \n" << point_link_star);
+
+      // otherUAV
+      double other_uav_ref_x = u1->second.points[0].x;//Second means accessing the second part of the iterator. Here it is FutureTrajectory
+      double other_uav_ref_y = u1->second.points[0].y;
+      double other_uav_ref_z = u1->second.points[0].z;
+      Eigen::Vector3d point_applied_ref_other_uav(other_uav_ref_x, other_uav_ref_y, other_uav_ref_z);
+      ROS_INFO_STREAM("point_applied_ref_other_uav = \n" << point_applied_ref_other_uav);
+
+      double other_uav_pos_x = u2->second.points[0].x;//Second means accessing the second part of the iterator. Here it is FutureTrajectory
+      // ROS_INFO_STREAM("other_uav_pos_x = \n" << other_uav_pos_x);
+      double other_uav_pos_y = u2->second.points[0].y;
+      double other_uav_pos_z = u2->second.points[0].z;
+      Eigen::Vector3d point_pos_other_uav(other_uav_pos_x, other_uav_pos_y, other_uav_pos_z);
+      ROS_INFO_STREAM("point_pos_other_uav = \n" << point_pos_other_uav);
+
+      Eigen::Vector3d point_link_star_other_uav; // lambda = 1
+      if (isfinite(point_pos_other_uav.norm()) && isfinite(point_applied_ref_other_uav.norm()) && ((point_applied_ref_other_uav - point_pos_other_uav).norm() > 0.001)){
+        point_link_star_other_uav = point_pos_other_uav + Sa_long*(point_applied_ref_other_uav - point_pos_other_uav)/(point_applied_ref_other_uav - point_pos_other_uav).norm();
+      }
+      else{ // avoid devision over 0
+        point_link_star_other_uav = point_pos_other_uav;
+      }
+      ROS_INFO_STREAM("point_link_star_other_uav = \n" << point_link_star_other_uav);
+
+      Eigen::Vector3d point_mu_link0;
+      Eigen::Vector3d point_nu_link1;
+      std::tie(point_mu_link0, point_nu_link1) = getMinDistDirLineSegments(point_link_pos, point_link_star, point_pos_other_uav, point_link_star_other_uav);//(point0_link0, point1_link0, point0_link1, point1_link1);
+      // ROS_INFO_STREAM("point_link_pos = \n" << point_link_pos);
+      // ROS_INFO_STREAM("point_link_star = \n" << point_link_star);
+      // ROS_INFO_STREAM("point_pos_other_uav = \n" << point_pos_other_uav);
+      // ROS_INFO_STREAM("point_link_star_other_uav = \n" << point_link_star_other_uav);
+
+      ROS_INFO_STREAM("point_mu_link0 = \n" << point_mu_link0);
+      ROS_INFO_STREAM("point_nu_link1 = \n" << point_nu_link1);
+
+      double dist_x = point_nu_link1(0) - point_mu_link0(0);
+      double dist_y = point_nu_link1(1) - point_mu_link0(1);
+      double dist_z = point_nu_link1(2) - point_mu_link0(2);
+
+      double dist = sqrt(dist_x*dist_x + dist_y*dist_y + dist_z*dist_z);
+      ROS_INFO_STREAM("dist = \n" << dist);
+
+      //ROS_INFO_STREAM("other_uav_ref_x = \n" << other_uav_ref_x);
+      //ROS_INFO_STREAM("other_uav_ref_y = \n" << other_uav_ref_y);
+      // Conservative part
+      double max_repulsion_other_uav = (zeta_a-(dist-2*Ra-2*Sa_perp))/(zeta_a-delta_a);
+      if (0 > max_repulsion_other_uav) {
+        max_repulsion_other_uav = 0;
+      }
+
+      NF_a_co(0,0)=NF_a_co(0,0)-max_repulsion_other_uav*(dist_x/dist);
+      NF_a_co(1,0)=NF_a_co(1,0)-max_repulsion_other_uav*(dist_y/dist);
+      NF_a_co(2,0)=NF_a_co(2,0)-max_repulsion_other_uav*(dist_z/dist);
+
+      // Non-conservative part
+      if (zeta_a >= dist-2*Ra-2*Sa_perp) {
+        // xy circulation:
+        // NF_a_nco(0,0) = NF_a_nco(0,0) + alpha_a*(dist_y/dist);
+        // NF_a_nco(1,0) = NF_a_nco(1,0) -alpha_a*(dist_x/dist);
+        // xz circulation:
+        // NF_a_nco(0,0) = NF_a_nco(0,0) + alpha_a*(dist_z/dist);
+        // NF_a_nco(2,0) = NF_a_nco(2,0) -alpha_a*(dist_x/dist);
+        // xz circulation:
+        NF_a_nco(0,0) = NF_a_nco(0,0) + alpha_a*(-dist_y + dist_z)/dist;
+        NF_a_nco(1,0) = NF_a_nco(1,0) + alpha_a*( dist_x - dist_z)/dist;
+        NF_a_nco(2,0) = NF_a_nco(2,0) + alpha_a*(-dist_x + dist_y)/dist;
+      }
+      u1++;
+      u2++;
+    }
+  }
+
+
+
+
   // Both combined
-  MatrixXd NF_a = NF_a_co + NF_a_nco;
+  MatrixXd NF_a = NF_a_co + 0*NF_a_nco;
   // NF_a(0,0)=NF_a_co(0,0)+ NF_a_nco(0,0);
   // NF_a(1,0)=NF_a_co(1,0) + NF_a_nco(1,0);
   // NF_a(2,0)=NF_a_co(2,0) + NF_a_nco(2,0);
@@ -2148,9 +2247,16 @@ void DergbryanTracker::DERG_computation(){
   custom_new_point.x = applied_ref_x_;
   custom_new_point.y = applied_ref_y_;
   custom_new_point.z = applied_ref_z_;
-
   uav_applied_ref_out_.points.push_back(custom_new_point);
   avoidance_applied_ref_publisher_.publish(uav_applied_ref_out_);
+
+  // TODO  maybe move to prediction function?
+  // mrs_msgs::FuturePoint custom_new_point;
+  custom_new_point.x = predicted_poses_out.poses[0].position.x;
+  custom_new_point.y = predicted_poses_out.poses[0].position.y;
+  custom_new_point.z = predicted_poses_out.poses[0].position.z;
+  uav_posistion_out_.points.push_back(custom_new_point);
+  avoidance_pos_publisher_.publish(uav_posistion_out_);
 
 }
 
@@ -2186,6 +2292,193 @@ double DergbryanTracker::getLambda(Eigen::Vector3d &point_link_0, Eigen::Vector3
       //   lambda(i,j) = 1;
       // }  
   return lambda; 
+}
+/* The function getMuSijTij returns the parametrization factor mu for link i wrt cylindrical obstacle j 
+and returns the positions of the closest distance between link i and cylinder j */
+std::tuple< Eigen::Vector3d, Eigen::Vector3d> DergbryanTracker::getMinDistDirLineSegments(Eigen::Vector3d &point0_link0, Eigen::Vector3d &point1_link0, Eigen::Vector3d &point0_link1, Eigen::Vector3d &point1_link1){
+  // Eigen::Vector3d direction_link0_to_link1; 
+  // double distance;
+
+  double mu;  
+  double nu;
+
+  Eigen::Vector3d point_mu_link0;
+  Eigen::Vector3d point_nu_link1;
+
+  Eigen::Vector3d a;
+  Eigen::Vector3d b;
+  Eigen::Vector3d c_0;
+  Eigen::Vector3d c_1;
+  // Eigen::Matrix<double, 3, 1> cylinder_start;
+  // Eigen::Matrix<double, 3, 1> cylinder_end;
+
+  // for (int i=0; i<panda_jointpositions.cols()-1;i++) {// #joints-1 (-1, because in code +1 to denote next joint)
+
+    a = point1_link0 - point0_link0; 
+  //   for (int j=0; j<number_obst_cylinders_; j++){ // # obstacles
+  //     cylinder_start = cylinder_startendpoints_.block(0,j,3,1); 
+  //     cylinder_end = cylinder_startendpoints_.block(3,j,3,1); 
+
+      b = point1_link1 - point0_link1; 
+      c_0 = point0_link1 - point0_link0;
+      c_1 = point1_link1 - point0_link0;
+
+      if (a.norm()<0.001 || b.norm()<0.001){ // too small
+        if (a.norm()<0.001 && b.norm()<0.001) {
+          point_mu_link0 = point0_link0;
+          point_nu_link1 = point0_link1;
+        }
+        else if(a.norm()<0.001){
+          point_mu_link0 = point0_link0;
+          nu = (b.dot(point_mu_link0 - point0_link1))/(b.dot(b));  // LAMBDA FUNCTION !!!!
+          point_nu_link1 = point0_link1 + nu * (point1_link1 - point0_link1);  
+        }
+        else if(b.norm()<0.001){
+          point_nu_link1 = point0_link1;
+          mu = (a.dot(point_nu_link1 - point0_link0))/(a.dot(a));   // LAMBDA FUNCTION !!!!
+          point_mu_link0 = point0_link0 + mu * (point1_link0 - point0_link0);
+        }
+        return {point_mu_link0, point_nu_link1};
+      }
+
+
+      // CASE OF PARALLEL SEGMENTS 
+      if ( ((a/a.norm()).cross(b/b.norm())).norm() < 0.001 ) 
+      {
+        double d_0 = (a/a.norm()).dot(c_0); 
+        double d_1 = (a/a.norm()).dot(c_1);
+
+        if(d_0<=0.0 && d_1<=0.0) // link1 before link0 (viewpoint of point0_link0 to point1_link0)
+        {
+          mu = 0.0; // mu = 0, point_mu_link0 = point0_link0
+          if (std::abs(d_0) < std::abs(d_1))
+          {
+            nu = 0.0; // nu = 0, point_nu_link1 = point0_link1 
+          }
+          else if(std::abs(d_0) > std::abs(d_1))
+          {
+            nu = 1.0; // nu = 1, point_nu_link1 = point1_link1 
+          }
+        }
+        else if(d_0>=a.norm() && d_1>=a.norm()) // link1 after link0  (viewpoint of point0_link0 to point1_link0)
+        {
+          mu = 1.0; // mu = 1, point_mu_link0 = point1_link0
+          if (std::abs(d_0)<std::abs(d_1))
+          {
+            nu = 0.0; // nu = 0, point_nu_link1 = point0_link1 
+          }
+          else if(std::abs(d_0)>std::abs(d_1))
+          {
+            nu = 1.0; // nu = 1, point_nu_link1 = point1_link1 
+          }
+        }
+        else // link1 and link0 (partly) overlapping
+        {
+          double nu_parallel = (b.dot((point0_link0 + point1_link0)/2 - point0_link1))/(b.dot(b)); // LAMBDA FUNCTION !!!!
+          if (0.0<=nu_parallel && nu_parallel <=1.0) 
+          { 
+            mu = 0.5; // mu =0.5, point_mu_link0 = (point0_link0 + point1_link0)/2
+            nu = nu_parallel; // nu computed as in point-line case
+          }
+          else if(0.0<=d_0 && d_0<=a.norm()) // = if nu_parallel < 0
+          {
+            if (d_1>a.norm())
+            {
+              mu = 1.0; // mu = 1, point_mu_link0 = point1_link0
+              nu = (b.dot(point1_link0 - point0_link1))/(b.dot(b)); // nu computed as in point-line case
+            }
+            else if(d_1 < 0.0)
+            {
+              mu = 0.0; // mu = 0, point_mu_link0 = point0_link0
+              nu = (b.dot(point0_link0 - point0_link1))/(b.dot(b)); // nu computed as in point-line case
+            }
+          }
+          else if (0.0<=d_1 && d_1<=a.norm()) // % = if nu_parallel > 1
+          {
+            if (d_0>a.norm())
+            {
+              mu = 1.0; // mu = 1, point_mu_link0 = point1_link0
+              nu = (b.dot(point1_link0 - point0_link1))/(b.dot(b)); // nu computed as in point-line case
+            }
+            else if (d_0 < 0.0)
+            {
+              mu = 0.0; // mu = 0, point_mu_link0 = point0_link0
+              nu = (b.dot(point0_link0 - point0_link1))/(b.dot(b)); // nu computed as in point-line case
+            }
+          }                 
+        }
+        point_mu_link0 = point0_link0 + mu * (point1_link0 - point0_link0);
+        point_nu_link1 = point0_link1 + nu * (point1_link1 - point0_link1);  
+      }
+
+      // CASE OF NON-PARALLEL SEGMENTS (SKEW/CUTTING)
+      else {
+        mu = (b.dot(b)*c_0.dot(a)-c_0.dot(b)*b.dot(a))/(b.dot(b)*a.dot(a)-a.dot(b)*b.dot(a)); // mu computed for skew line-line case
+        nu = (a.dot(a)/b.dot(a)) * (b.dot(b)*c_0.dot(a)-c_0.dot(b)*b.dot(a))/(b.dot(b)*a.dot(a)-b.dot(a)*b.dot(a))-(c_0.dot(a)/b.dot(a)); // nu computed for skew line-line case
+        if ( (mu >=0.0 && mu<=1.0) && (nu>=0.0 && nu<=1.0) ){ // mu in [0,1] and nu in [0,1]
+          point_mu_link0 = point0_link0 + mu * (point1_link0 - point0_link0);
+          point_nu_link1 = point0_link1 + nu * (point1_link1 - point0_link1);  
+        }
+        else if ( (mu<0.0 || mu>1.0) && (nu>=0.0 && nu<=1.0) ){ // mu not in [0,1] and nu in [0,1]
+          if (mu<0.0){
+            mu = 0.0;
+          }
+          else if (mu>1.0){
+            mu = 1.0; 
+          }
+          point_mu_link0 = point0_link0 + mu * (point1_link0 - point0_link0);
+          nu = (b.dot(point_mu_link0 - point0_link1))/(b.dot(b)); // nu computed as in point-line case   // LAMBDA FUNCTION !!!!
+          if(nu<0.0){
+            nu = 0.0;
+          }
+          else if (nu>1.0){
+            nu = 1.0;
+          }
+          point_nu_link1 = point0_link1 + nu * (point1_link1 - point0_link1);  
+        }
+        else if ( (mu >=0.0 && mu<=1.0) && (nu<0.0 || nu>1.0) ){ // mu in [0,1] and nu not in [0,1]
+          if (nu<0.0){
+            nu = 0.0;
+          }
+          else if (nu>1.0){
+            nu = 1.0;
+          }
+          point_nu_link1 = point0_link1 + nu * (point1_link1 - point0_link1);
+          mu = (a.dot(point_nu_link1 - point0_link0))/(a.dot(a)); // mu computed as in point-line case // LAMBDA FUNCTION !!!!
+          point_mu_link0 = point0_link0 + mu * (point1_link0 - point0_link0);
+        }
+        else { // mu not in [0,1] and nu not in [0,1]
+          double nu_for_mu0 = (b.dot(point0_link0 - point0_link1))/(b.dot(b)); // nu computed as in point-line case 
+          double nu_for_mu1 = (b.dot(point1_link0 - point0_link1))/(b.dot(b)); // nu computed as in point-line case   
+          if(nu_for_mu0<0.0){
+            nu_for_mu0 = 0.0;
+          }
+          else if(nu_for_mu0>1.0){
+            nu_for_mu0 = 1.0;
+          }
+          if(nu_for_mu1<0.0){
+            nu_for_mu1 = 0.0;
+          }
+          else if(nu_for_mu1>1.0){
+            nu_for_mu1 = 1.0;
+          }    
+          Eigen::Matrix<double, 3, 1> point_nu_link1_for_mu0 = point0_link1 + nu_for_mu0 * (point1_link1 - point0_link1);
+          Eigen::Matrix<double, 3, 1> point_nu_link1_for_mu1 = point0_link1 + nu_for_mu1 * (point1_link1 - point0_link1);
+          if( (point0_link0 - point_nu_link1_for_mu0).norm() < (point1_link0 - point_nu_link1_for_mu1).norm() ){
+            mu = 0.0;
+            point_mu_link0 = point0_link0;
+            point_nu_link1 = point_nu_link1_for_mu0;
+          }
+          else{
+            mu = 1.0;
+            point_mu_link0 = point1_link0;
+            point_nu_link1 = point_nu_link1_for_mu1;
+          }
+        }
+      }
+      // direction_link0_to_link1 = point_nu_link1 - point_mu_link0;
+      // distance = (point_mu_link0 - point_nu_link1).norm();
+  return {point_mu_link0, point_nu_link1}; 
 }
 
 }  // namespace dergbryan_tracker
