@@ -205,10 +205,13 @@ private:
 
   double thrust_saturation_physical_;
 
+  
+
+
   double DSM_total_;
   // thrust constraints
   double DSM_s_; // Dynamic Safety Margin for total thrust saturation
-  double kappa_s_= 1.1; //1.1; // kappa parameter of the DSM_s
+  double kappa_s_= 1.1; //1.1; //1.1; // kappa parameter of the DSM_s
   double T_min_ = 0; // lower saturation limit of total thrust
 
   double eta_ = 0.10;//0.05; // smoothing factor attraction field
@@ -236,19 +239,20 @@ private:
   std::string applied_pos_topic_name_globalbryan;
 
 
-  double zeta_a=1.0;
-  double delta_a=0.01;
-  double Ra=0.35;
-  int DERG_strategy_id_ = 1;
+  double zeta_a = 1.0; //1.0 / 1.5
+  double delta_a = 0.01;
+  double Ra = 0.35;
+  int DERG_strategy_id_ = 0; //0 / 1 
   // original strategy: id = 0
-  double Sa=1.0; 
+  double Sa = 1.0; 
   // tube strategy: id = 1
   double Sa_perp = 0.20; //0.10
-  double Sa_long = 1.5;//2.5;
+  double Sa_long = 1.0;//1.5;//2.5;
 
-  double kappa_a=100;// 100 for id = 1 //10; for id = 0 // decrease if problems persist
+  double kappa_a = 10;//10;//50;// 100 for id = 1 //10; for id = 0 // decrease if problems persist
   double DSM_a_;
-  double alpha_a=0.1;
+  double alpha_a = 0.1;
+  int circulation_on = 0; // 0 or 1
 };
 //}
 
@@ -2059,7 +2063,31 @@ void DergbryanTracker::DERG_computation(){
     // ROS_INFO_STREAM("it x = \n" << it->second.points[0].x);
     // ROS_INFO_STREAM("it y = \n" << it->second.points[0].y);
 
+    
+
+
+    std::vector<std::string>::iterator it = _avoidance_other_uav_names_.begin();
+    while (it != _avoidance_other_uav_names_.end()) {
+
+      std::string temp_str = *it;
+
+      int other_uav_priority;
+      sscanf(temp_str.c_str(), "uav%d", &other_uav_priority);
+      ROS_INFO_STREAM("other_uav_priority = \n" << other_uav_priority);
+        // if (other_uav_priority == avoidance_this_uav_number_) {
+
+        //   _avoidance_other_uav_names_.erase(it);
+        //   continue;
+        // }
+
+      it++;
+    }
+
     while (u != other_drones_applied_references_.end()) {
+
+      
+
+
       //ROS_INFO_STREAM("inside \n");
       double other_uav_ref_x = u->second.points[0].x;//Second means accessing the second part of the iterator. Here it is FutureTrajectory
       double other_uav_ref_y = u->second.points[0].y;
@@ -2072,6 +2100,7 @@ void DergbryanTracker::DERG_computation(){
       double dist_between_ref = sqrt(dist_between_ref_x*dist_between_ref_x + dist_between_ref_y*dist_between_ref_y + dist_between_ref_z*dist_between_ref_z);
       //ROS_INFO_STREAM("other_uav_ref_x = \n" << other_uav_ref_x);
       //ROS_INFO_STREAM("other_uav_ref_y = \n" << other_uav_ref_y);
+      ROS_INFO_STREAM("dist_between_ref = \n" << dist_between_ref);
       // Conservative part
       double max_repulsion_other_uav = (zeta_a-(dist_between_ref-2*Ra-2*Sa))/(zeta_a-delta_a);
       if (0 > max_repulsion_other_uav) {
@@ -2139,6 +2168,7 @@ void DergbryanTracker::DERG_computation(){
       }
       else{ // avoid devision over 0
         point_link_star_other_uav = point_pos_other_uav;
+        // TODO now also force uav to switch to small Sa_perp
       }
       ROS_INFO_STREAM("point_link_star_other_uav = \n" << point_link_star_other_uav);
 
@@ -2194,7 +2224,7 @@ void DergbryanTracker::DERG_computation(){
 
 
   // Both combined
-  MatrixXd NF_a = NF_a_co + 0*NF_a_nco;
+  MatrixXd NF_a = NF_a_co + circulation_on*NF_a_nco;
   // NF_a(0,0)=NF_a_co(0,0)+ NF_a_nco(0,0);
   // NF_a(1,0)=NF_a_co(1,0) + NF_a_nco(1,0);
   // NF_a(2,0)=NF_a_co(2,0) + NF_a_nco(2,0);
