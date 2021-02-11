@@ -15,6 +15,7 @@
 #include <mrs_msgs/FutureTrajectory.h>
 #include <mrs_msgs/FuturePoint.h>
 #include <ros/console.h>
+#include <trackers_brubotics/DSM.h>
 /*end includes added by bryan:*/
 
 //}
@@ -253,6 +254,12 @@ private:
   double DSM_a_;
   double alpha_a = 0.1;
   int circulation_on = 0; // 0 or 1
+
+
+
+  ros::Publisher DSM_publisher_;
+  // dergbryan_tracker::DSM DSM_msg_;
+  trackers_brubotics::DSM DSM_msg_;
 };
 //}
 
@@ -368,12 +375,12 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   // create publishers
   pub_goal_pose_ = nh_.advertise<mrs_msgs::ReferenceStamped>("goal_pose", 10);
   // custom_predicted_traj_publisher = nh_.advertise<geometry_msgs::PoseArray>("custom_predicted_traj", 1);
-  custom_predicted_thrust_publisher = nh_.advertise<geometry_msgs::PoseArray>("custom_predicted_thrust", 1);
-  custom_predicted_pose_publisher = nh_.advertise<geometry_msgs::PoseArray>("custom_predicted_poses", 1);
-  custom_predicted_vel_publisher = nh_.advertise<geometry_msgs::PoseArray>("custom_predicted_vels", 1);
-  custom_predicted_acc_publisher = nh_.advertise<geometry_msgs::PoseArray>("custom_predicted_accs", 1);
-  custom_predicted_attrate_publisher = nh_.advertise<geometry_msgs::PoseArray>("custom_predicted_attrate", 1);
-
+  custom_predicted_thrust_publisher = nh_.advertise<geometry_msgs::PoseArray>("custom_predicted_thrust", 10);
+  custom_predicted_pose_publisher = nh_.advertise<geometry_msgs::PoseArray>("custom_predicted_poses", 10);
+  custom_predicted_vel_publisher = nh_.advertise<geometry_msgs::PoseArray>("custom_predicted_vels", 10);
+  custom_predicted_acc_publisher = nh_.advertise<geometry_msgs::PoseArray>("custom_predicted_accs", 10);
+  custom_predicted_attrate_publisher = nh_.advertise<geometry_msgs::PoseArray>("custom_predicted_attrate", 10);
+  DSM_publisher_ = nh_.advertise<trackers_brubotics::DSM>("DSM", 10);
 
 // !!!!!  from here on compare with  mpc_tracker implemntation !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
   // create publishers for predicted trajectory
@@ -1023,7 +1030,7 @@ for (int i = 0; i < num_pred_samples_; i++) {
   predicted_attituderate.position.x = attitude_rate_pred(0,0);
   predicted_attituderate.position.y = attitude_rate_pred(1,0);
   predicted_attituderate.position.z = attitude_rate_pred(2,0);
-
+  
   predicted_poses_out.poses.push_back(custom_pose);
   predicted_velocities_out.poses.push_back(custom_vel);
   predicted_attituderate_out.poses.push_back(predicted_attituderate);
@@ -2287,6 +2294,10 @@ void DergbryanTracker::DERG_computation(){
   custom_new_point.z = predicted_poses_out.poses[0].position.z;
   uav_posistion_out_.points.push_back(custom_new_point);
   avoidance_pos_publisher_.publish(uav_posistion_out_);
+
+  /* DSM message */ 
+  DSM_msg_.DSM = DSM_total_;
+  DSM_publisher_.publish(DSM_msg_);
 
 }
 

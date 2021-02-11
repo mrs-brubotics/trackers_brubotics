@@ -11,6 +11,9 @@
 
   <buildtool_depend>catkin</buildtool_depend>
 
+  <build_depend>message_generation</build_depend>
+
+
   <depend>pluginlib</depend>
   <depend>roscpp</depend>
   <depend>geometry_msgs</depend>
@@ -22,6 +25,9 @@
   <depend>mrs_uav_managers</depend>
   <depend>mrs_uav_trackers</depend>
   <depend>dynamic_reconfigure</depend>
+
+
+  <exec_depend>message_runtime</exec_depend>
 
   <export>
     <mrs_uav_managers plugin="${prefix}/plugins.xml" />

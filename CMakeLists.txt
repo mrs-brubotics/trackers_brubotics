@@ -13,7 +13,13 @@ find_package(catkin REQUIRED COMPONENTS
   mrs_uav_managers
   mrs_uav_trackers # additionally added by brubotics wrt ctu
   dynamic_reconfigure
+  message_generation
   )
+
+add_message_files(FILES
+  DSM.msg
+)
+generate_messages(DEPENDENCIES geometry_msgs std_msgs)
 
 generate_dynamic_reconfigure_options(
     #cfg/mpc_tracker_copy.cfg
@@ -30,9 +36,12 @@ set(Eigen_LIBRARIES ${EIGEN3_LIBRARIES})
 catkin_package(
   INCLUDE_DIRS include
   LIBRARIES MpcTrackerCvxgen # additionally added by brubotics wrt ctu
-  CATKIN_DEPENDS geometry_msgs tf mrs_lib mrs_uav_managers mrs_msgs mrs_uav_trackers # mrs_uav_trackers additionally added by brubotics wrt ctu
+  CATKIN_DEPENDS geometry_msgs tf mrs_lib mrs_uav_managers mrs_msgs mrs_uav_trackers message_runtime # mrs_uav_trackers additionally added by brubotics wrt ctu
   DEPENDS Eigen
   )
+
+
+
 
 ###########
 ## Build ##
@@ -95,6 +104,7 @@ endif()
   add_dependencies(DergbryanTracker
     ${catkin_EXPORTED_TARGETS}
     ${${PROJECT_NAME}_EXPORTED_TARGETS}
+    #${PROJECT_NAME}_generate_messages_cpp}
     )
   target_link_libraries(DergbryanTracker
     ${catkin_LIBRARIES}
