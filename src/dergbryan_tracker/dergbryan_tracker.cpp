@@ -243,14 +243,31 @@ private:
   double zeta_a = 1.0; //1.0 / 1.5
   double delta_a = 0.01;
   double Ra = 0.35;
-  int DERG_strategy_id_ = 1; //0 / 1 
+  int DERG_strategy_id_ = 0; //0 / 1 
+  // COMPARE AS
   // original strategy: id = 0
-  double Sa = 1.5; 
+  // double Sa = 1.5; 
+  // // tube strategy: id = 1
+  // double Sa_perp = 0.20; //0.10
+  // double Sa_long = Sa-Sa_perp;// see drawing//1.0;//1.5;//2.5;
+  // double kappa_a = 20;//10;//50;// 100 for id = 1 //10; for id = 0 // decrease if problems persist
+  // OR with kappa scaling
+  //double kappa_a = 20*Sa/Sa_perp;
+  // OR
+  // COMPARE AS
+  // original strategy: id = 0
+  double Sa = 0.20; 
   // tube strategy: id = 1
-  double Sa_perp = 0.20; //0.10
-  double Sa_long = Sa-Sa_perp;// see drawing//1.0;//1.5;//2.5;
+  double Sa_perp = Sa; //0.10
+  double Sa_long = 1.3;// see drawing//1.0;//1.5;//2.5;
+  double kappa_a = 20;
 
-  double kappa_a = 20;//10;//50;// 100 for id = 1 //10; for id = 0 // decrease if problems persist
+
+
+  
+
+
+
   double DSM_a_;
   double alpha_a = 0.1;
   int circulation_on = 1; // 0 or 1
@@ -1963,11 +1980,19 @@ void DergbryanTracker::DERG_computation(){
 
   if (DERG_strategy_id_ == 0) {
     // OLD strategy
-    double pos_error_x = applied_ref_x_ - predicted_poses_out.poses[0].position.x;
-    double pos_error_y = applied_ref_y_ - predicted_poses_out.poses[0].position.y;
-    double pos_error_z = applied_ref_z_ - predicted_poses_out.poses[0].position.z;
-    double pos_error_init = sqrt(pos_error_x*pos_error_x + pos_error_y*pos_error_y + pos_error_z*pos_error_z);
-    DSM_a_ = kappa_a*(Sa-pos_error_init);
+    DSM_a_ = 100000; // large value
+    for (size_t i = 0; i < num_pred_samples_; i++) {
+      double pos_error_x = applied_ref_x_ - predicted_poses_out.poses[i].position.x;
+      double pos_error_y = applied_ref_y_ - predicted_poses_out.poses[i].position.y;
+      double pos_error_z = applied_ref_z_ - predicted_poses_out.poses[i].position.z;
+      double pos_error_init = sqrt(pos_error_x*pos_error_x + pos_error_y*pos_error_y + pos_error_z*pos_error_z);
+      
+      double DSM_a_temp = kappa_a*(Sa-pos_error_init);
+      if (DSM_a_temp < DSM_a_){  // choose smallest DSM_a_ over the predicted trajectory
+      DSM_a_ = DSM_a_temp;
+      }
+    }
+
   }
 
   if (DERG_strategy_id_ == 1) {
