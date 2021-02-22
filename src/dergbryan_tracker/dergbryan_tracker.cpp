@@ -243,7 +243,7 @@ private:
   double zeta_a = 1.0; //1.0 / 1.5
   double delta_a = 0.01;
   double Ra = 0.35;
-  int DERG_strategy_id_ = 2; //0 / 1 / 2
+  int DERG_strategy_id_ = 3; //0 / 1 / 2
   // COMPARE AS
   // original strategy: id = 0
   // double Sa = 1.5; 
@@ -2040,7 +2040,7 @@ void DergbryanTracker::DERG_computation(){
   }
 
 
-  if (DERG_strategy_id_ == 2) {
+  if (DERG_strategy_id_ == 2 || DERG_strategy_id_ == 3) {
     // TUBE strategy between p^v and p
     // !!!! how to initalize and avoid devision over 0 for lambda????? !!!!!!
     // rewrite below since wrong defiend pv muyst be end of tube!!!
@@ -2079,6 +2079,9 @@ void DergbryanTracker::DERG_computation(){
 
   }
 
+
+
+  
 
   // ////////////////////////Attraction part of navigation field////////////////////////////////
   MatrixXd NF_att = MatrixXd::Zero(3, 1); // attraction field
@@ -2378,6 +2381,103 @@ if (DERG_strategy_id_ == 2) {
 
       // Non-conservative part
       if (zeta_a >= dist-2*Ra-2*Sa_perp) {
+        // xy circulation:
+        // NF_a_nco(0,0) = NF_a_nco(0,0) + alpha_a*(dist_y/dist);
+        // NF_a_nco(1,0) = NF_a_nco(1,0) -alpha_a*(dist_x/dist);
+        // xz circulation:
+        // NF_a_nco(0,0) = NF_a_nco(0,0) + alpha_a*(dist_z/dist);
+        // NF_a_nco(2,0) = NF_a_nco(2,0) -alpha_a*(dist_x/dist);
+        // xz circulation:
+        NF_a_nco(0,0) = NF_a_nco(0,0) + alpha_a*(-dist_y + dist_z)/dist;
+        NF_a_nco(1,0) = NF_a_nco(1,0) + alpha_a*( dist_x - dist_z)/dist;
+        NF_a_nco(2,0) = NF_a_nco(2,0) + alpha_a*(-dist_x + dist_y)/dist;
+      }
+      u1++;
+      u2++;
+    }
+  }
+
+  if (DERG_strategy_id_ == 3) {
+    std::map<std::string, mrs_msgs::FutureTrajectory>::iterator u1 = other_drones_applied_references_.begin();
+    std::map<std::string, mrs_msgs::FutureTrajectory>::iterator u2 = other_drones_positions_.begin();
+    
+    while ((u1 != other_drones_applied_references_.end()) || (u2 != other_drones_positions_.end()) ) {
+      //ROS_INFO_STREAM("inside \n");
+      // UAV
+      Eigen::Vector3d point_link_pos(predicted_poses_out.poses[0].position.x, predicted_poses_out.poses[0].position.y, predicted_poses_out.poses[0].position.z);
+      Eigen::Vector3d point_applied_ref(applied_ref_x_, applied_ref_y_, applied_ref_z_);
+      // Eigen::Vector3d point_link_star; // lambda = 1
+      // if ((point_link_pos - point_applied_ref).norm() > 0.001){
+      //   point_link_star = point_applied_ref + Sa_long*(point_link_pos - point_applied_ref)/(point_link_pos - point_applied_ref).norm();
+      // }
+      // else{ // avoid devision over 0
+      //   point_link_star = point_applied_ref;
+      // }
+      // ROS_INFO_STREAM("pos UAV = \n" << point_link_pos);
+      // ROS_INFO_STREAM("ref UAV = \n" << point_applied_ref);
+      // ROS_INFO_STREAM("starpos UAV = \n" << point_link_star);
+
+      // otherUAV
+      double other_uav_ref_x = u1->second.points[0].x;//Second means accessing the second part of the iterator. Here it is FutureTrajectory
+      double other_uav_ref_y = u1->second.points[0].y;
+      double other_uav_ref_z = u1->second.points[0].z;
+      Eigen::Vector3d point_applied_ref_other_uav(other_uav_ref_x, other_uav_ref_y, other_uav_ref_z);
+      //ROS_INFO_STREAM("point_applied_ref_other_uav = \n" << point_applied_ref_other_uav);
+
+      double other_uav_pos_x = u2->second.points[0].x;//Second means accessing the second part of the iterator. Here it is FutureTrajectory
+      // ROS_INFO_STREAM("other_uav_pos_x = \n" << other_uav_pos_x);
+      double other_uav_pos_y = u2->second.points[0].y;
+      double other_uav_pos_z = u2->second.points[0].z;
+      Eigen::Vector3d point_pos_other_uav(other_uav_pos_x, other_uav_pos_y, other_uav_pos_z);
+      //ROS_INFO_STREAM("point_pos_other_uav = \n" << point_pos_other_uav);
+
+      // Eigen::Vector3d point_link_star_other_uav; // lambda = 1
+      // // isfinite to check if data are communicated and received well
+      // if (isfinite(point_pos_other_uav.norm()) && isfinite(point_applied_ref_other_uav.norm()) && ((point_pos_other_uav - point_applied_ref_other_uav).norm() > 0.001)){
+      //   point_link_star_other_uav = point_applied_ref_other_uav + Sa_long*(point_pos_other_uav - point_applied_ref_other_uav)/(point_pos_other_uav - point_applied_ref_other_uav).norm();
+      // }
+      // else{ // avoid devision over 0
+      //   point_link_star_other_uav = point_applied_ref_other_uav;
+      //   // TODO now also force uav to switch to small Sa_perp
+      // }
+      //ROS_INFO_STREAM("point_link_star_other_uav = \n" << point_link_star_other_uav);
+
+      Eigen::Vector3d point_mu_link0;
+      Eigen::Vector3d point_nu_link1;
+      std::tie(point_mu_link0, point_nu_link1) = getMinDistDirLineSegments(point_applied_ref, point_link_pos, point_applied_ref_other_uav, point_pos_other_uav);//(point0_link0, point1_link0, point0_link1, point1_link1);
+      // ROS_INFO_STREAM("point_link_pos = \n" << point_link_pos);
+      // ROS_INFO_STREAM("point_link_star = \n" << point_link_star);
+      // ROS_INFO_STREAM("point_pos_other_uav = \n" << point_pos_other_uav);
+      // ROS_INFO_STREAM("point_link_star_other_uav = \n" << point_link_star_other_uav);
+
+      //ROS_INFO_STREAM("point_mu_link0 = \n" << point_mu_link0);
+      //ROS_INFO_STREAM("point_nu_link1 = \n" << point_nu_link1);
+
+      double dist_x = point_nu_link1(0) - point_mu_link0(0);
+      double dist_y = point_nu_link1(1) - point_mu_link0(1);
+      double dist_z = point_nu_link1(2) - point_mu_link0(2);
+
+      double dist = sqrt(dist_x*dist_x + dist_y*dist_y + dist_z*dist_z);
+      //ROS_INFO_STREAM("dist = \n" << dist);
+
+      //ROS_INFO_STREAM("other_uav_ref_x = \n" << other_uav_ref_x);
+      //ROS_INFO_STREAM("other_uav_ref_y = \n" << other_uav_ref_y);
+
+      // compute Sa_perp_min
+      double Sa_perp_min = Sa_perp - std::max(DSM_a_/kappa_a, 0.0);
+
+      // Conservative part
+      double max_repulsion_other_uav = (zeta_a-(dist-2*Ra-2*Sa_perp_min))/(zeta_a-delta_a);
+      if (0 > max_repulsion_other_uav) {
+        max_repulsion_other_uav = 0;
+      }
+
+      NF_a_co(0,0)=NF_a_co(0,0)-max_repulsion_other_uav*(dist_x/dist);
+      NF_a_co(1,0)=NF_a_co(1,0)-max_repulsion_other_uav*(dist_y/dist);
+      NF_a_co(2,0)=NF_a_co(2,0)-max_repulsion_other_uav*(dist_z/dist);
+
+      // Non-conservative part
+      if (zeta_a >= dist-2*Ra-2*Sa_perp_min) {
         // xy circulation:
         // NF_a_nco(0,0) = NF_a_nco(0,0) + alpha_a*(dist_y/dist);
         // NF_a_nco(1,0) = NF_a_nco(1,0) -alpha_a*(dist_x/dist);
