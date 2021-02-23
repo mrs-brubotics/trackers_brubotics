@@ -18,6 +18,11 @@
 #include <trackers_brubotics/DSM.h>
 /*end includes added by bryan:*/
 
+
+// #include <mrs_lib/utils.h>
+// #include <mrs_lib/geometry/cyclic.h>
+// #include <mrs_lib/geometry/misc.h>
+
 //}
 #define OUTPUT_ATTITUDE_RATE 0
 #define OUTPUT_ATTITUDE_QUATERNION 1
@@ -228,8 +233,8 @@ private:
   mrs_msgs::FutureTrajectory uav_applied_ref_out_;
   mrs_msgs::FutureTrajectory uav_posistion_out_;
   std::vector<ros::Subscriber>  other_uav_subscribers_;
-  std::vector<mrs_lib::SubscribeHandler<mrs_msgs::FutureTrajectory>> other_uav_trajectory_subscribers_;
-
+  
+  ros::Publisher avoidance_trajectory_publisher_;
   ros::Publisher avoidance_applied_ref_publisher_;
   ros::Publisher avoidance_pos_publisher_;
   void callbackOtherUavAppliedRef(const mrs_msgs::FutureTrajectoryConstPtr& msg);
@@ -238,12 +243,23 @@ private:
   std::map<std::string, mrs_msgs::FutureTrajectory> other_drones_positions_;
   std::string applied_ref_topic_name_globalbryan;
   std::string applied_pos_topic_name_globalbryan;
+  // subscribing to the other UAV future trajectories
+  void callbackOtherUavTrajectory(const mrs_msgs::FutureTrajectoryConstPtr& msg);
+  std::map<std::string, mrs_msgs::FutureTrajectory> other_uav_avoidance_trajectories_;
+  // void callbackOtherMavTrajectory(mrs_lib::SubscribeHandler<mrs_msgs::FutureTrajectory>& sh_ptr);
+  // std::vector<mrs_lib::SubscribeHandler<mrs_msgs::FutureTrajectory>> other_uav_trajectory_subscribers_;
+  // std::map<std::string, mrs_msgs::FutureTrajectory> other_uav_avoidance_trajectories_;
+  // std::mutex mutex_other_uav_avoidance_trajectories_;
+
+
+
+
 
 
   double zeta_a = 1.0; //1.0 / 1.5
   double delta_a = 0.01;
   double Ra = 0.35;
-  int DERG_strategy_id_ = 3; //0 / 1 / 2
+  int DERG_strategy_id_ = 4; //0 / 1 / 2
   // COMPARE AS
   // original strategy: id = 0
   // double Sa = 1.5; 
@@ -264,16 +280,25 @@ private:
 
 
 
-  // strategy 2:
+  // strategy 2 / 3:
+  // double Sa = 1.5;
+  // double Sa_perp = 0.20; //0.10
+  // double Sa_long = Sa-Sa_perp;// see drawing//1.0;//1.5;//2.5;
+  // //double kappa_a = 0.3*20;
+  // double kappa_a = 0.3*20*Sa/Sa_perp; //with kappa scaling
+
+
+  // strategy 4:
   double Sa = 1.5;
   double Sa_perp = 0.20; //0.10
   double Sa_long = Sa-Sa_perp;// see drawing//1.0;//1.5;//2.5;
-  //double kappa_a = 0.3*20;
-  double kappa_a = 0.3*20*Sa/Sa_perp; //with kappa scaling
+  double kappa_a = 0.2*20*Sa/Sa_perp;
 
 
 
-  
+
+
+
 
   double DSM_a_;
   double alpha_a = 0.1;
@@ -408,7 +433,7 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
 
 // !!!!!  from here on compare with  mpc_tracker implemntation !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
   // create publishers for predicted trajectory
-  // avoidance_trajectory_publisher_           = nh_.advertise<mrs_msgs::FutureTrajectory>("predicted_trajectory", 1);
+  
   future_trajectory_out_.stamp = ros::Time::now();
   future_trajectory_out_.uav_name = _uav_name_;
   future_trajectory_out_.priority = avoidance_this_uav_priority_;
@@ -417,6 +442,19 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   avoidance_applied_ref_publisher_ = nh_.advertise<mrs_msgs::FutureTrajectory>("uav_applied_ref", 1);
   uav_posistion_out_ = future_trajectory_out_; // initialize the message
   avoidance_pos_publisher_ = nh_.advertise<mrs_msgs::FutureTrajectory>("uav_position", 1); //**
+  // future_trajectory_out_
+  avoidance_trajectory_publisher_= nh_.advertise<mrs_msgs::FutureTrajectory>("predicted_trajectory", 1);
+
+
+
+  // mrs_lib::SubscribeHandlerOptions shopts;
+  // shopts.nh                 = nh_;
+  // shopts.node_name          = "DergbryanTracker"; //DergbryanTracker or Se3ControllerBrubotics????
+  // shopts.no_message_timeout = mrs_lib::no_timeout;
+  // shopts.threadsafe         = true;
+  // shopts.autostart          = true;
+  // shopts.queue_size         = 10;
+  // shopts.transport_hints    = ros::TransportHints().tcpNoDelay();
 
   for (int i = 0; i < int(_avoidance_other_uav_names_.size()); i++) {
 
@@ -431,42 +469,15 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
     ROS_INFO("[DergbryanTracker]: subscribing to %s", position_topic_name.c_str());
     other_uav_subscribers_.push_back(nh_.subscribe(position_topic_name, 1, &DergbryanTracker::callbackOtherUavPosition, this, ros::TransportHints().tcpNoDelay()));
 
-    
+    std::string trajectory_topic_name = std::string("/") + _avoidance_other_uav_names_[i] + std::string("/") + std::string("control_manager/se3_controller_brubotics/predicted_trajectory"); //CHANGED to future traj type topic!!!!!!!!!
+    // applied_pos_topic_name_globalbryan = position_topic_name; 
+    ROS_INFO("[DergbryanTracker]: subscribing to %s", trajectory_topic_name.c_str());
+    other_uav_subscribers_.push_back(nh_.subscribe(trajectory_topic_name, 1, &DergbryanTracker::callbackOtherUavTrajectory, this, ros::TransportHints().tcpNoDelay()));
+
+    // std::string prediction_topic_name = std::string("/") + _avoidance_other_uav_names_[i] + std::string("/") + std::string("control_manager/se3_controller_brubotics/custom_predicted_poses");//_avoidance_trajectory_topic_name_;
+    // ROS_INFO("[DergbryanTracker]: subscribing to %s", prediction_topic_name.c_str());
+    // other_uav_trajectory_subscribers_.push_back(mrs_lib::SubscribeHandler<mrs_msgs::FutureTrajectory>(shopts, prediction_topic_name, &DergbryanTracker::callbackOtherMavTrajectory, this));
   }
-
-
-  // // !!try with this block below (copy adapted from latest mpc tracker) instead of the above 
-  // mrs_lib::SubscribeHandlerOptions shopts;
-  // shopts.nh                 = nh_;
-  // shopts.node_name          = "DergbryanTracker";
-  // shopts.no_message_timeout = mrs_lib::no_timeout;
-  // shopts.threadsafe         = true;
-  // shopts.autostart          = true;
-  // shopts.queue_size         = 10;
-  // shopts.transport_hints    = ros::TransportHints().tcpNoDelay();
-
-  // // // create subscribers on other drones diagnostics
-  // for (int i = 0; i < int(_avoidance_other_uav_names_.size()); i++) {
-
-  //   std::string applied_ref_topic_name = std::string("/") + _avoidance_other_uav_names_[i] + std::string("/") + std::string("control_manager/dergbryan_tracker/uav_applied_ref");
-  
-
-  //   ROS_INFO("[DergbryanTracker]: subscribing to %s", applied_ref_topic_name.c_str());
-
-  //   other_uav_trajectory_subscribers_.push_back(
-  //       mrs_lib::SubscribeHandler<mrs_msgs::FutureTrajectory>(shopts, applied_ref_topic_name, &DergbryanTracker::callbackOtherUavAppliedRef, this));
-
-  //   // ROS_INFO("[MpcTracker]: subscribing to %s", diag_topic_name.c_str());
-
-  //   // other_uav_diag_subscribers_.push_back(
-  //   //     mrs_lib::SubscribeHandler<mrs_msgs::MpcTrackerDiagnostics>(shopts, diag_topic_name, &MpcTracker::callbackOtherMavDiagnostics, this));
-  // }
-
-
-
-
-
-
 
   // | ---------------- prepare stuff from params --------------- |
 
@@ -738,7 +749,7 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
   predicted_attituderate_out.poses.clear();
   uav_applied_ref_out_.points.clear();
   uav_posistion_out_.points.clear();
-
+  future_trajectory_out_.points.clear();
 
 
   
@@ -2080,6 +2091,35 @@ void DergbryanTracker::DERG_computation(){
   }
 
 
+  if (DERG_strategy_id_ == 4) {
+    // trajectory
+    DSM_a_ = 100000; // large value
+    double DSM_a_temp;
+    std::map<std::string, mrs_msgs::FutureTrajectory>::iterator u = other_uav_avoidance_trajectories_.begin();
+    while (u != other_uav_avoidance_trajectories_.end()) {
+      // ROS_INFO_STREAM("INSIDE WHILE = \n");
+      for (size_t i = 0; i < num_pred_samples_; i++) {
+        Eigen::Vector3d point_traj(predicted_poses_out.poses[i].position.x, predicted_poses_out.poses[i].position.y, predicted_poses_out.poses[i].position.z);
+        // ROS_INFO_STREAM("UAV position = \n" << point_traj);
+        double other_uav_pos_x = u->second.points[i].x;//Second means accessing the second part of the iterator. Here it is FutureTrajectory
+        double other_uav_pos_y = u->second.points[i].y;
+        double other_uav_pos_z = u->second.points[i].z;
+        Eigen::Vector3d point_other_uav_traj(other_uav_pos_x, other_uav_pos_y, other_uav_pos_z);
+        //ROS_INFO_STREAM("Other UAV position = \n" << point_other_uav_traj);
+        double norm = (point_traj - point_other_uav_traj).norm()-2*Ra; 
+        
+        DSM_a_temp = kappa_a*(norm);
+        if (DSM_a_temp < DSM_a_){  // choose smallest DSM_a_ over the predicted trajectory
+          DSM_a_ = DSM_a_temp;
+        }
+      }
+    u++;
+    }
+    double temp = DSM_a_/kappa_a;
+    // ROS_INFO_STREAM("DSM_a_temp = \n" << DSM_a_temp);
+    // ROS_INFO_STREAM("DSM_a = \n" << DSM_a_);
+    ROS_INFO_STREAM("UAV distance in prediction = \n" << temp);
+  }
 
   
 
@@ -2148,22 +2188,22 @@ void DergbryanTracker::DERG_computation(){
     
 
 
-    std::vector<std::string>::iterator it = _avoidance_other_uav_names_.begin();
-    while (it != _avoidance_other_uav_names_.end()) {
+    // std::vector<std::string>::iterator it = _avoidance_other_uav_names_.begin();
+    // while (it != _avoidance_other_uav_names_.end()) {
 
-      std::string temp_str = *it;
+    //   std::string temp_str = *it;
 
-      int other_uav_priority;
-      sscanf(temp_str.c_str(), "uav%d", &other_uav_priority);
-      ROS_INFO_STREAM("other_uav_priority = \n" << other_uav_priority);
-        // if (other_uav_priority == avoidance_this_uav_number_) {
+    //   int other_uav_priority;
+    //   sscanf(temp_str.c_str(), "uav%d", &other_uav_priority);
+    //   ROS_INFO_STREAM("other_uav_priority = \n" << other_uav_priority);
+    //     // if (other_uav_priority == avoidance_this_uav_number_) {
 
-        //   _avoidance_other_uav_names_.erase(it);
-        //   continue;
-        // }
+    //     //   _avoidance_other_uav_names_.erase(it);
+    //     //   continue;
+    //     // }
 
-      it++;
-    }
+    //   it++;
+    // }
 
     while (u != other_drones_applied_references_.end()) {
 
@@ -2182,7 +2222,7 @@ void DergbryanTracker::DERG_computation(){
       double dist_between_ref = sqrt(dist_between_ref_x*dist_between_ref_x + dist_between_ref_y*dist_between_ref_y + dist_between_ref_z*dist_between_ref_z);
       //ROS_INFO_STREAM("other_uav_ref_x = \n" << other_uav_ref_x);
       //ROS_INFO_STREAM("other_uav_ref_y = \n" << other_uav_ref_y);
-      ROS_INFO_STREAM("dist_between_ref = \n" << dist_between_ref);
+      //ROS_INFO_STREAM("dist_between_ref = \n" << dist_between_ref);
       // Conservative part
       double max_repulsion_other_uav = (zeta_a-(dist_between_ref-2*Ra-2*Sa))/(zeta_a-delta_a);
       if (0 > max_repulsion_other_uav) {
@@ -2494,7 +2534,79 @@ if (DERG_strategy_id_ == 2) {
     }
   }
 
+  if (DERG_strategy_id_ == 4) { // use repulsion on physical occupancy spheres on the references, on the positions, on a line segment between pos and reference of radius Ra (i.e. a tube of radius Ra)?
+  // currently using distance between tubes of radius Ra in NF. DSM should deal with deviations from straight line.
+    std::map<std::string, mrs_msgs::FutureTrajectory>::iterator u1 = other_drones_applied_references_.begin();
+    std::map<std::string, mrs_msgs::FutureTrajectory>::iterator u2 = other_drones_positions_.begin();
+    
+    while ((u1 != other_drones_applied_references_.end()) || (u2 != other_drones_positions_.end())) { //
+      //ROS_INFO_STREAM("inside \n");
+      // UAV
+      Eigen::Vector3d point_link_pos(predicted_poses_out.poses[0].position.x, predicted_poses_out.poses[0].position.y, predicted_poses_out.poses[0].position.z);
+      Eigen::Vector3d point_applied_ref(applied_ref_x_, applied_ref_y_, applied_ref_z_);
+      // otherUAV
+      double other_uav_ref_x = u1->second.points[0].x;//Second means accessing the second part of the iterator. Here it is FutureTrajectory
+      double other_uav_ref_y = u1->second.points[0].y;
+      double other_uav_ref_z = u1->second.points[0].z;
+      Eigen::Vector3d point_applied_ref_other_uav(other_uav_ref_x, other_uav_ref_y, other_uav_ref_z);
+      //ROS_INFO_STREAM("point_applied_ref_other_uav = \n" << point_applied_ref_other_uav);
 
+      double other_uav_pos_x = u2->second.points[0].x;//Second means accessing the second part of the iterator. Here it is FutureTrajectory
+      // ROS_INFO_STREAM("other_uav_pos_x = \n" << other_uav_pos_x);
+      double other_uav_pos_y = u2->second.points[0].y;
+      double other_uav_pos_z = u2->second.points[0].z;
+      Eigen::Vector3d point_pos_other_uav(other_uav_pos_x, other_uav_pos_y, other_uav_pos_z);
+      //ROS_INFO_STREAM("point_pos_other_uav = \n" << point_pos_other_uav);
+
+      Eigen::Vector3d point_mu_link0;
+      Eigen::Vector3d point_nu_link1;
+      std::tie(point_mu_link0, point_nu_link1) = getMinDistDirLineSegments(point_applied_ref, point_link_pos, point_applied_ref_other_uav, point_pos_other_uav);//(point0_link0, point1_link0, point0_link1, point1_link1);
+      // ROS_INFO_STREAM("point_link_pos = \n" << point_link_pos);
+      // ROS_INFO_STREAM("point_link_star = \n" << point_link_star);
+      // ROS_INFO_STREAM("point_pos_other_uav = \n" << point_pos_other_uav);
+      // ROS_INFO_STREAM("point_link_star_other_uav = \n" << point_link_star_other_uav);
+
+      //ROS_INFO_STREAM("point_mu_link0 = \n" << point_mu_link0);
+      //ROS_INFO_STREAM("point_nu_link1 = \n" << point_nu_link1);
+
+      double dist_x = point_nu_link1(0) - point_mu_link0(0);
+      double dist_y = point_nu_link1(1) - point_mu_link0(1);
+      double dist_z = point_nu_link1(2) - point_mu_link0(2);
+
+      double dist = sqrt(dist_x*dist_x + dist_y*dist_y + dist_z*dist_z);
+      //ROS_INFO_STREAM("dist = \n" << dist);
+
+      //ROS_INFO_STREAM("other_uav_ref_x = \n" << other_uav_ref_x);
+      //ROS_INFO_STREAM("other_uav_ref_y = \n" << other_uav_ref_y);
+
+
+      // Conservative part
+      double max_repulsion_other_uav = (zeta_a-(dist-2*Ra))/(zeta_a-delta_a);
+      if (0 > max_repulsion_other_uav) {
+        max_repulsion_other_uav = 0;
+      }
+
+      NF_a_co(0,0)=NF_a_co(0,0)-max_repulsion_other_uav*(dist_x/dist);
+      NF_a_co(1,0)=NF_a_co(1,0)-max_repulsion_other_uav*(dist_y/dist);
+      NF_a_co(2,0)=NF_a_co(2,0)-max_repulsion_other_uav*(dist_z/dist);
+
+      // Non-conservative part
+      if (zeta_a >= dist-2*Ra) {
+        // xy circulation:
+        // NF_a_nco(0,0) = NF_a_nco(0,0) + alpha_a*(dist_y/dist);
+        // NF_a_nco(1,0) = NF_a_nco(1,0) -alpha_a*(dist_x/dist);
+        // xz circulation:
+        // NF_a_nco(0,0) = NF_a_nco(0,0) + alpha_a*(dist_z/dist);
+        // NF_a_nco(2,0) = NF_a_nco(2,0) -alpha_a*(dist_x/dist);
+        // xz circulation:
+        NF_a_nco(0,0) = NF_a_nco(0,0) + alpha_a*(-dist_y + dist_z)/dist;
+        NF_a_nco(1,0) = NF_a_nco(1,0) + alpha_a*( dist_x - dist_z)/dist;
+        NF_a_nco(2,0) = NF_a_nco(2,0) + alpha_a*(-dist_x + dist_y)/dist;
+      }
+      u1++;
+      u2++;
+    }
+  }
 
   // Both combined
   MatrixXd NF_a = NF_a_co + circulation_on*NF_a_nco;
@@ -2527,9 +2639,9 @@ if (DERG_strategy_id_ == 2) {
     DSM_total_ = 0;
   }
   ROS_INFO_STREAM("DSM_total_ = \n" << DSM_total_);
-  // ROS_INFO_STREAM("DSM_s_ = \n" << DSM_s_);
-  // ROS_INFO_STREAM("DSM_a_ = \n" << DSM_a_);
-  ROS_INFO_STREAM("NF_total = \n" << NF_total);
+  ROS_INFO_STREAM("DSM_s_ = \n" << DSM_s_);
+  ROS_INFO_STREAM("DSM_a_ = \n" << DSM_a_);
+  //ROS_INFO_STREAM("NF_total = \n" << NF_total);
   // ROS_INFO_STREAM("NF_a = \n" << NF_a);
  
   
@@ -2561,28 +2673,21 @@ if (DERG_strategy_id_ == 2) {
   uav_posistion_out_.points.push_back(custom_new_point);
   avoidance_pos_publisher_.publish(uav_posistion_out_);
 
+  //mrs_msgs::FuturePoint custom_new_point;
+  for (size_t i = 0; i < num_pred_samples_; i++) {
+    custom_new_point.x = predicted_poses_out.poses[i].position.x;
+    custom_new_point.y = predicted_poses_out.poses[i].position.y;
+    custom_new_point.z = predicted_poses_out.poses[i].position.z;
+    future_trajectory_out_.points.push_back(custom_new_point);
+  }
+  avoidance_trajectory_publisher_.publish(future_trajectory_out_);
+
   /* DSM message */ 
   DSM_msg_.DSM = DSM_total_;
   DSM_msg_.DSM_s = DSM_s_;
   DSM_msg_.DSM_a = DSM_a_;
   DSM_publisher_.publish(DSM_msg_);
 
-}
-
-void DergbryanTracker::callbackOtherUavAppliedRef(const mrs_msgs::FutureTrajectoryConstPtr& msg) {
-
-  mrs_lib::Routine profiler_routine = profiler.createRoutine("callbackOtherUavAppliedRef");
-  // ROS_INFO_STREAM("in callbackOtherUavAppliedRef!! \n");
-  mrs_msgs::FutureTrajectory temp_pose= *msg;
-  other_drones_applied_references_[msg->uav_name] = temp_pose;
-}
-
-void DergbryanTracker::callbackOtherUavPosition(const mrs_msgs::FutureTrajectoryConstPtr& msg) {
-
-  mrs_lib::Routine profiler_routine = profiler.createRoutine("callbackOtherUavPosition");
-  // ROS_INFO_STREAM("in callbackOtherUavPosition!! \n");
-  mrs_msgs::FutureTrajectory temp_pose= *msg;
-  other_drones_positions_[msg->uav_name] = temp_pose;
 }
 
 // FROM kelly's repo
@@ -2789,6 +2894,103 @@ std::tuple< Eigen::Vector3d, Eigen::Vector3d> DergbryanTracker::getMinDistDirLin
       // distance = (point_mu_link0 - point_nu_link1).norm();
   return {point_mu_link0, point_nu_link1}; 
 }
+
+
+// | ------------------------ callbacks ----------------------- |
+
+void DergbryanTracker::callbackOtherUavAppliedRef(const mrs_msgs::FutureTrajectoryConstPtr& msg) {
+
+  mrs_lib::Routine profiler_routine = profiler.createRoutine("callbackOtherUavAppliedRef");
+  //ROS_INFO_STREAM("in callbackOtherUavAppliedRef!! \n");
+  mrs_msgs::FutureTrajectory temp_pose= *msg;
+  other_drones_applied_references_[msg->uav_name] = temp_pose;
+}
+
+void DergbryanTracker::callbackOtherUavPosition(const mrs_msgs::FutureTrajectoryConstPtr& msg) {
+
+  mrs_lib::Routine profiler_routine = profiler.createRoutine("callbackOtherUavPosition");
+  // ROS_INFO_STREAM("in callbackOtherUavPosition!! \n");
+  mrs_msgs::FutureTrajectory temp_pose= *msg;
+  other_drones_positions_[msg->uav_name] = temp_pose;
+}
+
+void DergbryanTracker::callbackOtherUavTrajectory(const mrs_msgs::FutureTrajectoryConstPtr& msg) {
+
+  mrs_lib::Routine profiler_routine = profiler.createRoutine("callbackOtherUavTrajectory");
+  // ROS_INFO_STREAM("in callbackOtherUavTrajectory!! \n");
+  mrs_msgs::FutureTrajectory temp_pose= *msg;
+  other_uav_avoidance_trajectories_[msg->uav_name] = temp_pose;
+}
+
+// void DergbryanTracker::callbackOtherMavTrajectory(mrs_lib::SubscribeHandler<mrs_msgs::FutureTrajectory>& sh_ptr) {
+
+//   ROS_INFO_STREAM("inside callbackOtherMavTrajectory \n");
+
+//   if (!is_initialized_) {
+//     return;
+//   }
+
+//   mrs_lib::Routine profiler_routine = profiler.createRoutine("callbackOtherMavTrajectory");
+
+//   auto uav_state = mrs_lib::get_mutexed(mutex_uav_state_, uav_state_);
+
+//   mrs_msgs::FutureTrajectory trajectory = *sh_ptr.getMsg();
+
+//   // the times might not be synchronized, so just remember the time of receiving it
+//   trajectory.stamp = ros::Time::now();
+
+//   // transform it from the utm origin to the currently used frame
+//   auto res = common_handlers_->transformer->getTransform("utm_origin", uav_state.header.frame_id, ros::Time::now(), true);
+
+//   if (!res) {
+
+//     std::string message = "[DergbryanTracker]: can not transform other drone trajectory to the current frame";
+//     ROS_WARN_STREAM_ONCE(message);
+//     ROS_DEBUG_STREAM_THROTTLE(1.0, message);
+
+//     return;
+//   }
+
+//   mrs_lib::TransformStamped tf = res.value();
+
+//   for (int i = 0; i < int(trajectory.points.size()); i++) {
+
+//     geometry_msgs::PoseStamped original_pose;
+
+//     original_pose.pose.position.x = trajectory.points[i].x;
+//     original_pose.pose.position.y = trajectory.points[i].y;
+//     original_pose.pose.position.z = trajectory.points[i].z;
+
+//     original_pose.pose.orientation = mrs_lib::AttitudeConverter(0, 0, 0);
+
+//     auto res = common_handlers_->transformer->transform(tf, original_pose);
+
+//     if (res) {
+//       trajectory.points[i].x = res.value().pose.position.x;
+//       trajectory.points[i].y = res.value().pose.position.y;
+//       trajectory.points[i].z = res.value().pose.position.z;
+//     } else {
+
+//       std::string message = "[DergbryanTracker]: could not transform point of other uav future trajectory!";
+//       ROS_WARN_STREAM_ONCE(message);
+//       ROS_DEBUG_STREAM_THROTTLE(1.0, message);
+
+//       return;
+//     }
+//   }
+
+//   {
+//     std::scoped_lock lock(mutex_other_uav_avoidance_trajectories_);
+
+//     // update the diagnostics
+//     ROS_INFO_STREAM("trajectory.uav_name = \n" << trajectory.uav_name);
+
+//     ROS_INFO_STREAM("trajectory = \n" << trajectory);
+//     other_uav_avoidance_trajectories_[trajectory.uav_name] = trajectory;
+//   }
+// }
+
+
 
 }  // namespace dergbryan_tracker
 }  // namespace mrs_uav_trackers
