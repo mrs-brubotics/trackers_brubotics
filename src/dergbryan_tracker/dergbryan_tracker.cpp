@@ -16,6 +16,8 @@
 #include <mrs_msgs/FuturePoint.h>
 #include <ros/console.h>
 #include <trackers_brubotics/DSM.h>
+#include <mrs_lib/geometry/cyclic.h>
+#include <mrs_lib/geometry/misc.h>
 /*end includes added by bryan:*/
 
 
@@ -28,7 +30,10 @@
 #define OUTPUT_ATTITUDE_QUATERNION 1
 
 
-using namespace Eigen; //added by bryan
+using namespace Eigen; 
+using vec3_t = mrs_lib::geometry::vec_t<3>;
+using sradians = mrs_lib::geometry::sradians;
+
 
 
 namespace mrs_uav_trackers
@@ -76,6 +81,7 @@ private:
   mrs_msgs::UavState uav_state_;
   bool               got_uav_state_ = false; // now added by bryan
   std::mutex         mutex_uav_state_; // now added by bryan
+  double uav_heading_; // now added by bryan
 
   double uav_x_; // now added by bryan
   double uav_y_; // now added by bryan
@@ -170,7 +176,8 @@ private:
 
   bool is_initialized_ = false;
   bool is_active_      = false;
-  bool hover_          = false;
+  
+  // bool hover_          = false; old, don't need anymore
 
   bool starting_bool=true;
 
@@ -259,7 +266,7 @@ private:
   double zeta_a = 1.0; //1.0 / 1.5
   double delta_a = 0.01;
   double Ra = 0.35;
-  int DERG_strategy_id_ = 4; //0 / 1 / 2
+  int DERG_strategy_id_ = 3; //0 / 1 / 2 / 3 /4
   // COMPARE AS
   // original strategy: id = 0
   // double Sa = 1.5; 
@@ -281,18 +288,18 @@ private:
 
 
   // strategy 2 / 3:
-  // double Sa = 1.5;
-  // double Sa_perp = 0.20; //0.10
-  // double Sa_long = Sa-Sa_perp;// see drawing//1.0;//1.5;//2.5;
-  // //double kappa_a = 0.3*20;
-  // double kappa_a = 0.3*20*Sa/Sa_perp; //with kappa scaling
-
-
-  // strategy 4:
   double Sa = 1.5;
   double Sa_perp = 0.20; //0.10
   double Sa_long = Sa-Sa_perp;// see drawing//1.0;//1.5;//2.5;
-  double kappa_a = 0.2*20*Sa/Sa_perp;
+  //double kappa_a = 0.3*20;
+  double kappa_a = 0.3*20*Sa/Sa_perp; //with kappa scaling
+
+
+  // strategy 4:
+  // double Sa = 1.5;
+  // double Sa_perp = 0.20; //0.10
+  // double Sa_long = Sa-Sa_perp;// see drawing//1.0;//1.5;//2.5;
+  // double kappa_a = 0.10*20*Sa/Sa_perp;
 
 
 
@@ -309,6 +316,72 @@ private:
   ros::Publisher DSM_publisher_;
   // dergbryan_tracker::DSM DSM_msg_;
   trackers_brubotics::DSM DSM_msg_;
+
+
+  // // trajectory loader (mpc_tracker):
+  std::tuple<bool, std::string, bool> loadTrajectory(const mrs_msgs::TrajectoryReference msg);
+  double _dt1_;
+
+  // the whole trajectory reference split per axis
+  std::shared_ptr<VectorXd> des_x_whole_trajectory_;
+  std::shared_ptr<VectorXd> des_y_whole_trajectory_;
+  std::shared_ptr<VectorXd> des_z_whole_trajectory_;
+  std::shared_ptr<VectorXd> des_heading_whole_trajectory_;
+  std::mutex                mutex_des_whole_trajectory_;
+
+
+  // // the reference over the prediction horizon per axis
+  // // MatrixXd   des_x_trajectory_;
+  // // MatrixXd   des_y_trajectory_;
+  // // MatrixXd   des_z_trajectory_;
+  // // MatrixXd   des_heading_trajectory_;
+  std::mutex mutex_des_trajectory_;
+
+
+  // trajectory tracking
+  bool       trajectory_tracking_in_progress_ = false;
+  // // int        trajectory_tracking_sub_idx_     = 0;  // increases with every iteration of the simulated model
+  int        trajectory_tracking_idx_         = 0;  // while tracking, this is the current index in the des_*_whole trajectory
+  std::mutex mutex_trajectory_tracking_states_;
+
+
+  // // current state of the dynamical system
+  // //MatrixXd   mpc_x_;          // current state of the uav
+  // MatrixXd   mpc_x_heading_;  // current heading of the uav
+  // std::mutex mutex_mpc_x_;
+
+
+    // | ------------------- trajectory tracking ------------------ |
+
+  std::tuple<bool, std::string> resumeTrajectoryTrackingImpl(void);
+  std::tuple<bool, std::string> startTrajectoryTrackingImpl(void);
+  std::tuple<bool, std::string> stopTrajectoryTrackingImpl(void);
+  std::tuple<bool, std::string> gotoTrajectoryStartImpl(void);
+
+
+  // params of the loaded trajectory
+  int    trajectory_size_ = 0;
+  double trajectory_dt_;
+  bool   trajectory_track_heading_ = false;
+  bool   trajectory_tracking_loop_ = false;
+  bool   trajectory_set_           = false;
+  int    trajectory_count_         = 0;  // counts how many trajectories we have received
+
+
+  // | ------------------- trajectory tracking ------------------ |
+
+  ros::Timer timer_trajectory_tracking_;
+  void       timerTrajectoryTracking(const ros::TimerEvent& event);
+  // | ------------------------ hovering ------------------------ |
+
+  ros::Timer timer_hover_;
+  // void       timerHover(const ros::TimerEvent& event);
+  bool       hover_timer_runnning_ = false;
+  bool       hovering_in_progress_ = false;
+  void       toggleHover(bool in);
+
+
+  void setGoal(const double pos_x, const double pos_y, const double pos_z, const double heading, const bool use_heading);
 };
 //}
 
@@ -500,6 +573,17 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   // | ------------------------ profiler ------------------------ |
   profiler = mrs_lib::Profiler(nh2_, "DergbryanTracker", _profiler_enabled_);
 
+
+
+  // setTrajectory functions similar to mpc_tracker
+  _dt1_ = dt_; //1.0 / _mpc_rate_;
+  // mpc_x_heading_ = MatrixXd::Zero(_mpc_n_states_heading_, 1);
+
+
+  // | ------------------------- timers ------------------------- |
+  timer_trajectory_tracking_  = nh_.createTimer(ros::Rate(1.0), &DergbryanTracker::timerTrajectoryTracking, this, false, false);
+  // timer_hover_                = nh_.createTimer(ros::Rate(10.0), &DergbryanTracker::timerHover, this, false, false);
+  
   // initialization completed
   is_initialized_ = true;
   ROS_INFO("[DergbryanTracker]: initialized");
@@ -514,6 +598,10 @@ std::tuple<bool, std::string> DergbryanTracker::activate(const mrs_msgs::Positio
     return std::tuple(false, ss.str());
   }
 
+  trajectory_tracking_in_progress_ = false;
+
+  toggleHover(true);
+
   ss << "Activated";
   is_active_ = true;
   ROS_INFO("[DergbryanTracker]: activated");
@@ -522,14 +610,36 @@ std::tuple<bool, std::string> DergbryanTracker::activate(const mrs_msgs::Positio
 
 /*deactivate()//{*/
 void DergbryanTracker::deactivate(void) {
+
+  toggleHover(false);
+
   is_active_ = false;
+  trajectory_tracking_in_progress_ = false;
+
+  timer_trajectory_tracking_.stop();
+  {
+    std::scoped_lock lock(mutex_trajectory_tracking_states_);
+
+    trajectory_tracking_idx_     = 0;
+    //trajectory_tracking_sub_idx_ = 0;
+  }
+
+
   ROS_INFO("[DergbryanTracker]: deactivated");
+  //publishDiagnostics();
 }
 //}
 
 /*resetStatic()//{*/
 bool DergbryanTracker::resetStatic(void) {
   ROS_INFO("[DergbryanTracker]: no states to reset");
+
+
+  // {
+  // std::scoped_lock lock(mutex_mpc_x_);
+    trajectory_tracking_in_progress_ = false;
+  // }
+
   return true;
 }
 //}
@@ -673,7 +783,7 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
     ROS_ERROR_THROTTLE(1.0, "[DergbryanTracker]: could not calculate the UAV heading");
   }
 
-  
+  uav_heading_ = uav_heading;
 
   
   
@@ -752,6 +862,8 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
   future_trajectory_out_.points.clear();
 
 
+      
+  
   
 
 //   // return a position command
@@ -763,7 +875,19 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
 const mrs_msgs::TrackerStatus DergbryanTracker::getStatus() {
   mrs_msgs::TrackerStatus tracker_status;
   tracker_status.active = is_active_;
-  tracker_status.tracking_trajectory = false;
+  tracker_status.tracking_trajectory = trajectory_tracking_in_progress_;
+
+
+    if (trajectory_tracking_in_progress_) {
+
+    //auto uav_state = mrs_lib::get_mutexed(mutex_uav_state_, uav_state_);
+
+    std::scoped_lock lock(mutex_des_whole_trajectory_);
+    }
+
+
+
+
   return tracker_status;
 }
 //}
@@ -794,11 +918,15 @@ const std_srvs::TriggerResponse::ConstPtr DergbryanTracker::switchOdometrySource
 
 /*hover()//{*/
 const std_srvs::TriggerResponse::ConstPtr DergbryanTracker::hover([[maybe_unused]] const std_srvs::TriggerRequest::ConstPtr &cmd) {
-  std_srvs::TriggerResponse res;
-  res.message = "hover initiated";
-  res.success = true;
 
-  hover_ = true;
+  toggleHover(true);
+
+  std::stringstream ss;
+  ss << "initiating hover";
+
+  std_srvs::TriggerResponse res;
+  res.success = true;
+  res.message = ss.str();
 
   return std_srvs::TriggerResponse::ConstPtr(new std_srvs::TriggerResponse(res));
 }
@@ -806,27 +934,60 @@ const std_srvs::TriggerResponse::ConstPtr DergbryanTracker::hover([[maybe_unused
 
 /*startTrajectoryTracking()//{*/
 const std_srvs::TriggerResponse::ConstPtr DergbryanTracker::startTrajectoryTracking([[maybe_unused]] const std_srvs::TriggerRequest::ConstPtr &cmd) {
-  return std_srvs::TriggerResponse::Ptr();
+  std::stringstream ss;
+
+  auto [success, message] = startTrajectoryTrackingImpl();
+
+  std_srvs::TriggerResponse res;
+  res.success = success;
+  res.message = message;
+  
+  return std_srvs::TriggerResponse::ConstPtr(new std_srvs::TriggerResponse(res));
 }
 //}
 
 /*stopTrajectoryTracking()//{*/
 const std_srvs::TriggerResponse::ConstPtr DergbryanTracker::stopTrajectoryTracking([[maybe_unused]] const std_srvs::TriggerRequest::ConstPtr &cmd) {
-  return std_srvs::TriggerResponse::Ptr();
+  auto [success, message] = stopTrajectoryTrackingImpl();
+
+  std_srvs::TriggerResponse res;
+  res.success = success;
+  res.message = message;
+
+  return std_srvs::TriggerResponse::ConstPtr(new std_srvs::TriggerResponse(res));
 }
 //}
 
 /*resumeTrajectoryTracking()//{*/
 const std_srvs::TriggerResponse::ConstPtr DergbryanTracker::resumeTrajectoryTracking([[maybe_unused]] const std_srvs::TriggerRequest::ConstPtr &cmd) {
-  return std_srvs::TriggerResponse::Ptr();
+  auto [success, message] = resumeTrajectoryTrackingImpl();
+
+  std_srvs::TriggerResponse res;
+  res.success = success;
+  res.message = message;
+
+  return std_srvs::TriggerResponse::ConstPtr(new std_srvs::TriggerResponse(res));
 }
 //}
 
-/*gotoTrajectoryStart()//{*/
-const std_srvs::TriggerResponse::ConstPtr DergbryanTracker::gotoTrajectoryStart([[maybe_unused]] const std_srvs::TriggerRequest::ConstPtr &cmd) {
-  return std_srvs::TriggerResponse::Ptr();
-}
+// /*gotoTrajectoryStart()//{*/
+// const std_srvs::TriggerResponse::ConstPtr DergbryanTracker::gotoTrajectoryStart([[maybe_unused]] const std_srvs::TriggerRequest::ConstPtr &cmd) {
+//   return std_srvs::TriggerResponse::Ptr();
+// }
 //}
+
+/* //{ gotoTrajectoryStart() */
+
+const std_srvs::TriggerResponse::ConstPtr DergbryanTracker::gotoTrajectoryStart([[maybe_unused]] const std_srvs::TriggerRequest::ConstPtr& cmd) {
+
+  auto [success, message] = gotoTrajectoryStartImpl();
+
+  std_srvs::TriggerResponse res;
+  res.success = success;
+  res.message = message;
+
+  return std_srvs::TriggerResponse::ConstPtr(new std_srvs::TriggerResponse(res));
+}
 
 /*setConstraints()//{*/
 const mrs_msgs::DynamicsConstraintsSrvResponse::ConstPtr DergbryanTracker::setConstraints(const mrs_msgs::DynamicsConstraintsSrvRequest::ConstPtr &constraints) {
@@ -852,20 +1013,11 @@ const mrs_msgs::DynamicsConstraintsSrvResponse::ConstPtr DergbryanTracker::setCo
 /*setReference()//{*/
 const mrs_msgs::ReferenceSrvResponse::ConstPtr DergbryanTracker::setReference(const mrs_msgs::ReferenceSrvRequest::ConstPtr &cmd) {
 
+  toggleHover(false);
+
+  setGoal(cmd->reference.position.x, cmd->reference.position.y, cmd->reference.position.z, cmd->reference.heading, true);
+
   mrs_msgs::ReferenceSrvResponse res;
-
-  {
-    std::scoped_lock lock(mutex_goal_);
-
-  goal_x_=cmd->reference.position.x;
-  goal_y_=cmd->reference.position.y;
-  goal_z_=cmd->reference.position.z;
-  goal_heading_=cmd->reference.heading;
-
-  }
-
-  hover_ = false;
-
   res.success = true;
   res.message = "reference set";
 
@@ -873,10 +1025,54 @@ const mrs_msgs::ReferenceSrvResponse::ConstPtr DergbryanTracker::setReference(co
 }
 //}
 
+/* //{ setGoal() */
+
+//set absolute goal
+void DergbryanTracker::setGoal(const double pos_x, const double pos_y, const double pos_z, const double heading, const bool use_heading) {
+
+  double desired_heading = sradians::wrap(heading);
+  {
+  std::scoped_lock lock(mutex_goal_);
+
+  goal_x_ = pos_x;
+  goal_y_ = pos_y;
+  goal_z_= pos_z;
+  goal_heading_ = desired_heading;
+
+  }
+  // double desired_heading = sradians::wrap(heading);
+
+  // auto mpc_x_heading = mrs_lib::get_mutexed(mutex_mpc_x_, mpc_x_heading_);
+
+  // if (!use_heading) {
+  //   desired_heading = mpc_x_heading(0, 0);
+  // }
+
+  trajectory_tracking_in_progress_ = false;
+  timer_trajectory_tracking_.stop();
+
+  // setSinglePointReference(pos_x, pos_y, pos_z, desired_heading);
+
+  // publishDiagnostics();
+}
+
+//}
+
 /*setTrajectoryReference()//{*/
 const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTrajectoryReference([
     [maybe_unused]] const mrs_msgs::TrajectoryReferenceSrvRequest::ConstPtr &cmd) {
-  return mrs_msgs::TrajectoryReferenceSrvResponse::Ptr();
+  
+  std::stringstream ss;
+
+  auto [success, message, modified] = loadTrajectory(cmd->trajectory);
+
+  //ROS_INFO_STREAM("setTrajectoryReference cmd->trajectory = \n" << cmd->trajectory);
+  mrs_msgs::TrajectoryReferenceSrvResponse response;
+  response.success  = success;
+  response.message  = message;
+  response.modified = modified;
+
+  return mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr(new mrs_msgs::TrajectoryReferenceSrvResponse(response));
 }
 //}
 
@@ -2113,7 +2309,7 @@ void DergbryanTracker::DERG_computation(){
           DSM_a_ = DSM_a_temp;
         }
       }
-    u++;
+      u++;
     }
     double temp = DSM_a_/kappa_a;
     // ROS_INFO_STREAM("DSM_a_temp = \n" << DSM_a_temp);
@@ -2638,9 +2834,9 @@ if (DERG_strategy_id_ == 2) {
   if(DSM_total_ < 0){
     DSM_total_ = 0;
   }
-  ROS_INFO_STREAM("DSM_total_ = \n" << DSM_total_);
-  ROS_INFO_STREAM("DSM_s_ = \n" << DSM_s_);
-  ROS_INFO_STREAM("DSM_a_ = \n" << DSM_a_);
+  // ROS_INFO_STREAM("DSM_total_ = \n" << DSM_total_);
+  // ROS_INFO_STREAM("DSM_s_ = \n" << DSM_s_);
+  // ROS_INFO_STREAM("DSM_a_ = \n" << DSM_a_);
   //ROS_INFO_STREAM("NF_total = \n" << NF_total);
   // ROS_INFO_STREAM("NF_a = \n" << NF_a);
  
@@ -2989,6 +3185,649 @@ void DergbryanTracker::callbackOtherUavTrajectory(const mrs_msgs::FutureTrajecto
 //     other_uav_avoidance_trajectories_[trajectory.uav_name] = trajectory;
 //   }
 // }
+
+
+
+
+
+// | -------------------- referece setting -------------------- |
+// = copy of MpcTracker
+/* //{ loadTrajectory() */
+
+// method for setting desired trajectory
+std::tuple<bool, std::string, bool> DergbryanTracker::loadTrajectory(const mrs_msgs::TrajectoryReference msg) {
+//   // bryan: they don't seem to be used in this function, why use thme here????
+  // copy the member variables
+  // auto x         = mrs_lib::get_mutexed(mutex_mpc_x_, mpc_x_); !!!!
+  // auto uav_state = mrs_lib::get_mutexed(mutex_uav_state_, uav_state_);!!!!
+  std::stringstream ss;
+
+  /* check the trajectory dt //{ */
+
+  double trajectory_dt;
+  if (msg.dt <= 1e-4) {
+    trajectory_dt = 0.2;
+    ROS_WARN_THROTTLE(10.0, "[DergbryanTracker]: the trajectory dt was not specified, assuming its the old 0.2 s");
+  } else if (msg.dt < _dt1_) {
+    trajectory_dt = 0.2;
+    ss << std::setprecision(3) << "the trajectory dt (" << msg.dt << " s) is too small (smaller than the tracker's internal step size: " << _dt1_ << " s)";
+    ROS_ERROR_STREAM_THROTTLE(1.0, "[DergbryanTracker]: " << ss.str());
+    return std::tuple(false, ss.str(), false);
+  } else {
+    trajectory_dt = msg.dt;
+  }
+
+//   //}
+
+  int trajectory_size = msg.points.size();
+
+//   /* sanitize the time-ness of the trajectory //{ */
+
+  int    trajectory_sample_offset    = 0;  // how many samples in past is the trajectory
+//   int    trajectory_subsample_offset = 0;  // how many simulation inner loops ahead of the first valid sample
+  double trajectory_time_offset      = 0;  // how much time in past in [s]
+
+//   // btw, "trajectory_time_offset = trajectory_dt*trajectory_sample_offset + _dt1_*trajectory_subsample_offset" should hold
+  if (msg.fly_now) {
+
+    ros::Time trajectory_time = msg.header.stamp;
+
+    // the desired time is 0 => the current time
+    // the trajecoty is a single point => the current time
+    if (trajectory_time == ros::Time(0) || int(msg.points.size()) == 1) {
+
+      trajectory_time_offset = 0.0;
+
+      // the desired time is specified
+    } else {
+
+      trajectory_time_offset = (ros::Time::now() - trajectory_time).toSec();
+
+      // when the time offset is negative, thus in the future
+      // just say it, but use it like its from the current time
+      if (trajectory_time_offset < 0.0) {
+
+        ROS_WARN_THROTTLE(1.0, "[DergbryanTracker]: received trajectory with timestamp in the future by %.2f s", -trajectory_time_offset);
+
+        trajectory_time_offset = 0.0;
+      }
+    }
+
+    // if the time offset is set, check if we need to "move the first idx"
+    if (trajectory_time_offset > 0) {
+
+      // calculate the offset in samples
+      trajectory_sample_offset = int(floor(trajectory_time_offset / trajectory_dt));
+
+      // and get the subsample offset, which will be used to initialize the interpolator
+      //trajectory_subsample_offset = int(floor(fmod(trajectory_time_offset, trajectory_dt) / _dt1_));!!!
+
+      //ROS_DEBUG_THROTTLE(1.0, "[DergbryanTracker]: sanity check: %.3f", trajectory_dt * trajectory_sample_offset + _dt1_ * trajectory_subsample_offset);!!!
+
+      // if the offset is larger than the number of points in the trajectory
+      // the trajectory can not be used
+      if (trajectory_sample_offset >= trajectory_size) {
+
+        ss << "trajectory timestamp is too old (time difference = " << trajectory_time_offset << ")";
+        ROS_ERROR_STREAM_THROTTLE(1.0, "[DergbryanTracker]: " << ss.str());
+        return std::tuple(false, ss.str(), false);
+
+      } else {
+
+        // If the offset is larger than one trajectory sample,
+        // offset the start
+        if (trajectory_time_offset >= trajectory_dt) {
+
+          // decrease the trajectory size
+          trajectory_size -= trajectory_sample_offset;
+
+          ROS_WARN_STREAM_THROTTLE(1.0, "[DergbryanTracker]: got trajectory with timestamp '" << trajectory_time_offset << " s' in the past");
+
+        } else {
+
+          trajectory_sample_offset = 0;
+        }
+      }
+    }
+  }
+
+  //}
+
+  ROS_DEBUG_THROTTLE(1.0, "[DergbryanTracker]: trajectory sample offset: %d", trajectory_sample_offset);
+//   ROS_DEBUG_THROTTLE(1.0, "[DergbryanTracker]: trajectory subsample offset: %d", trajectory_subsample_offset); !!!!
+
+//   // after this, we should have the correct value of
+//   // * trajectory_size
+//   // * trajectory_sample_offset
+//   // * trajectory_subsample_offset
+
+//   /* copy the trajectory to a local variable //{ */
+
+  // copy only the part from the first valid index
+//   // _mpc_horizon_len_ = num_pred_samples_
+// !!!! deleted parts in the original block: _mpc_horizon_len_ = 0
+  MatrixXd des_x_whole_trajectory       = VectorXd::Zero(trajectory_size, 1);
+  MatrixXd des_y_whole_trajectory       = VectorXd::Zero(trajectory_size, 1);
+  MatrixXd des_z_whole_trajectory       = VectorXd::Zero(trajectory_size, 1);
+  MatrixXd des_heading_whole_trajectory = VectorXd::Zero(trajectory_size, 1);
+
+  for (int i = 0; i < trajectory_size; i++) {
+
+    des_x_whole_trajectory(i)       = msg.points[trajectory_sample_offset + i].position.x;
+    des_y_whole_trajectory(i)       = msg.points[trajectory_sample_offset + i].position.y;
+    des_z_whole_trajectory(i)       = msg.points[trajectory_sample_offset + i].position.z;
+    des_heading_whole_trajectory(i) = msg.points[trajectory_sample_offset + i].heading;
+  }
+
+//   //}
+
+//   /* set looping //{ */
+
+  bool loop = false;
+
+  if (msg.loop) {
+
+    double first_x = des_x_whole_trajectory(0);
+    double first_y = des_y_whole_trajectory(0);
+    double first_z = des_z_whole_trajectory(0);
+
+    double last_x = des_x_whole_trajectory(trajectory_size - 1);
+    double last_y = des_y_whole_trajectory(trajectory_size - 1);
+    double last_z = des_z_whole_trajectory(trajectory_size - 1);
+
+    // check whether the trajectory is loopable
+    // TODO should check heading aswell
+    if (mrs_lib::geometry::dist(vec3_t(first_x, first_y, first_z), vec3_t(last_x, last_y, last_z)) < 3.141592653) {
+
+      ROS_INFO_THROTTLE(1.0, "[DergbryanTracker]: looping enabled");
+      loop = true;
+
+    } else {
+
+      ss << "can not loop trajectory, the first and last points are too far apart";
+      ROS_WARN_STREAM_THROTTLE(1.0, "[DergbryanTracker]: " << ss.str());
+      return std::tuple(false, ss.str(), false);
+    }
+
+  } else {
+
+    loop = false;
+  }
+
+  //}
+
+  // by this time, the values of these should be set:
+  // * loop
+//!!!!! seems like the final point are all the same over mpc horizon
+//   /* add tail (the last point repeated to fill the prediction horizon) //{ */
+
+//   if (!loop) {
+
+//     // extend it so it has smooth ending
+//     for (int i = 0; i < num_pred_samples_; i++) {
+
+//       des_x_whole_trajectory(i + trajectory_size)       = des_x_whole_trajectory(i + trajectory_size - 1);
+//       des_y_whole_trajectory(i + trajectory_size)       = des_y_whole_trajectory(i + trajectory_size - 1);
+//       des_z_whole_trajectory(i + trajectory_size)       = des_z_whole_trajectory(i + trajectory_size - 1);
+//       des_heading_whole_trajectory(i + trajectory_size) = des_heading_whole_trajectory(i + trajectory_size - 1);
+//     }
+//   }
+
+//   //}
+
+  // by this time, the values of these should be set correctly:
+  // * trajectory_size
+  // * des_x_whole_trajectory
+  // * des_y_whole_trajectory
+  // * des_z_whole_trajectory
+  // * des_heading_whole_trajectory
+
+  /* update the global variables //{ */
+
+  {
+    std::scoped_lock lock(mutex_des_whole_trajectory_, mutex_des_trajectory_, mutex_trajectory_tracking_states_);
+//     auto mpc_x_heading = mrs_lib::get_mutexed(mutex_mpc_x_, mpc_x_heading_); !!!!
+
+    trajectory_tracking_in_progress_ = msg.fly_now;
+    trajectory_track_heading_        = msg.use_heading;
+
+    // allocate the vectors
+    // !!!! deleted parts in the original block: _mpc_horizon_len_ = 0
+    des_x_whole_trajectory_       = std::make_shared<VectorXd>(trajectory_size, 1);
+    des_y_whole_trajectory_       = std::make_shared<VectorXd>(trajectory_size, 1);
+    des_z_whole_trajectory_       = std::make_shared<VectorXd>(trajectory_size, 1);
+    des_heading_whole_trajectory_ = std::make_shared<VectorXd>(trajectory_size, 1);
+    // !!!! deleted parts in the original block: _mpc_horizon_len_ = 0
+    for (int i = 0; i < trajectory_size; i++) {
+
+      (*des_x_whole_trajectory_)(i) = des_x_whole_trajectory(i);
+      (*des_y_whole_trajectory_)(i) = des_y_whole_trajectory(i);
+      (*des_z_whole_trajectory_)(i) = des_z_whole_trajectory(i);
+
+      if (trajectory_track_heading_) {
+        (*des_heading_whole_trajectory_)(i) = des_heading_whole_trajectory(i);
+      } else {
+        //(*des_heading_whole_trajectory_).fill(mpc_x_heading(0, 0)); !!!
+        (*des_heading_whole_trajectory_).fill(uav_heading_); // !!!!
+      }
+    }
+
+    // if we are tracking trajectory, copy the setpoint
+    if (trajectory_tracking_in_progress_) {
+
+      toggleHover(false);
+
+//       /* interpolate the trajectory points and fill in the desired_trajectory vector //{ */
+
+//       for (int i = 0; i < _mpc_horizon_len_; i++) {
+
+//         double first_time = _dt1_ + i * _dt2_ + trajectory_subsample_offset * _dt1_;
+
+//         int first_idx  = floor(first_time / trajectory_dt);
+//         int second_idx = first_idx + 1;
+
+//         double interp_coeff = std::fmod(first_time / trajectory_dt, 1.0);
+
+//         if (trajectory_tracking_loop_) {
+
+//           if (second_idx >= trajectory_size) {
+//             second_idx -= trajectory_size;
+//           }
+
+//           if (first_idx >= trajectory_size) {
+//             first_idx -= trajectory_size;
+//           }
+//         } else {
+
+//           if (second_idx >= trajectory_size) {
+//             second_idx = trajectory_size - 1;
+//           }
+
+//           if (first_idx >= trajectory_size) {
+//             first_idx = trajectory_size - 1;
+//           }
+//         }
+
+//         des_x_trajectory_(i, 0) = (1 - interp_coeff) * des_x_whole_trajectory(first_idx) + interp_coeff * des_x_whole_trajectory(second_idx);
+//         des_y_trajectory_(i, 0) = (1 - interp_coeff) * des_y_whole_trajectory(first_idx) + interp_coeff * des_y_whole_trajectory(second_idx);
+//         des_z_trajectory_(i, 0) = (1 - interp_coeff) * des_z_whole_trajectory(first_idx) + interp_coeff * des_z_whole_trajectory(second_idx);
+
+//         des_heading_trajectory_(i, 0) = sradians::interp(des_heading_whole_trajectory(first_idx), des_heading_whole_trajectory(second_idx), interp_coeff);
+//       }
+
+      //!!!!
+
+
+      //}
+    }
+
+    trajectory_size_             = trajectory_size;
+    trajectory_tracking_idx_     = 0;
+//     trajectory_tracking_sub_idx_ = trajectory_subsample_offset;
+    trajectory_set_              = true;
+    trajectory_tracking_loop_    = loop;
+    trajectory_dt_               = trajectory_dt;
+    trajectory_count_++;
+
+    timer_trajectory_tracking_.setPeriod(ros::Duration(trajectory_dt));
+  }
+
+//   //}
+
+  if (trajectory_tracking_in_progress_) {
+    timer_trajectory_tracking_.start();
+  }
+
+  ROS_INFO_THROTTLE(1, "[DergbryanTracker]: received trajectory with length %d", trajectory_size);
+
+//   /* publish the debugging topics of the post-processed trajectory //{ */
+
+//   {
+
+//     geometry_msgs::PoseArray debug_trajectory_out;
+//     debug_trajectory_out.header.stamp    = ros::Time::now();
+//     debug_trajectory_out.header.frame_id = common_handlers_->transformer->resolveFrameName(msg.header.frame_id);
+
+//     {
+//       std::scoped_lock lock(mutex_des_whole_trajectory_);
+
+//       for (int i = 0; i < trajectory_size; i++) {
+
+//         geometry_msgs::Pose new_pose;
+
+//         new_pose.position.x = (*des_x_whole_trajectory_)(i);
+//         new_pose.position.y = (*des_y_whole_trajectory_)(i);
+//         new_pose.position.z = (*des_z_whole_trajectory_)(i);
+
+//         new_pose.orientation = mrs_lib::AttitudeConverter(0, 0, (*des_heading_whole_trajectory_)(i));
+
+//         debug_trajectory_out.poses.push_back(new_pose);
+//       }
+//     }
+
+//     try {
+//       pub_debug_processed_trajectory_poses_.publish(debug_trajectory_out);
+//     }
+//     catch (...) {
+//       ROS_ERROR("[MpcTracker]: exception caught during publishing topic %s", pub_debug_processed_trajectory_poses_.getTopic().c_str());
+//     }
+
+//     visualization_msgs::MarkerArray msg_out;
+
+//     visualization_msgs::Marker marker;
+
+//     marker.header.stamp     = ros::Time::now();
+//     marker.header.frame_id  = common_handlers_->transformer->resolveFrameName(msg.header.frame_id);
+//     marker.type             = visualization_msgs::Marker::LINE_LIST;
+//     marker.color.a          = 1;
+//     marker.scale.x          = 0.05;
+//     marker.color.r          = 1;
+//     marker.color.g          = 0;
+//     marker.color.b          = 0;
+//     marker.pose.orientation = mrs_lib::AttitudeConverter(0, 0, 0);
+
+//     {
+//       std::scoped_lock lock(mutex_des_whole_trajectory_);
+
+//       for (int i = 0; i < trajectory_size - 1; i++) {
+
+//         geometry_msgs::Point point1;
+
+//         point1.x = des_x_whole_trajectory(i);
+//         point1.y = des_y_whole_trajectory(i);
+//         point1.z = des_z_whole_trajectory(i);
+
+//         marker.points.push_back(point1);
+
+//         geometry_msgs::Point point2;
+
+//         point2.x = des_x_whole_trajectory(i + 1);
+//         point2.y = des_y_whole_trajectory(i + 1);
+//         point2.z = des_z_whole_trajectory(i + 1);
+
+//         marker.points.push_back(point2);
+//       }
+//     }
+
+//     msg_out.markers.push_back(marker);
+
+//     try {
+//       pub_debug_processed_trajectory_markers_.publish(msg_out);
+//     }
+//     catch (...) {
+//       ROS_ERROR("exception caught during publishing topic %s", pub_debug_processed_trajectory_markers_.getTopic().c_str());
+//     }
+//   }
+
+//   //}
+
+//   publishDiagnostics();
+
+  return std::tuple(true, "trajectory loaded", false);
+}
+
+/* gotoTrajectoryStartImpl() //{ */
+
+std::tuple<bool, std::string> DergbryanTracker::gotoTrajectoryStartImpl(void) {
+
+  std::stringstream ss;
+
+  if (trajectory_set_) {
+
+    toggleHover(false);
+
+    trajectory_tracking_in_progress_ = false;
+    timer_trajectory_tracking_.stop();
+
+    {
+      std::scoped_lock lock(mutex_des_whole_trajectory_);
+
+      setGoal((*des_x_whole_trajectory_)[0], (*des_y_whole_trajectory_)[0], (*des_z_whole_trajectory_)[0], (*des_heading_whole_trajectory_)[0],
+              trajectory_track_heading_);
+    }
+
+    //publishDiagnostics();
+
+    ss << "flying to the start of the trajectory";
+    ROS_INFO_STREAM_THROTTLE(1.0, "[DergbryanTracker]: " << ss.str());
+
+    return std::tuple(true, ss.str());
+
+  } else {
+
+    ss << "can not fly to the start of the trajectory, the trajectory is not set";
+    ROS_WARN_STREAM_THROTTLE(1.0, "[DergbryanTracker]: " << ss.str());
+
+    return std::tuple(false, ss.str());
+  }
+}
+
+//}
+
+
+
+
+//
+/* toggleHover() //{ */
+
+void DergbryanTracker::toggleHover(bool in) {
+
+  if (in == false && hovering_in_progress_) {
+
+    ROS_DEBUG("[DergbryanTracker]: stoppping the hover timer");
+
+    while (hover_timer_runnning_) {
+
+      ROS_DEBUG("[DergbryanTracker]: the hover is in the middle of an iteration, waiting for it to finish");
+      ros::Duration wait(0.01);
+      wait.sleep();
+    }
+
+    // timer_hover_.stop();
+
+    hovering_in_progress_ = false;
+
+  } else if (in == true && !hovering_in_progress_) {
+
+    ROS_DEBUG("[DergbryanTracker]: starting the hover timer");
+
+    hovering_in_progress_ = true;
+
+    // timer_hover_.start();
+  }
+}
+
+//}
+
+
+// | ------------------- trajectory tracking ------------------ |
+
+/* startTrajectoryTrackingImpl() //{ */
+
+std::tuple<bool, std::string> DergbryanTracker::startTrajectoryTrackingImpl(void) {
+
+  std::stringstream ss;
+
+  if (trajectory_set_) {
+
+    toggleHover(false);
+
+    {
+      std::scoped_lock lock(mutex_des_trajectory_);
+
+      trajectory_tracking_in_progress_ = true;
+      trajectory_tracking_idx_         = 0;
+      // trajectory_tracking_sub_idx_     = 0;
+    }
+
+    timer_trajectory_tracking_.setPeriod(ros::Duration(trajectory_dt_));
+    timer_trajectory_tracking_.start();
+
+    //publishDiagnostics();
+
+    ss << "trajectory tracking started";
+    ROS_INFO_STREAM_THROTTLE(1.0, "[DergbryanTracker]: " << ss.str());
+
+    return std::tuple(true, ss.str());
+
+  } else {
+
+    ss << "can not start trajectory tracking, the trajectory is not set";
+    ROS_WARN_STREAM_THROTTLE(1.0, "[DergbryanTracker]: " << ss.str());
+
+    return std::tuple(false, ss.str());
+  }
+}
+
+//}
+
+
+/* resumeTrajectoryTrackingImpl() //{ */
+
+std::tuple<bool, std::string> DergbryanTracker::resumeTrajectoryTrackingImpl(void) {
+
+  std::stringstream ss;
+
+  if (trajectory_set_) {
+
+    toggleHover(false);
+
+    auto trajectory_tracking_idx = mrs_lib::get_mutexed(mutex_trajectory_tracking_states_, trajectory_tracking_idx_);
+
+    if (trajectory_tracking_idx < (trajectory_size_ - 1)) {
+
+      {
+        std::scoped_lock lock(mutex_des_trajectory_);
+
+        trajectory_tracking_in_progress_ = true;
+      }
+
+      timer_trajectory_tracking_.setPeriod(ros::Duration(trajectory_dt_));
+      timer_trajectory_tracking_.start();
+
+      ss << "trajectory tracking resumed";
+      ROS_INFO_STREAM_THROTTLE(1.0, "[DergbryanTracker]: " << ss.str());
+
+      //publishDiagnostics();
+
+      return std::tuple(true, ss.str());
+
+    } else {
+
+      ss << "can not resume trajectory tracking, trajectory is already finished";
+      ROS_WARN_STREAM_THROTTLE(1.0, "[DergbryanTracker]: " << ss.str());
+
+      return std::tuple(false, ss.str());
+    }
+
+  } else {
+
+    ss << "can not resume trajectory tracking, ther trajectory is not set";
+    ROS_WARN_STREAM_THROTTLE(1.0, "[DergbryanTracker]: " << ss.str());
+
+    return std::tuple(false, ss.str());
+  }
+}
+
+//}
+/* stopTrajectoryTrackingImpl() //{ */
+
+std::tuple<bool, std::string> DergbryanTracker::stopTrajectoryTrackingImpl(void) {
+
+  std::stringstream ss;
+
+  if (trajectory_tracking_in_progress_) {
+
+    trajectory_tracking_in_progress_ = false;
+    timer_trajectory_tracking_.stop();
+
+    toggleHover(true);
+
+    ss << "stopping trajectory tracking";
+    ROS_INFO_STREAM_THROTTLE(1.0, "[DergbryanTracker]: " << ss.str());
+
+    //publishDiagnostics();
+
+  } else {
+
+    ss << "can not stop trajectory tracking, already at stop";
+    ROS_INFO_STREAM_THROTTLE(1.0, "[DergbryanTracker]: " << ss.str());
+  }
+
+  return std::tuple(true, ss.str());
+}
+
+//}
+
+
+/* timerTrajectoryTracking() //{ */
+
+void DergbryanTracker::timerTrajectoryTracking(const ros::TimerEvent& event) {
+
+  auto trajectory_size = mrs_lib::get_mutexed(mutex_des_trajectory_, trajectory_size_);
+  auto trajectory_dt   = mrs_lib::get_mutexed(mutex_trajectory_tracking_states_, trajectory_dt_);
+
+  mrs_lib::Routine profiler_routine = profiler.createRoutine("timerTrajectoryTracking", int(1.0 / trajectory_dt), 0.01, event);
+
+  {
+    std::scoped_lock lock(mutex_trajectory_tracking_states_);
+
+    // do a step of the main tracking idx
+
+    // reset the subsampling counter
+    //trajectory_tracking_sub_idx_ = 0;
+
+    // INCREMENT THE TRACKING IDX
+    trajectory_tracking_idx_++;
+    // !!!!! bryan, inspured by original timerMpc
+    // looping  
+    if (trajectory_tracking_loop_) {
+      if (trajectory_tracking_idx_ >= trajectory_size) {
+        trajectory_tracking_idx_ -= trajectory_size;
+      }
+    } else {
+      if (trajectory_tracking_idx_ >= trajectory_size) {
+        trajectory_tracking_idx_ = trajectory_tracking_idx_ - 1;
+      }
+    }
+    {
+      std::scoped_lock lock(mutex_des_whole_trajectory_, mutex_goal_);
+
+      goal_x_ = (*des_x_whole_trajectory_)[trajectory_tracking_idx_];
+      goal_y_ = (*des_y_whole_trajectory_)[trajectory_tracking_idx_];
+      goal_z_ = (*des_z_whole_trajectory_)[trajectory_tracking_idx_];
+      goal_heading_ = (*des_heading_whole_trajectory_)[trajectory_tracking_idx_];
+    }
+
+
+    // if the tracking idx hits the end of the trajectory
+    if (trajectory_tracking_idx_ == trajectory_size) {
+
+      if (trajectory_tracking_loop_) {
+
+        // reset the idx
+        trajectory_tracking_idx_ = 0;
+
+        ROS_INFO("[DergbryanTracker]: trajectory looped");
+
+      } else {
+
+        trajectory_tracking_in_progress_ = false;
+
+        // set the idx to the last idx of the trajectory
+        trajectory_tracking_idx_ = trajectory_size - 1;
+
+        timer_trajectory_tracking_.stop();
+
+        ROS_INFO("[DergbryanTracker]: done tracking trajectory");
+      }
+    }
+  }
+
+  //publishDiagnostics();
+}
+
+//}
 
 
 
