@@ -1,19 +1,55 @@
+# issue: why can't we use the dergbryantracker.yaml in testing package? it shshould be loaded in the session.yaml
+use_derg: true # if false it bypasses the disred reference directly, but still computes the trajectory predictions
 network:
-
   robot_names: [
-
     uav1, uav2, uav3, uav4 , uav5, uav6, uav7, uav8, uav9 , uav10
-
   ]
+constraints:
+  total_thrust:
+    min: 0.0
+    # max thrust can be changed via _thrust_saturation_ ratio [0, 1] in the se3_brubotics.yaml
+    extra_saturation_ratio: 0.92 #0.90 # [0, 1] allows some overshoot over the hard thrust limit _thrust_saturation_ to reduce the chance of triggering the emergency controller after 1s of saturation
+prediction:
+  horizon: 3.0 #2.0 #3.0
 
 
-# use_derg: true
+  
+strategy_id: 4 #0 / 1 / 2 / 3 / 4
+
 
 # use_wall_constraints: true
 
 # use_cylindrical_constraints: false
 
 # use_agents_avoidence: false
+
+agent_collision_volumes:
+  sphere:
+    radius: 5.0 # a step of 4.5m in xy does not lead to instability.
+  tube:
+    radius: 
+      lateral: 1.0 #1.5 #1.0 # for the compliant gains, the max overshoots are about this size. The larger thid value, the higher the uav's speed can be and the closer the thrust to saturation.
+      longitudinal: 4.0 # = sphere/radius - tube/radius/lateral
+
+dynamic_safety_margin:
+  kappa:
+    s: 27 #27 #27 #1.5 # 1.5 #1.1 #1.5 #1.1 # saturation total thrust
+    a: 27 #27 #160 #80.0 #15.0 # agent collision avoidance
+  enable_dsm:
+    constant_dsm: 10 # used dsm if all dsms below are disabled
+    s: true
+    a: true
+navigation_field:
+  attraction:
+    smoothing_ratio: 0.20 # smoothing factor
+  repulsion:
+    agents:
+      enabled: true
+      influence_margin: 4.0 #8.0 #4.0 # choose large enough to give uavs time to react. Increase for increased DSMs.
+      static_safety_margin: 0.07 # 0.00 # test if agents on a line don't collide without circulation. Increase untill no collsiions. Or check single agent step response deviation of simulation vs reality.
+      circulation_gain: 0.05 # put on value < 10^-4 (e.g; 0.0) to switch off. 
+      circulation_type: "xy" # "xy", "xz", "yz", "xyz"
+
 
 
 #mpc_rate: 100.0 # rate of MPC calculation, >= 10 Hz

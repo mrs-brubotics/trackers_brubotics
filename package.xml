@@ -25,7 +25,7 @@
   <depend>mrs_uav_managers</depend>
   <depend>mrs_uav_trackers</depend>
   <depend>dynamic_reconfigure</depend>
-
+  <depend>std_msgs</depend>
 
   <exec_depend>message_runtime</exec_depend>
 

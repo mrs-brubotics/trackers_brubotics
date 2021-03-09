@@ -14,10 +14,12 @@ find_package(catkin REQUIRED COMPONENTS
   mrs_uav_trackers # additionally added by brubotics wrt ctu
   dynamic_reconfigure
   message_generation
+  genmsg
   )
 
 add_message_files(FILES
   DSM.msg
+  FutureTrajectoryTube.msg
 )
 generate_messages(DEPENDENCIES geometry_msgs std_msgs)
 
@@ -36,7 +38,7 @@ set(Eigen_LIBRARIES ${EIGEN3_LIBRARIES})
 catkin_package(
   INCLUDE_DIRS include
   LIBRARIES MpcTrackerCvxgen # additionally added by brubotics wrt ctu
-  CATKIN_DEPENDS geometry_msgs tf mrs_lib mrs_uav_managers mrs_msgs mrs_uav_trackers message_runtime # mrs_uav_trackers additionally added by brubotics wrt ctu
+  CATKIN_DEPENDS geometry_msgs tf mrs_lib mrs_uav_managers mrs_msgs mrs_uav_trackers message_runtime std_msgs# mrs_uav_trackers additionally added by brubotics wrt ctu
   DEPENDS Eigen
   )
 
