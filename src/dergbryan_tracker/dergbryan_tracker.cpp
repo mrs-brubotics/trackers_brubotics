@@ -2316,7 +2316,7 @@ void DergbryanTracker::DERG_computation(){
   // | ------------------------ control input constraints ----------------------- |
   // TODO: predicted_thrust_out.poses is not good programming for a scalar. Maybe try using Class: Std_msgs::Float32MultiArray and test plot still work
   double diff_T = thrust_saturation_physical_; // initialization at the highest possible positive difference value
-  ROS_INFO_STREAM("thrust_saturation_physical_ = \n" << thrust_saturation_physical_);
+  // ROS_INFO_STREAM("thrust_saturation_physical_ = \n" << thrust_saturation_physical_);
   for (size_t i = 0; i < num_pred_samples_; i++) {
     double diff_Tmax = thrust_saturation_physical_ - predicted_thrust_out.poses[i].position.x;
     double diff_Tmin = predicted_thrust_out.poses[i].position.x - _T_min_;
@@ -2479,8 +2479,27 @@ void DergbryanTracker::DERG_computation(){
     }
     // other uavs:
     std::map<std::string, mrs_msgs::FutureTrajectory>::iterator it1 = other_uavs_applied_references_.begin();
-    std::map<std::string, mrs_msgs::FutureTrajectory>::iterator it2 = other_uavs_positions_.begin();
-    while ((it1 != other_uavs_applied_references_.end()) || (it2 != other_uavs_positions_.end()) ) {
+    //std::map<std::string, mrs_msgs::FutureTrajectory>::iterator it2 = other_uavs_positions_.begin();
+
+    // ROS_INFO_STREAM("pv uav1 = \n" << other_uavs_applied_references_["uav1"]);
+
+    while ((it1 != other_uavs_applied_references_.end()) ) {
+      // make sure we use the same uavid for both iterators. It must be robust to possible difference in lenths of the iterators (if some communication got lost) or a different order (e.g. if not auto alphabetical).
+      std::string this_uav_id = it1->first;
+      try
+      {
+        mrs_msgs::FutureTrajectory temp_pose = other_uavs_positions_[this_uav_id];
+        //ROS_WARN_THROTTLE(1.0, "[DergbryanTracker]: Lost communicated position corresponding to the applied reference of %s \n", this_uav_id.c_str());
+      }
+      catch(...)
+      {
+        // other_uavs_positions_[this_uav_id] does not exist. Skip this iteration directly.
+        ROS_WARN_THROTTLE(1.0, "[DergbryanTracker]: Lost communicated position corresponding to the applied reference of %s \n", this_uav_id.c_str());
+        it1++;
+        continue;
+      }
+            
+      
       // ROS_INFO_STREAM("inside \n");
       // other uavs:
       double other_uav_applied_ref_x = it1->second.points[0].x;//Second means accessing the second part of the iterator. Here it is FutureTrajectory
@@ -2488,9 +2507,12 @@ void DergbryanTracker::DERG_computation(){
       double other_uav_applied_ref_z = it1->second.points[0].z;
       Eigen::Vector3d point_link_applied_ref_other_uav(other_uav_applied_ref_x, other_uav_applied_ref_y, other_uav_applied_ref_z);
       
-      double other_uav_pos_x = it2->second.points[0].x;//Second means accessing the second part of the iterator. Here it is FutureTrajectory
-      double other_uav_pos_y = it2->second.points[0].y;
-      double other_uav_pos_z = it2->second.points[0].z;
+      // double other_uav_pos_x = it2->second.points[0].x;//Second means accessing the second part of the iterator. Here it is FutureTrajectory
+      // double other_uav_pos_y = it2->second.points[0].y;
+      // double other_uav_pos_z = it2->second.points[0].z;
+      double other_uav_pos_x = other_uavs_positions_[this_uav_id].points[0].x;
+      double other_uav_pos_y = other_uavs_positions_[this_uav_id].points[0].y;
+      double other_uav_pos_z = other_uavs_positions_[this_uav_id].points[0].z;
       Eigen::Vector3d point_link_pos_other_uav(other_uav_pos_x, other_uav_pos_y, other_uav_pos_z);
 
       Eigen::Vector3d point_link_star_other_uav; // lambda = 1
@@ -2545,7 +2567,7 @@ void DergbryanTracker::DERG_computation(){
         }
       }
       it1++;
-      it2++;
+      //it2++;
     }
 
     
@@ -2605,24 +2627,47 @@ void DergbryanTracker::DERG_computation(){
       point_link_star = point_link_applied_ref;
     }
 
+
+
     // other uavs:
     std::map<std::string, mrs_msgs::FutureTrajectory>::iterator it1 = other_uavs_applied_references_.begin();
-    std::map<std::string, mrs_msgs::FutureTrajectory>::iterator it2 = other_uavs_positions_.begin();
-    
-    while ((it1 != other_uavs_applied_references_.end()) || (it2 != other_uavs_positions_.end()) ) {
-      // other uavs:
-      double other_uav_ref_x = it1->second.points[0].x;//Second means accessing the second part of the iterator. Here it is FutureTrajectory
-      double other_uav_ref_y = it1->second.points[0].y;
-      double other_uav_ref_z = it1->second.points[0].z;
-      Eigen::Vector3d point_link_applied_ref_other_uav(other_uav_ref_x, other_uav_ref_y, other_uav_ref_z);
+    //std::map<std::string, mrs_msgs::FutureTrajectory>::iterator it2 = other_uavs_positions_.begin();
 
-      double other_uav_pos_x = it2->second.points[0].x;//Second means accessing the second part of the iterator. Here it is FutureTrajectory
-      // ROS_INFO_STREAM("other_uav_pos_x = \n" << other_uav_pos_x);
-      double other_uav_pos_y = it2->second.points[0].y;
-      double other_uav_pos_z = it2->second.points[0].z;
-      Eigen::Vector3d point_link_pos_other_uav(other_uav_pos_x, other_uav_pos_y, other_uav_pos_z);
+    // ROS_INFO_STREAM("pv uav1 = \n" << other_uavs_applied_references_["uav1"]);
+
+    while ((it1 != other_uavs_applied_references_.end()) ) {
+      // make sure we use the same uavid for both iterators. It must be robust to possible difference in lenths of the iterators (if some communication got lost) or a different order (e.g. if not auto alphabetical).
+      std::string this_uav_id = it1->first;
+      try
+      {
+        mrs_msgs::FutureTrajectory temp_pose = other_uavs_positions_[this_uav_id];
+        //ROS_WARN_THROTTLE(1.0, "[DergbryanTracker]: Lost communicated position corresponding to the applied reference of %s \n", this_uav_id.c_str());
+      }
+      catch(...)
+      {
+        // other_uavs_positions_[this_uav_id] does not exist. Skip this iteration directly.
+        ROS_WARN_THROTTLE(1.0, "[DergbryanTracker]: Lost communicated position corresponding to the applied reference of %s \n", this_uav_id.c_str());
+        it1++;
+        continue;
+      }
+            
       
+      // ROS_INFO_STREAM("inside \n");
+      // other uavs:
+      double other_uav_applied_ref_x = it1->second.points[0].x;//Second means accessing the second part of the iterator. Here it is FutureTrajectory
+      double other_uav_applied_ref_y = it1->second.points[0].y;
+      double other_uav_applied_ref_z = it1->second.points[0].z;
+      Eigen::Vector3d point_link_applied_ref_other_uav(other_uav_applied_ref_x, other_uav_applied_ref_y, other_uav_applied_ref_z);
+      
+      // double other_uav_pos_x = it2->second.points[0].x;//Second means accessing the second part of the iterator. Here it is FutureTrajectory
+      // double other_uav_pos_y = it2->second.points[0].y;
+      // double other_uav_pos_z = it2->second.points[0].z;
+      double other_uav_pos_x = other_uavs_positions_[this_uav_id].points[0].x;
+      double other_uav_pos_y = other_uavs_positions_[this_uav_id].points[0].y;
+      double other_uav_pos_z = other_uavs_positions_[this_uav_id].points[0].z;
+      Eigen::Vector3d point_link_pos_other_uav(other_uav_pos_x, other_uav_pos_y, other_uav_pos_z);
 
+    
       Eigen::Vector3d point_mu_link0;
       Eigen::Vector3d point_nu_link1;
       std::tie(point_mu_link0, point_nu_link1) = getMinDistDirLineSegments(point_link_applied_ref, point_link_pos, point_link_applied_ref_other_uav, point_link_pos_other_uav);//(point0_link0, point1_link0, point0_link1, point1_link1);
@@ -2665,7 +2710,7 @@ void DergbryanTracker::DERG_computation(){
         }
       }
       it1++;
-      it2++;
+      //it2++;
     }
 
     for (size_t i = 0; i < num_pred_samples_; i++) {
@@ -2783,22 +2828,52 @@ void DergbryanTracker::DERG_computation(){
 
     // other uavs:
     std::map<std::string, mrs_msgs::FutureTrajectory>::iterator it1 = other_uavs_applied_references_.begin();
-    std::map<std::string, mrs_msgs::FutureTrajectory>::iterator it2 = other_uavs_positions_.begin();
-    std::map<std::string, trackers_brubotics::FutureTrajectoryTube>::iterator it3 = other_uav_tube_.begin();
-    // std::map<std::string, double>::iterator it3 = other_uav_tube_min_radius_.begin();
+    //std::map<std::string, mrs_msgs::FutureTrajectory>::iterator it2 = other_uavs_positions_.begin();
+    //std::map<std::string, trackers_brubotics::FutureTrajectoryTube>::iterator it3 = other_uav_tube_.begin();
+
     
-    
-    while ((it1 != other_uavs_applied_references_.end()) || (it2 != other_uavs_positions_.end()) || (it3 != other_uav_tube_.end()) ) {
+    while ((it1 != other_uavs_applied_references_.end())){// || (it2 != other_uavs_positions_.end()) || (it3 != other_uav_tube_.end()) ) {
+       // make sure we use the same uavid for both iterators. It must be robust to possible difference in lenths of the iterators (if some communication got lost) or a different order (e.g. if not auto alphabetical).
+      std::string this_uav_id = it1->first;
+      try
+      {
+        mrs_msgs::FutureTrajectory temp_pose = other_uavs_positions_[this_uav_id];
+      }
+      catch(...)
+      {
+        // other_uavs_positions_[this_uav_id] does not exist. Skip this iteration directly.
+        ROS_WARN_THROTTLE(1.0, "[DergbryanTracker]: Lost communicated position corresponding to the applied reference of %s \n", this_uav_id.c_str());
+        it1++;
+        continue;
+      }
+
+      try
+      {
+        trackers_brubotics::FutureTrajectoryTube temp_tube = other_uav_tube_[this_uav_id];
+      }
+      catch(...)
+      {
+        // other_uav_tube_[this_uav_id] does not exist. Skip this iteration directly.
+        ROS_WARN_THROTTLE(1.0, "[DergbryanTracker]: Lost communicated tube information corresponding to the applied reference of %s \n", this_uav_id.c_str());
+        it1++;
+        continue;
+      }
+      
+      
+      
       // other uavs:
       double other_uav_ref_x = it1->second.points[0].x;//Second means accessing the second part of the iterator. Here it is FutureTrajectory
       double other_uav_ref_y = it1->second.points[0].y;
       double other_uav_ref_z = it1->second.points[0].z;
       Eigen::Vector3d point_link_applied_ref_other_uav(other_uav_ref_x, other_uav_ref_y, other_uav_ref_z);
 
-      double other_uav_pos_x = it2->second.points[0].x;//Second means accessing the second part of the iterator. Here it is FutureTrajectory
-      // ROS_INFO_STREAM("other_uav_pos_x = \n" << other_uav_pos_x);
-      double other_uav_pos_y = it2->second.points[0].y;
-      double other_uav_pos_z = it2->second.points[0].z;
+      // double other_uav_pos_x = it2->second.points[0].x;//Second means accessing the second part of the iterator. Here it is FutureTrajectory
+      // // ROS_INFO_STREAM("other_uav_pos_x = \n" << other_uav_pos_x);
+      // double other_uav_pos_y = it2->second.points[0].y;
+      // double other_uav_pos_z = it2->second.points[0].z;
+      double other_uav_pos_x = other_uavs_positions_[this_uav_id].points[0].x;
+      double other_uav_pos_y = other_uavs_positions_[this_uav_id].points[0].y;
+      double other_uav_pos_z = other_uavs_positions_[this_uav_id].points[0].z;
       Eigen::Vector3d point_link_pos_other_uav(other_uav_pos_x, other_uav_pos_y, other_uav_pos_z);
       
 
@@ -2827,10 +2902,16 @@ void DergbryanTracker::DERG_computation(){
 
         //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         
-        Sa_perp_other_uav = it3->second.min_radius;
+        // Sa_perp_other_uav = it3->second.min_radius;
+        Sa_perp_other_uav = other_uav_tube_[this_uav_id].min_radius;
+        
         // OR
         // Sa_perp_min_other_uav = _Sa_perp_max_     // --> should give more conservative performance
-        ROS_INFO_STREAM("Sa_perp_other_uav = \n" << Sa_perp_other_uav);
+        
+        
+        
+        
+        //ROS_INFO_STREAM("Sa_perp_other_uav = \n" << Sa_perp_other_uav);
          
         DSM_a_temp = _kappa_a_*(dist - 2*Ra - (Sa_perp_ + Sa_perp_other_uav)) / _zeta_a_; // in _kappa_a_*[0 , 1]
         
@@ -2859,8 +2940,8 @@ void DergbryanTracker::DERG_computation(){
         }
       }
       it1++;
-      it2++;
-      it3++;
+      //it2++;
+      //it3++;
     }
   }
 
@@ -2929,7 +3010,19 @@ void DergbryanTracker::DERG_computation(){
     //std::map<std::string, mrs_msgs::FutureTrajectory>::iterator it2 = other_uavs_positions_.begin();
     
     while ((it1 != other_uavs_applied_references_.end())) { //
-      //ROS_INFO_STREAM("inside \n");
+      std::string this_uav_id = it1->first;
+      try
+      {
+        mrs_msgs::FutureTrajectory temp_traj = other_uav_avoidance_trajectories_[this_uav_id];
+      }
+      catch(...)
+      {
+        // other_uav_avoidance_trajectories_[this_uav_id] does not exist. Skip this iteration directly.
+        ROS_WARN_THROTTLE(1.0, "[DergbryanTracker]: Lost communicated trajectory prediction corresponding to the applied reference of %s \n", this_uav_id.c_str());
+        it1++;
+        continue;
+      }
+
       // UAV
       //Eigen::Vector3d point_link_pos(predicted_poses_out.poses[0].position.x, predicted_poses_out.poses[0].position.y, predicted_poses_out.poses[0].position.z);
       Eigen::Vector3d point_link_applied_ref(applied_ref_x_, applied_ref_y_, applied_ref_z_);
@@ -3051,8 +3144,8 @@ void DergbryanTracker::DERG_computation(){
 
   
   // ROS_INFO_STREAM("DSM_total_ = \n" << DSM_total_);
-  ROS_INFO_STREAM("DSM_s_ = \n" << DSM_s_);
-  ROS_INFO_STREAM("DSM_a_ = \n" << DSM_a_);
+  //ROS_INFO_STREAM("DSM_s_ = \n" << DSM_s_);
+  //ROS_INFO_STREAM("DSM_a_ = \n" << DSM_a_);
 
   // 
  
@@ -3332,6 +3425,9 @@ void DergbryanTracker::callbackOtherUavAppliedRef(const mrs_msgs::FutureTrajecto
   //ROS_INFO_STREAM("in callbackOtherUavAppliedRef!! \n");
   mrs_msgs::FutureTrajectory temp_pose= *msg;
   other_uavs_applied_references_[msg->uav_name] = temp_pose;
+
+  //ROS_INFO_STREAM("pv uav1 = \n" << other_uavs_applied_references_["uav1"]);
+  //ROS_INFO_STREAM("pv uav2 = \n" << other_uavs_applied_references_["uav2"]);
 }
 
 void DergbryanTracker::callbackOtherUavPosition(const mrs_msgs::FutureTrajectoryConstPtr& msg) {

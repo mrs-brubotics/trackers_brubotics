@@ -14,7 +14,7 @@ prediction:
 
 
   
-strategy_id: 4 #0 / 1 / 2 / 3 / 4
+strategy_id: 3 #0 / 1 / 2 / 3 / 4
 
 
 # use_wall_constraints: true
