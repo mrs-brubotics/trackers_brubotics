@@ -2551,6 +2551,12 @@ void DergbryanTracker::DERG_computation(){
 
 
       // Conservative part
+      bool use_rep_on_spheres_not_tubes = true;
+      if (use_rep_on_spheres_not_tubes)
+      {
+        double dist = (point_link_applied_ref_other_uav - point_link_applied_ref).norm();
+      }
+      
       double max_repulsion_other_uav = (_zeta_a_ - (dist - 2*Ra - 2*_Sa_perp_max_))/(_zeta_a_ - _delta_a_);
       if (0 > max_repulsion_other_uav) {
         max_repulsion_other_uav = 0;
@@ -2948,7 +2954,7 @@ void DergbryanTracker::DERG_computation(){
 
   if (_DERG_strategy_id_ == 4) {
     // use repulsion on physical occupancy spheres on the references, on the positions, on a line segment between pos and reference of radius Ra (i.e. a tube of radius Ra)?
-    // currently using distance between tubes of radius Ra in NF. DSM should deal with deviations from straight line.
+    // currently using distance between orange tubes 2(+delta + radius Ra) in NF. DSM should deal with deviations from straight line.
     /* D-ERG strategy 4: 
       
     */
