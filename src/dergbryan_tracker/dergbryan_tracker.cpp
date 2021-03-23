@@ -2952,10 +2952,8 @@ void DergbryanTracker::DERG_computation(){
   }
 
 
-  if (_DERG_strategy_id_ == 4) {
-    // use repulsion on physical occupancy spheres on the references, on the positions, on a line segment between pos and reference of radius Ra (i.e. a tube of radius Ra)?
-    // currently using distance between orange tubes 2(+delta + radius Ra) in NF. DSM should deal with deviations from straight line.
-    /* D-ERG strategy 4: 
+  if (_DERG_strategy_id_ == 5) {
+    /* D-ERG strategy 5: 
       
     */
     // this uav:
@@ -2990,6 +2988,58 @@ void DergbryanTracker::DERG_computation(){
         DSM_a_ = DSM_a_temp;
       } 
     }
+
+
+
+    // compute Sa_perp_min
+    // * cannot use previous for loop since we did not compute yet the distances between predicted points in hemisphere centred in p to p itself
+    double Sa_perp_min = 0; // initialize at the min possible value
+    // tube p , pv
+    // TODO !!!we loop over large number of same point resulting in same distance, as in prev loop. Skip these ehre to reduce compute load.
+    for (size_t i = 0; i < num_pred_samples_; i++) {
+      Eigen::Vector3d point_predicted_pos(predicted_poses_out.poses[i].position.x, predicted_poses_out.poses[i].position.y, predicted_poses_out.poses[i].position.z);
+      double lambda = getLambda(point_link_applied_ref, point_link_pos, point_predicted_pos);
+      double norm;
+      if ((lambda <= 1) && (lambda >0)) {
+        Eigen::Vector3d point_link_lambda = point_link_applied_ref + lambda*(point_link_pos - point_link_applied_ref);
+        norm = (point_link_lambda-point_predicted_pos).norm();  
+      }
+      else if (lambda <= 0){
+        norm = (point_link_applied_ref-point_predicted_pos).norm(); 
+      }
+      else { // (lambda > 1)
+        norm = (point_link_pos - point_predicted_pos).norm(); 
+      }
+
+     
+      if (norm > Sa_perp_min){  // choose largest Sa_perp_min over the predicted trajectory to obtain smallest tube radius
+        Sa_perp_min = norm;
+      } 
+    }
+    Sa_perp_ = Sa_perp_min; // update global variable    
+    // publish Sa_perp_ so other uavs can use it (just a test, not actually used)
+    try {
+      tube_min_radius_publisher_.publish(Sa_perp_);
+    }
+    catch (...) {
+      ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", tube_min_radius_publisher_.getTopic().c_str());
+    }
+    // we actually use this
+    trackers_brubotics::FutureTrajectoryTube future_tube;
+    future_tube.stamp = ros::Time::now();
+    future_tube.uav_name = _uav_name_;
+    future_tube.priority = avoidance_this_uav_priority_;
+    // future_tube.collision_avoidance = true;
+    future_tube.min_radius = Sa_perp_;
+    try {
+      future_tube_publisher_.publish(future_tube);
+    }
+    catch (...) {
+      ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", future_tube_publisher_.getTopic().c_str());
+    }
+
+
+
 
     // trajectory
     std::map<std::string, mrs_msgs::FutureTrajectory>::iterator it = other_uav_avoidance_trajectories_.begin();
@@ -3029,25 +3079,59 @@ void DergbryanTracker::DERG_computation(){
         continue;
       }
 
-      // UAV
-      //Eigen::Vector3d point_link_pos(predicted_poses_out.poses[0].position.x, predicted_poses_out.poses[0].position.y, predicted_poses_out.poses[0].position.z);
-      Eigen::Vector3d point_link_applied_ref(applied_ref_x_, applied_ref_y_, applied_ref_z_);
+      try
+      {
+        trackers_brubotics::FutureTrajectoryTube temp_tube = other_uav_tube_[this_uav_id];
+      }
+      catch(...)
+      {
+        // other_uav_tube_[this_uav_id] does not exist. Skip this iteration directly.
+        ROS_WARN_THROTTLE(1.0, "[DergbryanTracker]: Lost communicated tube information corresponding to the applied reference of %s \n", this_uav_id.c_str());
+        it1++;
+        continue;
+      }
+
       // otherUAV
       double other_uav_ref_x = it1->second.points[0].x;//Second means accessing the second part of the iterator. Here it is FutureTrajectory
       double other_uav_ref_y = it1->second.points[0].y;
       double other_uav_ref_z = it1->second.points[0].z;
       Eigen::Vector3d point_link_applied_ref_other_uav(other_uav_ref_x, other_uav_ref_y, other_uav_ref_z);
-     
 
+      double other_uav_pos_x = other_uavs_positions_[this_uav_id].points[0].x;
+      double other_uav_pos_y = other_uavs_positions_[this_uav_id].points[0].y;
+      double other_uav_pos_z = other_uavs_positions_[this_uav_id].points[0].z;
+      Eigen::Vector3d point_link_pos_other_uav(other_uav_pos_x, other_uav_pos_y, other_uav_pos_z);
+
+
+      Eigen::Vector3d point_mu_link0;
+      Eigen::Vector3d point_nu_link1;
+      std::tie(point_mu_link0, point_nu_link1) = getMinDistDirLineSegments(point_link_applied_ref, point_link_pos, point_link_applied_ref_other_uav, point_link_pos_other_uav);//(point0_link0, point1_link0, point0_link1, point1_link1);
       
-      double dist_x = point_link_applied_ref_other_uav(0) - point_link_applied_ref(0);
-      double dist_y = point_link_applied_ref_other_uav(1) - point_link_applied_ref(1);
-      double dist_z = point_link_applied_ref_other_uav(2) - point_link_applied_ref(2);
+      double dist_x = point_nu_link1(0) - point_mu_link0(0);
+      double dist_y = point_nu_link1(1) - point_mu_link0(1);
+      double dist_z = point_nu_link1(2) - point_mu_link0(2);
+
+
+
+
+      // double dist_x = point_link_applied_ref_other_uav(0) - point_link_applied_ref(0);
+      // double dist_y = point_link_applied_ref_other_uav(1) - point_link_applied_ref(1);
+      // double dist_z = point_link_applied_ref_other_uav(2) - point_link_applied_ref(2);
 
       double dist = sqrt(dist_x*dist_x + dist_y*dist_y + dist_z*dist_z);
 
+      bool use_min_tube_radius = true; // delete min in name since it just changes take ti as global variable
+      double Sa_perp_other_uav;
+      if (use_min_tube_radius){
+        
+        Sa_perp_other_uav = other_uav_tube_[this_uav_id].min_radius;
+      
+      }
+
+
+
       // Conservative part
-      double max_repulsion_other_uav = (_zeta_a_ - (dist - 2*Ra)) / (_zeta_a_ - _delta_a_);
+      double max_repulsion_other_uav = (_zeta_a_ - (dist - 2*Ra - (Sa_perp_ + Sa_perp_other_uav)))/(_zeta_a_ - _delta_a_);
       if (0 > max_repulsion_other_uav) {
         max_repulsion_other_uav = 0;
       }
@@ -3058,10 +3142,10 @@ void DergbryanTracker::DERG_computation(){
 
       // Non-conservative part
       if (_alpha_a_ >= 0.0001){
-        if (_zeta_a_ >= dist - 2*Ra) {
+        if (_zeta_a_ >= dist - 2*Ra - (Sa_perp_ + Sa_perp_other_uav)) {
           NF_a_nco = NF_a_nco + calcCirculationField(_circ_type_, dist_x, dist_y, dist_z, dist);
         }
-      } 
+      }
       it1++;
     }
 
