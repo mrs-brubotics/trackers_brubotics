@@ -21,6 +21,7 @@
 #include <std_msgs/String.h>
 #include <std_msgs/Float32.h>
 #include <trackers_brubotics/FutureTrajectoryTube.h> // custom ROS message
+#include <geometry_msgs/Point.h>
 /*end includes added by bryan:*/
 
 
@@ -2951,6 +2952,243 @@ void DergbryanTracker::DERG_computation(){
     }
   }
 
+    if (_DERG_strategy_id_ == 4) {
+    /* D-ERG strategy 4: 
+    */
+    // this uav:
+    DSM_a_ = 100000; // large value
+    double DSM_a_temp;
+    Eigen::Vector3d point_link_pos(predicted_poses_out.poses[0].position.x, predicted_poses_out.poses[0].position.y, predicted_poses_out.poses[0].position.z);
+    Eigen::Vector3d point_link_applied_ref(applied_ref_x_, applied_ref_y_, applied_ref_z_);
+    Eigen::Vector3d point_link_star; // lambda = 1
+    if ((point_link_pos - point_link_applied_ref).norm() > 0.001){
+      point_link_star = point_link_applied_ref + _Sa_long_max_*(point_link_pos - point_link_applied_ref)/(point_link_pos - point_link_applied_ref).norm();
+    }
+    else{ // avoid /0
+      point_link_star = point_link_applied_ref;
+    }
+    // tube p, pstar
+    for (size_t i = 0; i < num_pred_samples_; i++) {
+      Eigen::Vector3d point_predicted_pos(predicted_poses_out.poses[i].position.x, predicted_poses_out.poses[i].position.y, predicted_poses_out.poses[i].position.z);
+      double lambda = getLambda(point_link_applied_ref, point_link_star, point_predicted_pos);
+      double norm;
+      if ((lambda <= 1) && (lambda >0)) {
+        Eigen::Vector3d point_link_lambda = point_link_applied_ref + lambda*(point_link_star - point_link_applied_ref);
+        norm = (point_link_lambda-point_predicted_pos).norm();  
+      }
+      else if (lambda <= 0){
+        norm = (point_link_applied_ref-point_predicted_pos).norm(); 
+      }
+      else { // (lambda > 1)
+        norm = (point_link_star - point_predicted_pos).norm(); 
+      }
+      DSM_a_temp = _kappa_a_*(_Sa_perp_max_-norm)/_Sa_perp_max_;
+      if (DSM_a_temp < DSM_a_){  // choose smallest DSM_a_ over the predicted trajectory
+        DSM_a_ = DSM_a_temp;
+      } 
+    }
+    // compute Sa_perp_min, pk0, pk1
+    // * cannot use previous for loop since we did not compute yet the distances between predicted points in hemisphere centred in p to p itself
+    double Sa_perp_min = 0; // initialize at the min possible value
+    Eigen::Vector3d point_link_p0 = point_link_applied_ref; // initialize at the min possible value
+    Eigen::Vector3d point_link_p1 = point_link_pos; // initialize at the min possible value
+    double norm_long_p0 = 0; // initialize at the min possible value
+    double norm_long_p1 = 0; // initialize at the min possible value
+    // tube p , pv
+    // TODO !!!we loop over large number of same point resulting in same distance, as in prev loop. Skip these ehre to reduce compute load.
+    for (size_t i = 0; i < num_pred_samples_; i++) {
+      Eigen::Vector3d point_predicted_pos(predicted_poses_out.poses[i].position.x, predicted_poses_out.poses[i].position.y, predicted_poses_out.poses[i].position.z);
+      double lambda = getLambda(point_link_applied_ref, point_link_pos, point_predicted_pos);
+      double norm_perp;
+
+      Eigen::Vector3d point_link_lambda = point_link_applied_ref + lambda*(point_link_pos - point_link_applied_ref);
+      norm_perp = (point_link_lambda - point_predicted_pos).norm();
+      // if ((lambda <= 1) && (lambda > 0)) { 
+      //   norm = (point_link_lambda - point_predicted_pos).norm();
+      // }
+      if (lambda <= 0){
+        // norm = (point_link_applied_ref-point_predicted_pos).norm(); 
+        double norm_long_p0_temp = (point_link_applied_ref - point_link_lambda).norm();
+        if (norm_long_p0_temp > norm_long_p0){  // choose largest norm_long_pk0 over the predicted trajectory to obtain smallest tube length
+          norm_long_p0 = norm_long_p0_temp;
+          point_link_p0 = point_link_lambda;
+        } 
+      }
+      else if (lambda > 1){ // 
+        // norm = (point_link_pos - point_predicted_pos).norm(); 
+        double norm_long_p1_temp = (point_link_pos - point_link_lambda).norm();
+        if (norm_long_p1_temp > norm_long_p1){  // choose largest norm_long_pk1 over the predicted trajectory to obtain smallest tube length
+          norm_long_p1 = norm_long_p1_temp;
+          point_link_p1 = point_link_lambda;
+        } 
+      }
+    ////////////////////
+    // what's happens in best case:
+    // point_link_p0 = point_link_applied_ref; // initialize at the min possible value
+    // point_link_p1 = point_link_pos; // initialize at the min possible value
+    // norm_long_p0 = 0; // initialize at the min possible value
+    // norm_long_p1 = 0; // initialize at the min possible value
+    ///////////////////////////
+      if (norm_perp > Sa_perp_min){  // choose largest Sa_perp_min over the predicted trajectory to obtain smallest tube radius
+        Sa_perp_min = norm_perp;
+      } 
+    }
+    Sa_perp_ = Sa_perp_min; // update global variable    
+    // publish Sa_perp_ so other uavs can use it (just a test, not actually used)
+    try {
+      tube_min_radius_publisher_.publish(Sa_perp_);
+    }
+    catch (...) {
+      ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", tube_min_radius_publisher_.getTopic().c_str());
+    }
+    // we actually use this
+    trackers_brubotics::FutureTrajectoryTube future_tube;
+    future_tube.stamp = ros::Time::now();
+    future_tube.uav_name = _uav_name_;
+    future_tube.priority = avoidance_this_uav_priority_;
+    // future_tube.collision_avoidance = true;
+    future_tube.min_radius = Sa_perp_;
+    future_tube.p0.x = point_link_p0[0];
+    future_tube.p0.y = point_link_p0[1];
+    future_tube.p0.z = point_link_p0[2];
+    future_tube.p1.x = point_link_p1[0];
+    future_tube.p1.y = point_link_p1[1];
+    future_tube.p1.z = point_link_p1[2];
+    try {
+      future_tube_publisher_.publish(future_tube);
+    }
+    catch (...) {
+      ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", future_tube_publisher_.getTopic().c_str());
+    }
+
+
+
+    
+
+    // other uavs:
+    std::map<std::string, mrs_msgs::FutureTrajectory>::iterator it1 = other_uavs_applied_references_.begin();
+    //std::map<std::string, mrs_msgs::FutureTrajectory>::iterator it2 = other_uavs_positions_.begin();
+    //std::map<std::string, trackers_brubotics::FutureTrajectoryTube>::iterator it3 = other_uav_tube_.begin();
+
+    
+    while ((it1 != other_uavs_applied_references_.end())){// || (it2 != other_uavs_positions_.end()) || (it3 != other_uav_tube_.end()) ) {
+       // make sure we use the same uavid for both iterators. It must be robust to possible difference in lenths of the iterators (if some communication got lost) or a different order (e.g. if not auto alphabetical).
+      std::string this_uav_id = it1->first;
+      trackers_brubotics::FutureTrajectoryTube temp_tube;
+      try
+      {
+        mrs_msgs::FutureTrajectory temp_pose = other_uavs_positions_[this_uav_id];
+      }
+      catch(...)
+      {
+        // other_uavs_positions_[this_uav_id] does not exist. Skip this iteration directly.
+        ROS_WARN_THROTTLE(1.0, "[DergbryanTracker]: Lost communicated position corresponding to the applied reference of %s \n", this_uav_id.c_str());
+        it1++;
+        continue;
+      }
+
+      try
+      {
+        temp_tube = other_uav_tube_[this_uav_id];
+      }
+      catch(...)
+      {
+        // other_uav_tube_[this_uav_id] does not exist. Skip this iteration directly.
+        ROS_WARN_THROTTLE(1.0, "[DergbryanTracker]: Lost communicated tube information corresponding to the applied reference of %s \n", this_uav_id.c_str());
+        it1++;
+        continue;
+      }
+      
+      
+      
+      // other uavs:
+      double other_uav_ref_x = it1->second.points[0].x;//Second means accessing the second part of the iterator. Here it is FutureTrajectory
+      double other_uav_ref_y = it1->second.points[0].y;
+      double other_uav_ref_z = it1->second.points[0].z;
+      Eigen::Vector3d point_link_applied_ref_other_uav(other_uav_ref_x, other_uav_ref_y, other_uav_ref_z);
+
+      double other_uav_pos_x = other_uavs_positions_[this_uav_id].points[0].x;
+      double other_uav_pos_y = other_uavs_positions_[this_uav_id].points[0].y;
+      double other_uav_pos_z = other_uavs_positions_[this_uav_id].points[0].z;
+      Eigen::Vector3d point_link_pos_other_uav(other_uav_pos_x, other_uav_pos_y, other_uav_pos_z);
+      
+      double other_uav_p0_x = temp_tube.p0.x;//Second means accessing the second part of the iterator.
+      double other_uav_p0_y = temp_tube.p0.y;
+      double other_uav_p0_z = temp_tube.p0.z;
+      Eigen::Vector3d point_link_p0_other_uav(other_uav_p0_x, other_uav_p0_y, other_uav_p0_z);
+
+      double other_uav_p1_x = temp_tube.p1.x;//Second means accessing the second part of the iterator.
+      double other_uav_p1_y = temp_tube.p1.y;
+      double other_uav_p1_z = temp_tube.p1.z;
+      Eigen::Vector3d point_link_p1_other_uav(other_uav_p1_x, other_uav_p1_y, other_uav_p1_z);
+
+      Eigen::Vector3d point_mu_link0;
+      Eigen::Vector3d point_nu_link1;
+      std::tie(point_mu_link0, point_nu_link1) = getMinDistDirLineSegments(point_link_p0, point_link_p1, point_link_p0_other_uav, point_link_p1_other_uav);//(point0_link0, point1_link0, point0_link1, point1_link1);
+      
+      double dist_x = point_nu_link1(0) - point_mu_link0(0);
+      double dist_y = point_nu_link1(1) - point_mu_link0(1);
+      double dist_z = point_nu_link1(2) - point_mu_link0(2);
+
+      double dist = sqrt(dist_x*dist_x + dist_y*dist_y + dist_z*dist_z);
+    
+
+      bool use_min_tube_radius = true; // delete min in name since it just changes take ti as global variable
+      double Sa_perp_other_uav;
+      if (use_min_tube_radius){
+        // DSM: 2 tubes of radius _Sa_perp_min_ and _Sa_perp_min_other_uav_ may not overlap
+        // DSM scaled over the influence margin
+        // either other uav uses max or share its own min of Sa
+        //(_Sa_perp_min_ + _Sa_perp_max_other)
+        //or
+        // (_Sa_perp_min_ + _Sa_perp_min_other)
+        // make subsciber and publisher for this!!
+        //note : Sa_perp_ = Sa_perp_min
+
+        //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        
+        // Sa_perp_other_uav = it3->second.min_radius;
+        Sa_perp_other_uav = other_uav_tube_[this_uav_id].min_radius;
+        
+        // OR
+        // Sa_perp_min_other_uav = _Sa_perp_max_     // --> should give more conservative performance
+        
+        
+        
+        
+        //ROS_INFO_STREAM("Sa_perp_other_uav = \n" << Sa_perp_other_uav);
+         
+        DSM_a_temp = _kappa_a_*(dist - 2*Ra - (Sa_perp_ + Sa_perp_other_uav)) / _zeta_a_; // in _kappa_a_*[0 , 1]
+        
+     
+        if (DSM_a_temp < DSM_a_){  // choose smallest DSM_a_ over the agents
+          DSM_a_ = DSM_a_temp;
+        }
+      }
+
+
+      // Conservative part
+      // same comment as before!!!
+      double max_repulsion_other_uav = (_zeta_a_ - (dist - 2*Ra - (Sa_perp_ + Sa_perp_other_uav)))/(_zeta_a_ - _delta_a_);
+      if (0 > max_repulsion_other_uav) {
+        max_repulsion_other_uav = 0;
+      }
+
+      NF_a_co(0,0)=NF_a_co(0,0) - max_repulsion_other_uav*(dist_x/dist);
+      NF_a_co(1,0)=NF_a_co(1,0) - max_repulsion_other_uav*(dist_y/dist);
+      NF_a_co(2,0)=NF_a_co(2,0) - max_repulsion_other_uav*(dist_z/dist);
+
+      // Non-conservative part
+      if (_alpha_a_ >= 0.0001){
+        if (_zeta_a_ >= dist - 2*Ra - (Sa_perp_ + Sa_perp_other_uav)) {
+          NF_a_nco = NF_a_nco + calcCirculationField(_circ_type_, dist_x, dist_y, dist_z, dist);
+        }
+      }
+      it1++;
+      //it2++;
+      //it3++;
+    }
+  }
 
   if (_DERG_strategy_id_ == 5) {
     /* D-ERG strategy 5: 
