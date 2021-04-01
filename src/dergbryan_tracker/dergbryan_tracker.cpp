@@ -143,6 +143,7 @@ private:
 
 
   // | ------------ controller limits and saturations ----------- |
+  bool _tilt_angle_failsafe_enabled_;
   double _tilt_angle_failsafe_;
   double _thrust_saturation_;
   double _extra_thrust_saturation_ratio_;
@@ -477,7 +478,12 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   param_loader.loadParam("default_gains/horizontal/kib_lim", kibxy_lim_);
 
   // constraints
-  param_loader.loadParam("constraints/tilt_angle_failsafe", _tilt_angle_failsafe_);
+  param_loader.loadParam("constraints/tilt_angle_failsafe/enabled", _tilt_angle_failsafe_enabled_);
+  param_loader.loadParam("constraints/tilt_angle_failsafe/limit", _tilt_angle_failsafe_);
+  if (_tilt_angle_failsafe_enabled_ && fabs(_tilt_angle_failsafe_) < 1e-3) {
+    ROS_ERROR("[DergbryanTracker]: constraints/tilt_angle_failsafe/enabled = 'TRUE' but the limit is too low");
+    ros::shutdown();
+  }
   param_loader.loadParam("constraints/thrust_saturation", _thrust_saturation_); // is further reduced by _thrust_saturation_ratio_
 
   // output mode
@@ -693,7 +699,7 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   }
 
   // convert to radians
-  _tilt_angle_failsafe_ = (_tilt_angle_failsafe_ / 180.0) * M_PI;
+  //_tilt_angle_failsafe_ = (_tilt_angle_failsafe_ / 180.0) * M_PI;
   
 
   // initialize the integrals
@@ -1641,7 +1647,7 @@ for (int i = 0; i < num_pred_samples_; i++) {
   }
 
   // TODO???
-  // if (_tilt_angle_failsafe_ > 1e-3 && theta > _tilt_angle_failsafe_) {
+  // if (_tilt_angle_failsafe_enabled_ && theta > _tilt_angle_failsafe_) {
 
   //   ROS_ERROR("[Se3Controller]: the produced tilt angle (%.2f deg) would be over the failsafe limit (%.2f deg), returning null", (180.0 / M_PI) * theta,
   //             (180.0 / M_PI) * _tilt_angle_failsafe_);
@@ -1662,7 +1668,7 @@ for (int i = 0; i < num_pred_samples_; i++) {
 
   auto constraints = mrs_lib::get_mutexed(mutex_constraints_, constraints_);
 
-  if (theta > constraints.tilt) {
+  if (fabs(constraints.tilt) > 1e-3 && theta > constraints.tilt) {
     ROS_WARN_THROTTLE(1.0, "[Se3Controller]: tilt is being saturated, desired: %.2f deg, saturated %.2f deg", (theta / M_PI) * 180.0,
                       (constraints.tilt / M_PI) * 180.0);
     theta = constraints.tilt;
@@ -2408,7 +2414,7 @@ void DergbryanTracker::DERG_computation(){
 
   // | ------------------------ agent collision avoidance repulsion ----------------------- |
   if (_DERG_strategy_id_ == 0) {
-    /* D-ERG strategy 0: a sphere of radius _Sa_max_ centred in the applied reference position.
+    /* D-ERG strategy 0
     */
     std::map<std::string, mrs_msgs::FutureTrajectory>::iterator it = other_uavs_applied_references_.begin();
     // ROS_INFO_STREAM("p^v_x = \n" << it->second.points[0].x);
@@ -2460,10 +2466,7 @@ void DergbryanTracker::DERG_computation(){
   }
 
   if (_DERG_strategy_id_ == 1) {
-    /* D-ERG strategy 1: a tube of fixed length _Sa_long_max_ and fixed width _Sa_perp_max_. 
-    One hemisphere is centered in the applied reference and the other hemisphere is centered
-    in point_link_star, which lies on the longitudinal tube's axis "link" a distance _Sa_long_max_ 
-    in a direction from the applied reference towards the current position.
+    /* D-ERG strategy 1
     */
 
     // this uav:
@@ -3385,61 +3388,7 @@ void DergbryanTracker::DERG_computation(){
         }
       }
       it1++;
-    }
-
-    // std::map<std::string, mrs_msgs::FutureTrajectory>::iterator it1 = other_uavs_applied_references_.begin();
-    // std::map<std::string, mrs_msgs::FutureTrajectory>::iterator it2 = other_uavs_positions_.begin();
-    
-    // while ((it1 != other_uavs_applied_references_.end()) || (it2 != other_uavs_positions_.end())) { //
-    //   //ROS_INFO_STREAM("inside \n");
-    //   // UAV
-    //   Eigen::Vector3d point_link_pos(predicted_poses_out.poses[0].position.x, predicted_poses_out.poses[0].position.y, predicted_poses_out.poses[0].position.z);
-    //   Eigen::Vector3d point_link_applied_ref(applied_ref_x_, applied_ref_y_, applied_ref_z_);
-    //   // otherUAV
-    //   double other_uav_ref_x = it1->second.points[0].x;//Second means accessing the second part of the iterator. Here it is FutureTrajectory
-    //   double other_uav_ref_y = it1->second.points[0].y;
-    //   double other_uav_ref_z = it1->second.points[0].z;
-    //   Eigen::Vector3d point_link_applied_ref_other_uav(other_uav_ref_x, other_uav_ref_y, other_uav_ref_z);
-     
-
-    //   double other_uav_pos_x = it2->second.points[0].x;//Second means accessing the second part of the iterator. Here it is FutureTrajectory
-
-    //   double other_uav_pos_y = it2->second.points[0].y;
-    //   double other_uav_pos_z = it2->second.points[0].z;
-    //   Eigen::Vector3d point_link_pos_other_uav(other_uav_pos_x, other_uav_pos_y, other_uav_pos_z);
-
-
-    //   Eigen::Vector3d point_mu_link0;
-    //   Eigen::Vector3d point_nu_link1;
-    //   std::tie(point_mu_link0, point_nu_link1) = getMinDistDirLineSegments(point_link_applied_ref, point_link_pos, point_link_applied_ref_other_uav, point_link_pos_other_uav);//(point0_link0, point1_link0, point0_link1, point1_link1);
-
-
-    //   double dist_x = point_nu_link1(0) - point_mu_link0(0);
-    //   double dist_y = point_nu_link1(1) - point_mu_link0(1);
-    //   double dist_z = point_nu_link1(2) - point_mu_link0(2);
-
-    //   double dist = sqrt(dist_x*dist_x + dist_y*dist_y + dist_z*dist_z);
-
-    //   // Conservative part
-    //   double max_repulsion_other_uav = (_zeta_a_-(dist-2*Ra))/(_zeta_a_ - _delta_a_);
-    //   if (0 > max_repulsion_other_uav) {
-    //     max_repulsion_other_uav = 0;
-    //   }
-
-    //   NF_a_co(0,0)=NF_a_co(0,0)-max_repulsion_other_uav*(dist_x/dist);
-    //   NF_a_co(1,0)=NF_a_co(1,0)-max_repulsion_other_uav*(dist_y/dist);
-    //   NF_a_co(2,0)=NF_a_co(2,0)-max_repulsion_other_uav*(dist_z/dist);
-
-    //   // Non-conservative part
-    //   if (_alpha_a_ >= 0.0001){
-    //     if (_zeta_a_ >= dist-2*Ra) {
-    //       NF_a_nco = NF_a_nco + calcCirculationField(_circ_type_, dist_x, dist_y, dist_z, dist);
-    //     }
-    //   } 
-    //   it1++;
-    //   it2++;
-    // }
-    
+    } 
   }
 
 
@@ -3471,8 +3420,8 @@ void DergbryanTracker::DERG_computation(){
   }
 
   
-  // ROS_INFO_STREAM("DSM_total_ = \n" << DSM_total_);
-  //ROS_INFO_STREAM("DSM_s_ = \n" << DSM_s_);
+  ROS_INFO_STREAM("DSM_total_ = \n" << DSM_total_);
+  ROS_INFO_STREAM("DSM_s_ = \n" << DSM_s_);
   //ROS_INFO_STREAM("DSM_a_ = \n" << DSM_a_);
 
   // 

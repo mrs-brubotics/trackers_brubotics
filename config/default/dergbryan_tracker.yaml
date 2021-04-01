@@ -33,7 +33,7 @@ agent_collision_volumes:
 
 dynamic_safety_margin:
   kappa:
-    s: 27 #27 #27 #1.5 # 1.5 #1.1 #1.5 #1.1 # saturation total thrust
+    s: 27 #27 #27 #27 #1.5 # 1.5 #1.1 #1.5 #1.1 # saturation total thrust
     a: 27 #27 #160 #80.0 #15.0 # agent collision avoidance
   enable_dsm:
     constant_dsm: 10 # used dsm if all dsms below are disabled

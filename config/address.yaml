@@ -1,11 +1,5 @@
 BypassTracker:
   address: "trackers_brubotics/BypassTracker"
 
-#DergTracker:
-#  address: "trackers_brubotics/DergTracker"
-
-#MpcTrackerCopy:
-#  address: "trackers_brubotics/MpcTrackerCopy"
-
 DergbryanTracker:
   address: "trackers_brubotics/DergbryanTracker"
