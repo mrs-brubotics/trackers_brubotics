@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.0.2)
+cmake_minimum_required(VERSION 3.1.2)
 project(trackers_brubotics)
 
 find_package(catkin REQUIRED COMPONENTS
@@ -28,7 +28,9 @@ generate_dynamic_reconfigure_options(
     ) 
 
 #include_directories(${catkin_INCLUDE_DIRS})
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -fno-diagnostics-color -O0 -g")
+#set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -fno-diagnostics-color -O0 -g")
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # include Eigen3
 find_package(Eigen3 REQUIRED)
