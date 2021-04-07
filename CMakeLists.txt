@@ -27,8 +27,7 @@ generate_dynamic_reconfigure_options(
     #cfg/mpc_tracker_copy.cfg
     ) 
 
-#include_directories(${catkin_INCLUDE_DIRS})
-#set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -fno-diagnostics-color -O0 -g")
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra")
@@ -87,6 +86,18 @@ else()
   MESSAGE(FATAL_ERROR "MpcTrackerSolver.so has not been selected, check CMakeLists.txt.")
 endif()
 ####################################
+  # MpcTrackerCopy
+
+#  add_library(MpcTrackerCopy
+#    src/mpc_tracker_copy/mpc_tracker_copy.cpp
+#    )
+#  add_dependencies(MpcTrackerCopy
+#    ${catkin_EXPORTED_TARGETS}
+#    ${${PROJECT_NAME}_EXPORTED_TARGETS}
+#    )
+#  target_link_libraries(MpcTrackerCopy
+#    ${catkin_LIBRARIES}
+#    )
 
   # Bypass tracker
 
@@ -116,42 +127,15 @@ endif()
     )
  
 
-  # DergTracker
-
-#  add_library(DergTracker
-#    src/derg_tracker/derg_tracker.cpp
-#    )
-#  add_dependencies(DergTracker
-#    ${catkin_EXPORTED_TARGETS}
-#    ${${PROJECT_NAME}_EXPORTED_TARGETS}
-#    )
-#  target_link_libraries(DergTracker
-#    ${catkin_LIBRARIES}
-#    )
-    
-
-  # MpcTrackerCopy
-
-#  add_library(MpcTrackerCopy
-#    src/mpc_tracker_copy/mpc_tracker_copy.cpp
-#    )
-#  add_dependencies(MpcTrackerCopy
-#    ${catkin_EXPORTED_TARGETS}
-#    ${${PROJECT_NAME}_EXPORTED_TARGETS}
-#    )
-#  target_link_libraries(MpcTrackerCopy
-#    ${catkin_LIBRARIES}
-#    )
     
     
 #############
 ## Install ##
 #############
 
-install(TARGETS
-  BypassTracker
-  #DergTracker
+install(TARGETS  
   #MpcTrackerCopy
+  BypassTracker
   DergbryanTracker
   ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
   LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
