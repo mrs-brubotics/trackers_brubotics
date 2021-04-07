@@ -38,7 +38,7 @@ dynamic_safety_margin:
   enable_dsm:
     constant_dsm: 10 # used dsm if all dsms below are disabled
     s: true
-    a: true
+    a: true #true!!!!!!!!!!!!!!!!!!!!!!!
 navigation_field:
   attraction:
     smoothing_ratio: 0.20 # smoothing factor
