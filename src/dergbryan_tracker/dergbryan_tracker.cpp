@@ -1779,27 +1779,26 @@ for (int i = 0; i < num_pred_samples_; i++) {
 
   /* output */
   double thrust_force = f.dot(R.col(2));
-
-
-  
-
-
-
-
   double thrust = 0;
   /*TODO change code below unhardcoded*/
   // OLD double Aparam = 0.175; // value from printen inside Se3BruboticsController
   // OLD double Bparam = -0.148; // value from printen inside Se3BruboticsController
   // OLD thrust_saturation_physical_ = pow((_thrust_saturation_-Bparam)/Aparam, 2);
   thrust_saturation_physical_ = mrs_lib::quadratic_thrust_model::thrustToForce(common_handlers_->motor_params, _thrust_saturation_);
-  if (thrust_force >= 0) {
-    /*SOLVED QUESTION: how to acces in the tracker code: _motor_params_.A + _motor_params_.B??*/
-    //thrust = sqrt(thrust_force) * _motor_params_.A + _motor_params_.B;
-    
-    // OLD thrust = sqrt(thrust_force) * Aparam + Bparam;
-    thrust = mrs_lib::quadratic_thrust_model::forceToThrust(common_handlers_->motor_params, thrust_force);
-  } else {
-    ROS_WARN_THROTTLE(1.0, "[DergbryanTracker]: just so you know, the desired thrust force is negative (%.2f)", thrust_force);
+  if (!position_cmd.use_thrust) {
+    if (thrust_force >= 0) {
+      /*SOLVED QUESTION: how to acces in the tracker code: _motor_params_.A + _motor_params_.B??*/
+      //thrust = sqrt(thrust_force) * _motor_params_.A + _motor_params_.B;
+      
+      // OLD thrust = sqrt(thrust_force) * Aparam + Bparam;
+      thrust = mrs_lib::quadratic_thrust_model::forceToThrust(common_handlers_->motor_params, thrust_force);
+    } else {
+      ROS_WARN_THROTTLE(1.0, "[DergbryanTracker]: just so you know, the desired thrust force is negative (%.2f)", thrust_force);
+    }
+  }
+  else {
+    // the thrust is overriden from the tracker command
+    thrust = position_cmd.thrust;
   }
 
   // saturate the thrust
