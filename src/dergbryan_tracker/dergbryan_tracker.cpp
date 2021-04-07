@@ -177,7 +177,7 @@ private:
   double     goal_y_;
   double     goal_z_;
   double     goal_heading_;
-  double     have_goal_ = false;
+  bool     have_goal_ = false;
   std::mutex mutex_goal_;
 
 
@@ -368,7 +368,7 @@ private:
 
 
   // trajectory tracking
-  bool       trajectory_tracking_in_progress_ = false;
+  std::atomic<bool>       trajectory_tracking_in_progress_ = false;
   // // int        trajectory_tracking_sub_idx_     = 0;  // increases with every iteration of the simulated model
   int        trajectory_tracking_idx_         = 0;  // while tracking, this is the current index in the des_*_whole trajectory
   std::mutex mutex_trajectory_tracking_states_;
@@ -405,9 +405,9 @@ private:
 
   ros::Timer timer_hover_;
   // void       timerHover(const ros::TimerEvent& event);
-  bool       hover_timer_runnning_ = false;
-  bool       hovering_in_progress_ = false;
-  void       toggleHover(bool in);
+  std::atomic<bool> hover_timer_runnning_ = false;
+  std::atomic<bool> hovering_in_progress_ = false;
+  void              toggleHover(bool in);
 
 
   void setGoal(const double pos_x, const double pos_y, const double pos_z, const double heading, const bool use_heading);
@@ -4251,10 +4251,14 @@ void DergbryanTracker::toggleHover(bool in) {
     while (hover_timer_runnning_) {
 
       ROS_DEBUG("[DergbryanTracker]: the hover is in the middle of an iteration, waiting for it to finish");
-      ros::Duration wait(0.01);
+      ros::Duration wait(0.001);
       wait.sleep();
+    
+      if (!hover_timer_runnning_) {
+        ROS_DEBUG("[ControlManager]: hover timer finished");
+        break;
+      }
     }
-
     // timer_hover_.stop();
 
     hovering_in_progress_ = false;

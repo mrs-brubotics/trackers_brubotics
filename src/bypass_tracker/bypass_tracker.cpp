@@ -63,7 +63,7 @@ private:
   double     goal_y_;
   double     goal_z_;
   double     goal_heading_;
-  double     have_goal_ = false;
+  bool     have_goal_ = false;
   std::mutex mutex_goal_;
 
 
