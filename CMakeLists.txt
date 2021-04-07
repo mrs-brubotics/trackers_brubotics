@@ -31,6 +31,7 @@ generate_dynamic_reconfigure_options(
 #set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -fno-diagnostics-color -O0 -g")
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra")
 
 # include Eigen3
 find_package(Eigen3 REQUIRED)
@@ -40,7 +41,7 @@ set(Eigen_LIBRARIES ${EIGEN3_LIBRARIES})
 catkin_package(
   INCLUDE_DIRS include
   LIBRARIES MpcTrackerCvxgen # additionally added by brubotics wrt ctu
-  CATKIN_DEPENDS geometry_msgs tf mrs_lib mrs_uav_managers mrs_msgs mrs_uav_trackers message_runtime std_msgs# mrs_uav_trackers additionally added by brubotics wrt ctu
+  CATKIN_DEPENDS geometry_msgs tf mrs_lib mrs_uav_managers mrs_msgs mrs_uav_trackers message_runtime std_msgs # mrs_uav_trackers additionally added by brubotics wrt ctu
   DEPENDS Eigen
   )
 
