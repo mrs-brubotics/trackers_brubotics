@@ -1,18 +1,17 @@
-<library path="lib/libBypassTracker">
-  <class name="trackers_brubotics/BypassTracker" type="mrs_uav_trackers::bypass_tracker::BypassTracker" base_class_type="mrs_uav_managers::Tracker">
-    <description>This is the bypass tracker.</description>
+<library path="lib/libMpcCopyTracker">
+  <class name="trackers_brubotics/MpcCopyTracker" type="mrs_uav_trackers::mpc_copy_tracker::MpcCopyTracker" base_class_type="mrs_uav_managers::Tracker">
+    <description>This is the MpcCopyTracker and is the original MpcTracker copied from CTU which is only extended with some publishers for plotting graphs.</description>
   </class>
 </library>
 
-<!-- <library path="lib/libMpcTrackerCopy">
-  <class name="trackers_brubotics/MpcTrackerCopy" type="mrs_uav_trackers::mpc_tracker_copy::MpcTrackerCopy" base_class_type="mrs_uav_managers::Tracker">
-    <description>This is the MpcTrackerCopy</description>
+<library path="lib/libBypassTracker">
+  <class name="trackers_brubotics/BypassTracker" type="mrs_uav_trackers::bypass_tracker::BypassTracker" base_class_type="mrs_uav_managers::Tracker">
+    <description>This is the BypassTracker.</description>
   </class>
-</library> -->
-
+</library>
 
 <library path="lib/libDergbryanTracker">
   <class name="trackers_brubotics/DergbryanTracker" type="mrs_uav_trackers::dergbryan_tracker::DergbryanTracker" base_class_type="mrs_uav_managers::Tracker">
-    <description>This is the dergbryan tracker.</description>
+    <description>This is the DergbryanTracker which is an implementation of the Distributed Explicit Reference Governor.</description>
   </class>
 </library>

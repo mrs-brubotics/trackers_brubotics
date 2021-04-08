@@ -1,5 +1,8 @@
-version: "0.0.5.2"
-
+version: "1.0.0.0"
+network:
+  robot_names: [
+    uav1, uav2, uav3, uav4 , uav5, uav6, uav7, uav8, uav9 , uav10
+  ]
 mpc_rate: 100.0 # rate of MPC calculation, >= 10 Hz
 
 diagnostics: # diagnostics publisher

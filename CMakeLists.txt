@@ -11,8 +11,9 @@ find_package(catkin REQUIRED COMPONENTS
   mrs_lib
   mrs_msgs
   mrs_uav_managers
-  mrs_uav_trackers # additionally added by brubotics wrt ctu
   dynamic_reconfigure
+  # additionally added by brubotics wrt ctu:
+  mrs_uav_trackers 
   message_generation
   genmsg
   )
@@ -20,17 +21,17 @@ find_package(catkin REQUIRED COMPONENTS
 add_message_files(FILES
   DSM.msg
   FutureTrajectoryTube.msg
-)
+  )
 generate_messages(DEPENDENCIES geometry_msgs std_msgs)
 
 generate_dynamic_reconfigure_options(
-    #cfg/mpc_tracker_copy.cfg
+    cfg/mpc_copy_tracker.cfg
     ) 
 
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra")
+#set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra")
 
 # include Eigen3
 find_package(Eigen3 REQUIRED)
@@ -39,19 +40,17 @@ set(Eigen_LIBRARIES ${EIGEN3_LIBRARIES})
 
 catkin_package(
   INCLUDE_DIRS include
-  LIBRARIES MpcTrackerCvxgen # additionally added by brubotics wrt ctu
-  CATKIN_DEPENDS geometry_msgs tf mrs_lib mrs_uav_managers mrs_msgs mrs_uav_trackers message_runtime std_msgs # mrs_uav_trackers additionally added by brubotics wrt ctu
+  #LIBRARIES MpcTrackerCvxgen # additionally added by brubotics wrt ctu
+  CATKIN_DEPENDS geometry_msgs tf mrs_lib mrs_uav_managers mrs_msgs 
+  # additionally added by brubotics wrt ctu:
+  mrs_uav_trackers message_runtime std_msgs 
   DEPENDS Eigen
   )
-
-
-
 
 ###########
 ## Build ##
 ###########
 
-#################################### this block (= copy of ctu) was initially not added by interns
 include_directories(
   include
   ${EIGEN_INCLUDE_DIR}
@@ -85,56 +84,52 @@ else()
   MESSAGE(FATAL_ERROR ${CMAKE_DEB_HOST_ARCH})
   MESSAGE(FATAL_ERROR "MpcTrackerSolver.so has not been selected, check CMakeLists.txt.")
 endif()
-####################################
-  # MpcTrackerCopy
 
-#  add_library(MpcTrackerCopy
-#    src/mpc_tracker_copy/mpc_tracker_copy.cpp
-#    )
-#  add_dependencies(MpcTrackerCopy
-#    ${catkin_EXPORTED_TARGETS}
-#    ${${PROJECT_NAME}_EXPORTED_TARGETS}
-#    )
-#  target_link_libraries(MpcTrackerCopy
-#    ${catkin_LIBRARIES}
-#    )
+# MpcCopyTracker
 
-  # Bypass tracker
+add_library(MpcCopyTracker src/mpc_copy_tracker/mpc_copy_tracker.cpp)
 
-  add_library(BypassTracker
-    src/bypass_tracker/bypass_tracker.cpp
-    )
-  add_dependencies(BypassTracker
-    ${catkin_EXPORTED_TARGETS}
-    ${${PROJECT_NAME}_EXPORTED_TARGETS}
-    )
-  target_link_libraries(BypassTracker
-    ${catkin_LIBRARIES}
-    )
+add_dependencies(MpcCopyTracker
+	${catkin_EXPORTED_TARGETS}
+	${${PROJECT_NAME}_EXPORTED_TARGETS}
+	)
+target_link_libraries(MpcCopyTracker
+	${catkin_LIBRARIES}
+	${MPC_CONTROLLER_SOLVER_BIN}
+)
 
-  # Bypass tracker
+# BypassTracker
 
-  add_library(DergbryanTracker
-    src/dergbryan_tracker/dergbryan_tracker.cpp
-    )
-  add_dependencies(DergbryanTracker
-    ${catkin_EXPORTED_TARGETS}
-    ${${PROJECT_NAME}_EXPORTED_TARGETS}
-    #${PROJECT_NAME}_generate_messages_cpp}
-    )
-  target_link_libraries(DergbryanTracker
-    ${catkin_LIBRARIES}
-    )
- 
+add_library(BypassTracker 
+src/bypass_tracker/bypass_tracker.cpp)
+add_dependencies(BypassTracker
+	${catkin_EXPORTED_TARGETS}
+	${${PROJECT_NAME}_EXPORTED_TARGETS}
+	)
+target_link_libraries(BypassTracker
+	${catkin_LIBRARIES}
+)
 
-    
-    
+# DergbryanTracker
+
+add_library(DergbryanTracker
+src/dergbryan_tracker/dergbryan_tracker.cpp
+)
+add_dependencies(DergbryanTracker
+	${catkin_EXPORTED_TARGETS}
+	${${PROJECT_NAME}_EXPORTED_TARGETS}
+	#${PROJECT_NAME}_generate_messages_cpp}
+)
+target_link_libraries(DergbryanTracker
+	${catkin_LIBRARIES}
+)
+  
 #############
 ## Install ##
 #############
 
 install(TARGETS  
-  #MpcTrackerCopy
+  MpcCopyTracker
   BypassTracker
   DergbryanTracker
   ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}

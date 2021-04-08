@@ -13,8 +13,8 @@ As options, you have:
 -c or --config: Creates config files (default)
 ```
 
-### Convention
-
+### Conventions
+When creating a new tracker, DO NOT use the same name if this name was already used for a tracker of ctu. Otherwise your new tracker will overwrite the one of ctu.
 when I write "tracker name", I mean the name of the class. It should be written without underscores, with caps, like this:
 > ExampleTracker
 

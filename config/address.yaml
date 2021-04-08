@@ -1,4 +1,5 @@
-# add copt tracker
+MpcCopyTracker:
+  address: "trackers_brubotics/MpcCopyTracker"
 
 BypassTracker:
   address: "trackers_brubotics/BypassTracker"
