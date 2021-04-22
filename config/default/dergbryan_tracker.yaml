@@ -1,6 +1,6 @@
 # issue: why can't we use the dergbryantracker.yaml in testing package? it shshould be loaded in the session.yaml
-use_derg: true # if false it bypasses the disred reference directly, but still computes the trajectory predictions
-network:
+use_derg: true # if false it bypasses the desired goal reference directly, but still computes the trajectory predictions
+network: # TODO import from default and custom config uav_names at a single location
   robot_names: [
     uav1, uav2, uav3, uav4 , uav5, uav6, uav7, uav8, uav9 , uav10
   ]
@@ -8,9 +8,9 @@ constraints:
   total_thrust:
     min: 0.0
     # max thrust can be changed via _thrust_saturation_ ratio [0, 1] in the se3_brubotics.yaml
-    extra_saturation_ratio: 0.92 #0.90 # [0, 1] allows some overshoot over the hard thrust limit _thrust_saturation_ to reduce the chance of triggering the emergency controller after 1s of saturation
+    extra_saturation_ratio: 0.92 #0.90 # ratio [0, 1] allows some overshoot over the hard thrust limit _thrust_saturation_ to reduce the chance of triggering the emergency controller after 1s of saturation
 prediction:
-  horizon: 3.0 #2.0 #3.0
+  horizon: 3.0 #2.0 #3.0 #[s]
 
 
   
@@ -41,7 +41,7 @@ dynamic_safety_margin:
     a: true #true!!!!!!!!!!!!!!!!!!!!!!!
 navigation_field:
   attraction:
-    smoothing_ratio: 0.20 # smoothing factor
+    smoothing_ratio: 0.10 # smoothing factor
   repulsion:
     agents:
       enabled: true

@@ -150,7 +150,7 @@ private:
 
   // | ------------------ activation and output ----------------- |
 
-  mrs_msgs::AttitudeCommand::ConstPtr last_attitude_cmd_;
+  // mrs_msgs::AttitudeCommand::ConstPtr last_attitude_cmd_;
   //mrs_msgs::AttitudeCommand           activation_attitude_cmd_;
 
   //ros::Time last_update_time_;
@@ -729,7 +729,15 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
 //}
 /*activate()//{*/
 std::tuple<bool, std::string> DergbryanTracker::activate(const mrs_msgs::PositionCommand::ConstPtr &last_position_cmd) {
+  
   std::stringstream ss;
+
+  if (!got_constraints_) {
+    ss << "can not activate, missing constraints";
+    ROS_ERROR_STREAM_THROTTLE(1.0, "[DergbryanTracker]: " << ss.str());
+    return std::tuple(false, ss.str());
+  }
+
   if (!got_uav_state_) {
     ss << "odometry not set";
     ROS_ERROR_STREAM("[DergbryanTracker]: " << ss.str());
@@ -1149,6 +1157,8 @@ const mrs_msgs::DynamicsConstraintsSrvResponse::ConstPtr DergbryanTracker::setCo
 
   got_constraints_ = true;
 
+  
+
    ROS_INFO("[DergbryanTracker]: updating constraints");
 
   mrs_msgs::DynamicsConstraintsSrvResponse res;
@@ -1511,7 +1521,7 @@ for (int i = 0; i < num_pred_samples_; i++) {
 
   // OLD double total_mass = _uav_mass_ + uav_mass_difference_;
   double total_mass = common_handlers_->getMass(); // total estimated mass calculated by controller
-  
+  // ROS_INFO_STREAM("DergbryanTracker: total_mass = \n" << total_mass);
   // global total mass created by bryan
   total_mass_= total_mass;
   //OLD Kp = Kp * (_uav_mass_ + uav_mass_difference_);
@@ -1799,6 +1809,7 @@ for (int i = 0; i < num_pred_samples_; i++) {
   else {
     // the thrust is overriden from the tracker command
     thrust = position_cmd.thrust;
+    ROS_INFO_STREAM("position_cmd.use_thrust = \n" << position_cmd.use_thrust);
   }
 
   // saturate the thrust
@@ -2060,30 +2071,30 @@ for (int i = 0; i < num_pred_samples_; i++) {
   // |                integrate the mass difference               |
   // --------------------------------------------------------------
 
-  {
-    std::scoped_lock lock(mutex_gains_);
-    /*QUESTION: do we need to make it work with rampup_active_ or do we assume erg does not need to simulate this phase? */
-    if (position_cmd.use_position_vertical){// && !rampup_active_) {
-      uav_mass_difference_ -= km_ * Ep[2] * custom_dt_;
-    }
+  // {
+  //   std::scoped_lock lock(mutex_gains_);
+  //   /*QUESTION: do we need to make it work with rampup_active_ or do we assume erg does not need to simulate this phase? */
+  //   if (position_cmd.use_position_vertical){// && !rampup_active_) {
+  //     uav_mass_difference_ -= km_ * Ep[2] * custom_dt_;
+  //   }
 
-    // saturate the mass estimator
-    bool uav_mass_saturated = false;
-    if (!std::isfinite(uav_mass_difference_)) {
-      uav_mass_difference_ = 0;
-      ROS_WARN_THROTTLE(1.0, "[DergbryanTracker]: NaN detected in variable 'uav_mass_difference_', setting it to 0 and returning!!!");
-    } else if (uav_mass_difference_ > km_lim_) {
-      uav_mass_difference_ = km_lim_;
-      uav_mass_saturated   = true;
-    } else if (uav_mass_difference_ < -km_lim_) {
-      uav_mass_difference_ = -km_lim_;
-      uav_mass_saturated   = true;
-    }
+  //   // saturate the mass estimator
+  //   bool uav_mass_saturated = false;
+  //   if (!std::isfinite(uav_mass_difference_)) {
+  //     uav_mass_difference_ = 0;
+  //     ROS_WARN_THROTTLE(1.0, "[DergbryanTracker]: NaN detected in variable 'uav_mass_difference_', setting it to 0 and returning!!!");
+  //   } else if (uav_mass_difference_ > km_lim_) {
+  //     uav_mass_difference_ = km_lim_;
+  //     uav_mass_saturated   = true;
+  //   } else if (uav_mass_difference_ < -km_lim_) {
+  //     uav_mass_difference_ = -km_lim_;
+  //     uav_mass_saturated   = true;
+  //   }
 
-    if (uav_mass_saturated) {
-      ROS_WARN_THROTTLE(1.0, "[DergbryanTracker]: The UAV mass difference is being saturated to %.2f!", uav_mass_difference_);
-    }
-  }
+  //   if (uav_mass_saturated) {
+  //     ROS_WARN_THROTTLE(1.0, "[DergbryanTracker]: The UAV mass difference is being saturated to %.2f!", uav_mass_difference_);
+  //   }
+  // }
 
   //}
 
@@ -2091,8 +2102,8 @@ for (int i = 0; i < num_pred_samples_; i++) {
   // |                 produce the control output                 |
   // --------------------------------------------------------------
 
-  mrs_msgs::AttitudeCommand::Ptr output_command(new mrs_msgs::AttitudeCommand);
-  output_command->header.stamp = ros::Time::now();
+  // mrs_msgs::AttitudeCommand::Ptr output_command(new mrs_msgs::AttitudeCommand);
+  // output_command->header.stamp = ros::Time::now();
 
   // | ------------ compensated desired acceleration ------------ |
 
@@ -2166,28 +2177,28 @@ for (int i = 0; i < num_pred_samples_; i++) {
 
   auto output_mode = mrs_lib::get_mutexed(mutex_output_mode_, output_mode_);
 
-  // fill in the desired attitude anyway, since we know it
-  output_command->attitude = mrs_lib::AttitudeConverter(Rd);
+  // // fill in the desired attitude anyway, since we know it
+  // output_command->attitude = mrs_lib::AttitudeConverter(Rd);
 
-  if (output_mode == OUTPUT_ATTITUDE_RATE) {
+  // if (output_mode == OUTPUT_ATTITUDE_RATE) {
 
-    // output the desired attitude rate
-    output_command->attitude_rate.x = t[0];
-    output_command->attitude_rate.y = t[1];
-    output_command->attitude_rate.z = t[2];
+  //   // output the desired attitude rate
+  //   output_command->attitude_rate.x = t[0];
+  //   output_command->attitude_rate.y = t[1];
+  //   output_command->attitude_rate.z = t[2];
 
-    output_command->mode_mask = output_command->MODE_ATTITUDE_RATE;
+  //   output_command->mode_mask = output_command->MODE_ATTITUDE_RATE;
 
-  } else if (output_mode == OUTPUT_ATTITUDE_QUATERNION) {
+  // } else if (output_mode == OUTPUT_ATTITUDE_QUATERNION) {
 
-    output_command->mode_mask = output_command->MODE_ATTITUDE;
+  //   output_command->mode_mask = output_command->MODE_ATTITUDE;
 
-    ROS_WARN_THROTTLE(1.0, "[DergbryanTracker]: outputting desired orientation (this is not normal)");
-  }
+  //   ROS_WARN_THROTTLE(1.0, "[DergbryanTracker]: outputting desired orientation (this is not normal)");
+  // }
 
-  output_command->desired_acceleration.x = desired_x_accel;
-  output_command->desired_acceleration.y = desired_y_accel;
-  output_command->desired_acceleration.z = desired_z_accel;
+  // output_command->desired_acceleration.x = desired_x_accel;
+  // output_command->desired_acceleration.y = desired_y_accel;
+  // output_command->desired_acceleration.z = desired_z_accel;
 
   /*QUESTION: do we need rampup_active_ in traj prediction? now commented*/
   // if (rampup_active_) {
@@ -2216,27 +2227,27 @@ for (int i = 0; i < num_pred_samples_; i++) {
   // } else {
   //   output_command->thrust = thrust;
   // }
-  output_command->thrust = thrust;
-  /*QUESTION: do we need rampup_active_ in traj prediction? now commented*/
-  // output_command->ramping_up = rampup_active_;
+  // output_command->thrust = thrust;
+  // /*QUESTION: do we need rampup_active_ in traj prediction? now commented*/
+  // // output_command->ramping_up = rampup_active_;
 
-  output_command->mass_difference = uav_mass_difference_;
-  output_command->total_mass      = total_mass;
+  // output_command->mass_difference = uav_mass_difference_;
+  // output_command->total_mass      = total_mass;
 
-  output_command->disturbance_bx_b = -Ib_b_[0];
-  output_command->disturbance_by_b = -Ib_b_[1];
+  // output_command->disturbance_bx_b = -Ib_b_[0];
+  // output_command->disturbance_by_b = -Ib_b_[1];
 
-  output_command->disturbance_bx_w = -Ib_w[0];
-  output_command->disturbance_by_w = -Ib_w[1];
+  // output_command->disturbance_bx_w = -Ib_w[0];
+  // output_command->disturbance_by_w = -Ib_w[1];
 
-  output_command->disturbance_wx_w = -Iw_w_[0];
-  output_command->disturbance_wy_w = -Iw_w_[1];
+  // output_command->disturbance_wx_w = -Iw_w_[0];
+  // output_command->disturbance_wy_w = -Iw_w_[1];
 
-  output_command->controller_enforcing_constraints = false;
+  // output_command->controller_enforcing_constraints = false;
 
-  output_command->controller = "DergbryanTracker";
+  // output_command->controller = "DergbryanTracker";
 
-  last_attitude_cmd_ = output_command;
+  // last_attitude_cmd_ = output_command;
 
   /*QUESTION: what to do now with the output_command?*/
   //return output_command;

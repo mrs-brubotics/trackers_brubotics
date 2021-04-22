@@ -366,6 +366,16 @@ private:
   boost::shared_ptr<ReconfigureServer>        reconfigure_server_;
   trackers_brubotics::mpc_copy_trackerConfig         drs_params_;
   std::mutex                                  mutex_drs_params_;
+
+
+  // Custom:
+  // ---------------------custom publishers --------------------------- //
+  ros::Publisher pub_goal_pose_;
+  // | ---------------------- desired goal ---------------------- |
+  double     goal_x_;
+  double     goal_y_;
+  double     goal_z_;
+  double     goal_heading_;
 };
 
 //}
@@ -568,6 +578,9 @@ void MpcCopyTracker::initialize(const ros::NodeHandle& parent_nh, [[maybe_unused
     other_uav_diag_subscribers_.push_back(
         mrs_lib::SubscribeHandler<mrs_msgs::MpcTrackerDiagnostics>(shopts, diag_topic_name, &MpcCopyTracker::callbackOtherMavDiagnostics, this));
   }
+
+  // create custom publishers
+  pub_goal_pose_ = nh_.advertise<mrs_msgs::ReferenceStamped>("goal_pose", 10);
 
   // | --------------- dynamic reconfigure server --------------- |
 
@@ -932,6 +945,20 @@ const mrs_msgs::PositionCommand::ConstPtr MpcCopyTracker::update(const mrs_msgs:
 
     return mrs_msgs::PositionCommand::ConstPtr(new mrs_msgs::PositionCommand(position_cmd));
   }
+
+  // publish the goal pose to a custom topic
+  mrs_msgs::ReferenceStamped goal_pose;
+  // goal_pose.header.stamp          = ros::Time::now();
+  // goal_pose.header.frame_id  = "fcu_untilted";
+  goal_pose.header.stamp    = uav_state->header.stamp;
+  goal_pose.header.frame_id = uav_state->header.frame_id;
+  goal_pose.reference.position.x  = goal_x_;
+  goal_pose.reference.position.y  = goal_y_;
+  goal_pose.reference.position.z  = goal_z_;
+  goal_pose.reference.heading = goal_heading_;
+  pub_goal_pose_.publish(goal_pose);
+
+
 
   iterateModel();
 
@@ -1389,6 +1416,11 @@ const mrs_msgs::DynamicsConstraintsSrvResponse::ConstPtr MpcCopyTracker::setCons
 const mrs_msgs::ReferenceSrvResponse::ConstPtr MpcCopyTracker::setReference(const mrs_msgs::ReferenceSrvRequest::ConstPtr& cmd) {
 
   toggleHover(false);
+
+  goal_x_=cmd->reference.position.x;
+  goal_y_=cmd->reference.position.y;
+  goal_z_=cmd->reference.position.z;
+  goal_heading_=cmd->reference.heading;
 
   setGoal(cmd->reference.position.x, cmd->reference.position.y, cmd->reference.position.z, cmd->reference.heading, true);
 

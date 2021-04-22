@@ -6,6 +6,7 @@
 #include <mrs_lib/profiler.h>
 #include <mrs_lib/mutex.h>
 
+#include <mrs_msgs/FuturePoint.h>
 //}
 
 namespace mrs_uav_trackers
@@ -74,6 +75,8 @@ private:
   bool hover_          = false;
 
   bool starting_bool=true;
+
+  ros::Publisher pub_goal_pose_;
 };
 //}
 
@@ -83,11 +86,14 @@ private:
 /*initialize()//{*/
 void BypassTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unused]] const std::string uav_name,
                              [[maybe_unused]] std::shared_ptr<mrs_uav_managers::CommonHandlers_t> common_handlers) {
+  ros::NodeHandle nh_(parent_nh, "bypass_tracker");
   ros::Time::waitForValid();
   // no paramaters to be loaded for this tracker
   ROS_INFO("[BypassTracker]: no parameters to be loaded");
   // initialize variables
 
+  // create publishers
+  pub_goal_pose_ = nh_.advertise<mrs_msgs::ReferenceStamped>("goal_pose", 10);
   // initialization completed
   is_initialized_ = true;
   ROS_INFO("[BypassTracker]: initialized");
@@ -204,6 +210,20 @@ const mrs_msgs::PositionCommand::ConstPtr BypassTracker::update(const mrs_msgs::
   // set the header
   position_cmd.header.stamp    = uav_state->header.stamp;
   position_cmd.header.frame_id = uav_state->header.frame_id;
+
+
+  // publish the goal pose to a custom topic
+  mrs_msgs::ReferenceStamped goal_pose;
+  // goal_pose.header.stamp          = ros::Time::now();
+  // goal_pose.header.frame_id  = "fcu_untilted";
+  goal_pose.header.stamp    = uav_state->header.stamp;
+  goal_pose.header.frame_id = uav_state->header.frame_id;
+  goal_pose.reference.position.x  = goal_x_;
+  goal_pose.reference.position.y  = goal_y_;
+  goal_pose.reference.position.z  = goal_z_;
+  goal_pose.reference.heading = goal_heading_;
+  pub_goal_pose_.publish(goal_pose);
+
 
   // return a position command
   return mrs_msgs::PositionCommand::ConstPtr(new mrs_msgs::PositionCommand(position_cmd));
