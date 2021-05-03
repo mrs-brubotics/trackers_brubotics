@@ -223,6 +223,7 @@ private:
   ros::Publisher future_tube_publisher_; // inspired from FutureTrajectory.msg of ctu mrs
 
   double total_mass_;
+  float arm_radius=0.5; //Frank
   
   double applied_ref_x_;
   double applied_ref_y_;
@@ -242,8 +243,18 @@ private:
 
   double _eta_;//0.05; // smoothing factor attraction field
   // finish added by bryan
-
-
+  // Static obstacle avoidance 
+  double DSM_o_; // Dynamic Safety Margin for static obstacle avoidance
+  double _kappa_o_; //1.1; //1.1; // kappa parameter of the DSM_o
+  // wall avoidance 
+  double DSM_w_; // Dynamic Safety Margin for static obstacle avoidance
+  double _kappa_w_; //1.1; //1.1; // kappa parameter of the DSM_w
+  double wall_p_x; // Wall position (considered infinitly long) //Frank
+  double _delta_w_;
+  double _zeta_w_;
+  double min_wall_distance;
+  Eigen::Vector3d c_w = Eigen::Vector3d::Zero(3); //wall normal vector 
+  Eigen::Vector3d _d_w_ = Eigen::Vector3d::Zero(3); // Wall position (considered infinitly long) //Frank
   // collision avoidance
   int avoidance_this_uav_number_;
   int avoidance_this_uav_priority_;
@@ -336,7 +347,7 @@ private:
 
 
 
-
+  //Frank : add new DSM_w, DSM_o DONE 
   double DSM_a_;
   double _alpha_a_;
   std::string _circ_type_;
@@ -346,7 +357,7 @@ private:
   ros::Publisher DSM_publisher_;
   // dergbryan_tracker::DSM DSM_msg_;
   trackers_brubotics::DSM DSM_msg_;
-
+  //Frank : Add new parameters inside this msg -> trackers_brubotics/msg/ DONE
 
   // // trajectory loader (mpc_tracker):
   std::tuple<bool, std::string, bool> loadTrajectory(const mrs_msgs::TrajectoryReference msg);
@@ -416,8 +427,11 @@ private:
 
   bool _enable_dsm_s_;
   bool _enable_dsm_a_;
+  bool _enable_dsm_o_;
+  bool _enable_dsm_w_;
   double _constant_dsm_;
   bool _enable_repulsion_a_;
+  bool _enable_repulsion_w_;
 };
 //}
 
@@ -505,6 +519,7 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   mrs_lib::ParamLoader param_loader2(nh2_, "DergbryanTracker");
 
   param_loader2.loadParam("use_derg", _use_derg_);
+  //Frank : Reactivate this parameters NO - They are remplaced by enable_dsm_x
   // param_loader2.loadParam("use_wall_constraints", use_wall_constraints_);
   // param_loader2.loadParam("use_cylindrical_constraints", use_cylindrical_constraints_);
   // param_loader2.loadParam("use_agents_avoidance", use_agents_avoidance_);
@@ -540,9 +555,17 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   num_pred_samples_ = (int)(_pred_horizon_/custom_dt_); // number of prediction samples
   param_loader2.loadParam("dynamic_safety_margin/kappa/s", _kappa_s_);
   param_loader2.loadParam("dynamic_safety_margin/kappa/a", _kappa_a_);
+  param_loader2.loadParam("dynamic_safety_margin/kappa/w", _kappa_w_);
+  param_loader2.loadParam("dynamic_safety_margin/kappa/o", _kappa_o_);
+  //Frank : Add _kappa_o, _kappa_w - DONE 
+  //Frank : Add _zeta_w, _delta_w, _sigma_o, _delta_o, R_o_j (this last one must come from the world file where the obstacle is defined)
   param_loader2.loadParam("dynamic_safety_margin/enable_dsm/constant_dsm", _constant_dsm_);
   param_loader2.loadParam("dynamic_safety_margin/enable_dsm/s", _enable_dsm_s_);
   param_loader2.loadParam("dynamic_safety_margin/enable_dsm/a", _enable_dsm_a_);
+  param_loader2.loadParam("dynamic_safety_margin/enable_dsm/w", _enable_dsm_w_);
+  param_loader2.loadParam("dynamic_safety_margin/enable_dsm/o", _enable_dsm_o_);
+  //Frank : Add _enable_dsm_w, _enable_dsm_o - DONE 
+  //Frank : Add _d_w  for walls (this last one must come from the world file where the obstacle is defined) - DONE
   param_loader2.loadParam("constraints/total_thrust/min", _T_min_);
   param_loader2.loadParam("constraints/total_thrust/extra_saturation_ratio", _extra_thrust_saturation_ratio_);
   _thrust_saturation_ = _extra_thrust_saturation_ratio_*_thrust_saturation_; // as to not trigger the emergency landing too quickly
@@ -556,7 +579,11 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   param_loader2.loadParam("navigation_field/repulsion/agents/static_safety_margin", _delta_a_);
   param_loader2.loadParam("navigation_field/repulsion/agents/circulation_gain", _alpha_a_);
   param_loader2.loadParam("navigation_field/repulsion/agents/circulation_type", _circ_type_);
-
+  param_loader2.loadParam("navigation_field/repulsion/wall/enabled", _enable_repulsion_w_);
+  param_loader2.loadParam("navigation_field/repulsion/wall/influence_margin", _zeta_w_);
+  param_loader2.loadParam("navigation_field/repulsion/wall/static_safety_margin", _delta_w_);
+  param_loader2.loadParam("navigation_field/repulsion/wall/wall_position_x", wall_p_x); //Frank : NOT FINAL, need to take account of N_w -> make it a matrix of dim N_w*3 with the position of each wall
+  // Frank: Add same parameters for the navigation field of the wall and obstable - DONE HALF
   // create publishers
   pub_goal_pose_ = nh2_.advertise<mrs_msgs::ReferenceStamped>("goal_pose", 10);
   // custom_predicted_traj_publisher = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_traj", 1);
@@ -2150,7 +2177,7 @@ for (int i = 0; i < num_pred_samples_; i++) {
 
   // BRYAN: cancel terms for minimal controller
   t = q_feedback;// + Rw + q_feedforward;
-
+  //_enable_repulsion_a_
   // | --------------- saturate the attitude rate --------------- |
 
   if (got_constraints_) {
@@ -2360,29 +2387,38 @@ void DergbryanTracker::DERG_computation(){
   // | --------------------------- repulsion fields ------------------------------|
   MatrixXd NF_a_co  = MatrixXd::Zero(3, 1); // conservative part
   MatrixXd NF_a_nco = MatrixXd::Zero(3, 1); // non-conservative part
+  MatrixXd NF_w = MatrixXd::Zero(3,1);
+  //MatrixXd NF_o_co = MatrixX::Zero(3,1);
+  //MatrixXd NF_o_nco = MatrixX::Zero(3,1);
+  //Frank : Add NF_o_co, NF_o_nco, NF_w AND/Reactivate the lines below
+  //Frank : How to code such that differents obstacles are treated the right way ? Back then it worked pretty well but how boutnow ? Check with 1 first then see
+
   // | --------------------------- repulsion walls -------------------------------|
-  // max_repulsion_wall1= (sigma_w-(abs(d_w(1,0)-applied_ref_x)))/(sigma_w-delta_w);
-  // if (0 > max_repulsion_wall1){
-  // max_repulsion_wall1=0;
-  // }
-  // NF_w(0,0)=-max_repulsion_wall1;
-  // NF_w(1,0)=0;
-  // NF_w(2,0)=0;
+  double max_repulsion_wall1;
+  //float arm_radius=0.325; // radius of the quadrotor
+  _d_w_(1,0) = wall_p_x - arm_radius;
+  max_repulsion_wall1= (_zeta_w_-(abs(_d_w_(1,0)-applied_ref_x_)))/(_zeta_w_-_delta_w_);
+  if (0 > max_repulsion_wall1){
+  max_repulsion_wall1=0;
+  }
+  NF_w(0,0)=-max_repulsion_wall1;
+  NF_w(1,0)=0;
+  NF_w(2,0)=0;
  
-  // d_w(1,0) = 10 - arm_radius;
+  
 
-  // c_w(0,0)=1;
-  // c_w(1,0)=0;
-  // c_w(2,0)=0;
+  c_w(0,0)=1;
+  c_w(1,0)=0;
+  c_w(2,0)=0;
 
-  // min_wall_distance= abs(d_w(1,0) -custom_trajectory_out.poses[0].position.x);
-  // for (size_t i = 0; i < sample_hor; i++) {
-  // if (abs(d_w(1,0) -custom_trajectory_out.poses[i].position.x) < min_wall_distance){
-  // min_wall_distance=abs(d_w(1,0) -custom_trajectory_out.poses[i].position.x);
-  // }
-  // }
-  // DSM_w=kappa_w*min_wall_distance;
-
+  min_wall_distance= abs(_d_w_(1,0) - predicted_poses_out.poses[0].position.x);//custom_trajectory_out.poses[0].position.x);
+  for (size_t i = 0; i < num_pred_samples_; i++) {
+    if (abs(_d_w_(1,0) - predicted_poses_out.poses[0].position.x) < min_wall_distance){
+      min_wall_distance=abs(_d_w_(1,0) - predicted_poses_out.poses[i].position.x);
+    }
+  }
+  DSM_w_=_kappa_w_*min_wall_distance;
+  ROS_INFO_STREAM("DSM_w_ = \n" << DSM_w_);
   // | ----------------------- repulsion static obstacles ------------------------|
   // // Conservative part
   // dist_ref_obs_x_1=o_1(0,0)-applied_ref_x; // x distance between v and obstacle 1
@@ -2481,7 +2517,7 @@ void DergbryanTracker::DERG_computation(){
       double DSM_a_temp = _kappa_a_*(_Sa_max_ - pos_error)/_Sa_max_; // in _kappa_a_*[0 , 1]
       
       if (DSM_a_temp < DSM_a_){  
-      DSM_a_ = DSM_a_temp; // choose smallest DSM_a_ over the predicted trajectory
+      DSM_a_ = DSM_a_temp; // choose smallest DSM_a_ over the predicted trajectory //Frank : Ask bryan if he expects a similar reasoning for each DSM
       }
     }
   }
@@ -2491,7 +2527,7 @@ void DergbryanTracker::DERG_computation(){
     */
 
     // this uav:
-    DSM_a_ = 100000; // large value
+    DSM_a_ = 100000; // large value //Frank : Explanation of the lambda function
     double DSM_a_temp;
     Eigen::Vector3d point_link_pos(predicted_poses_out.poses[0].position.x, predicted_poses_out.poses[0].position.y, predicted_poses_out.poses[0].position.z);
     Eigen::Vector3d point_link_applied_ref(applied_ref_x_, applied_ref_y_, applied_ref_z_);
@@ -2508,7 +2544,7 @@ void DergbryanTracker::DERG_computation(){
 
     // ROS_INFO_STREAM("pv uav1 = \n" << other_uavs_applied_references_["uav1"]);
 
-    while ((it1 != other_uavs_applied_references_.end()) ) {
+    while ((it1 != other_uavs_applied_references_.end()) ) {// Frank : Maybe do the same for the other DSMs
       // make sure we use the same uavid for both iterators. It must be robust to possible difference in lenths of the iterators (if some communication got lost) or a different order (e.g. if not auto alphabetical).
       std::string this_uav_id = it1->first;
       try
@@ -2605,7 +2641,7 @@ void DergbryanTracker::DERG_computation(){
     for (size_t i = 0; i < num_pred_samples_; i++) {
       // shortest distance from predicted pos to tube link
       Eigen::Vector3d point_predicted_pos(predicted_poses_out.poses[i].position.x, predicted_poses_out.poses[i].position.y, predicted_poses_out.poses[i].position.z);
-      double lambda = getLambda(point_link_applied_ref, point_link_star, point_predicted_pos);
+      double lambda = getLambda(point_link_applied_ref, point_link_star, point_predicted_pos); 
       double norm;
       if ((lambda <= 1) && (lambda > 0)) {
         Eigen::Vector3d point_link_lambda = point_link_applied_ref + lambda*(point_link_star - point_link_applied_ref);
@@ -3424,24 +3460,27 @@ void DergbryanTracker::DERG_computation(){
   else{
     DSM_total_ = _constant_dsm_;
   }
-
-  // if(DSM_w <= DSM_total){
-  // DSM_total=DSM_w;
-  // }
+  // Frank : uncomment these lines when everything is implemented
+  //if(DSM_w <= DSM_total){
+  //DSM_total=DSM_w;
+  //}
 
   // if(DSM_o <= DSM_total){
   // DSM_total=DSM_o;
   // }
-
+  //Frank : Add the remaining cases for the other DSMs
   if((DSM_a_ <= DSM_total_) && (_enable_dsm_a_)){
     DSM_total_ = DSM_a_;
+  }
+  if((DSM_w_ <= DSM_total_) && (_enable_dsm_w_)){
+    DSM_total_ = DSM_w_;
   }
   if(DSM_total_ < 0){
     DSM_total_ = 0;
   }
 
   
-  // ROS_INFO_STREAM("DSM_total_ = \n" << DSM_total_);
+  ROS_INFO_STREAM("DSM_total_ = \n" << DSM_total_);
   // ROS_INFO_STREAM("DSM_s_ = \n" << DSM_s_);
 
   //ROS_INFO_STREAM("DSM_a_ = \n" << DSM_a_);
@@ -3459,12 +3498,14 @@ void DergbryanTracker::DERG_computation(){
   
   // | ------------------------- total repulsion field ---------------------------|
   MatrixXd NF_total = MatrixXd::Zero(3, 1);
+  //Frank : Rework the code above and make lines achieving this result. 
   // NF_total(0,0)=NF_att(0,0)+ NF_a(0,0) +NF_o(0,0) + NF_w(0,0);
   // NF_total(1,0)=NF_att(1,0) + NF_a(1,0) +NF_o(1,0) + NF_w(1,0);
   // NF_total(2,0)=NF_att(2,0) + NF_a(2,0) +NF_o(2,0) + NF_w(2,0);
-  NF_total = NF_att + _enable_repulsion_a_*NF_a; 
-  // ROS_INFO_STREAM("NF_total = \n" << NF_total);
-  // ROS_INFO_STREAM("NF_a = \n" << NF_a);
+  NF_total = NF_att + _enable_repulsion_a_*NF_a + _enable_repulsion_w_*NF_w; 
+  ROS_INFO_STREAM("NF_total = \n" << NF_total);
+  //ROS_INFO_STREAM("NF_a = \n" << NF_a);
+
   // | -------------------------------------------------------------------------- |
 
 
@@ -3489,8 +3530,10 @@ void DergbryanTracker::DERG_computation(){
   DSM_msg_.DSM = DSM_total_;
   DSM_msg_.DSM_s = DSM_s_;
   DSM_msg_.DSM_a = DSM_a_;
+  DSM_msg_.DSM_o = DSM_o_;
+  DSM_msg_.DSM_w = DSM_w_;
   DSM_publisher_.publish(DSM_msg_);
-
+  //Frank : Add the remaining DSMs to the custom DSM message - DONE
   // TODO  maybe move to prediction function or only publish when required by that derg strategy??!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
   // TODO= check mpc_tracker to "check" if communicated info it outdated too much
   // mrs_msgs::FuturePoint new_point;
