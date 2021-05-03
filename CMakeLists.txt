@@ -123,6 +123,20 @@ add_dependencies(DergbryanTracker
 target_link_libraries(DergbryanTracker
 	${catkin_LIBRARIES}
 )
+
+# DergPmTracker
+
+add_library(DergPmTracker
+src/dergPm_tracker/dergPm_tracker.cpp
+)
+add_dependencies(DergPmTracker
+	${catkin_EXPORTED_TARGETS}
+	${${PROJECT_NAME}_EXPORTED_TARGETS}
+	#${PROJECT_NAME}_generate_messages_cpp}
+)
+target_link_libraries(DergPmTracker
+	${catkin_LIBRARIES}
+)
   
 #############
 ## Install ##
@@ -132,6 +146,7 @@ install(TARGETS
   MpcCopyTracker
   BypassTracker
   DergbryanTracker
+  DergPmTracker
   ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
   LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
   RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
