@@ -979,8 +979,7 @@ const mrs_msgs::PositionCommand::ConstPtr DergPmTracker::update(const mrs_msgs::
   //   }
   // }
 
-  //added by Aly + Philippe
-
+  //added by Aly 
   if (run_type == "simulation")
   {
     // subscriber of the simulation
@@ -1366,7 +1365,6 @@ void DergPmTracker::trajectory_prediction_general(mrs_msgs::PositionCommand posi
  
   /*QUESTION: where to print Rw? When it is set*/
   // ROS_INFO_STREAM("Rw = \n" << Rw);
-
   
 
   // | --------------------- initialize the state of the UAV --------------------- |
@@ -1488,10 +1486,10 @@ for (int i = 0; i < num_pred_samples_; i++) {
     custom_pose_load.position.x = load_pose_position[0];
 
     load_pose_position[1] = load_pose_position[1] + load_lin_vel[1]*custom_dt_;
-    custom_pose_load.position.x = load_pose_position[1];
+    custom_pose_load.position.y = load_pose_position[1];
 
     load_pose_position[2] = load_pose_position[2] + load_lin_vel[2]*custom_dt_;
-    custom_pose_load.position.x = load_pose_position[2];
+    custom_pose_load.position.z = load_pose_position[2];
 
        //t = q_feedback + other terms
     skew_Ow << 0     , -attitude_rate_pred(2), attitude_rate_pred(1),
@@ -1533,6 +1531,7 @@ for (int i = 0; i < num_pred_samples_; i++) {
   
   //Added by Aly
   predicted_poses_load_out.poses.push_back(custom_pose_load);
+  ROS_INFO_STREAM("predicted poses load out \n" << predicted_poses_load_out.poses );
   predicted_velocities_load_out.poses.push_back(custom_vel_load);
 
   // | --------------------- define system states --------------------- |
@@ -1565,6 +1564,72 @@ for (int i = 0; i < num_pred_samples_; i++) {
   // ROS_INFO_STREAM("Ep = \n" << Ep);
   // ROS_INFO_STREAM("Ev = \n" << Ev);
 
+  // added by Aly 
+  // --------------------------------------------------------------
+  // |          load the control reference and estimates for the load         |
+  // --------------------------------------------------------------
+  // Rpl - position reference load in global frame
+  Eigen::Vector3d Rpl = Eigen::Vector3d::Zero(3);
+
+  // Opl - position load in global frame
+  // Ovl - velocity load in global frame
+  Eigen::Vector3d Opl(load_pose_position[0], load_pose_position[1], load_pose_position[2]);
+  Eigen::Vector3d Ovl(load_lin_vel[0], load_lin_vel[1], load_lin_vel[2]);
+  Eigen::Vector3d Epl = Eigen::Vector3d::Zero(3); // Load position control error
+  Eigen::Vector3d Evl = Eigen::Vector3d::Zero(3); // Load velocity control error
+  cable_length = std::stod(getenv("CABLE_LENGTH")); // is changed inside session.yml to take length cable into account! stod to transform string defined in session to double.
+  //ROS_INFO_STREAM("Cable length = \n" << cable_length);
+
+  if (run_type == "simulation"){
+    if (position_cmd.use_position_vertical || position_cmd.use_position_horizontal) {
+      // ROS_INFO_STREAM("position_cmd.use_position_horizontal = \n" << position_cmd.use_position_horizontal);
+      // std::cout << "with std: "<< position_cmd.use_position_horizontal << std::endl;
+      if (position_cmd.use_position_horizontal) { 
+        Rp[0] = position_cmd.position.x;
+        Rp[1] = position_cmd.position.y;
+      } else {
+        Rv[0] = 0;
+        Rv[1] = 0;
+      }
+
+      if (position_cmd.use_position_vertical) {
+        Rp[2] = position_cmd.position.z - cable_length;
+      } else {
+        Rv[2] = 0;
+      }
+    }
+
+    //ROS_INFO_STREAM("load_position = \n" << Opl);
+
+    // added by Raph
+    if(payload_spawned){
+      if(remove_offset){
+        Epl = Rpl - Opl;
+        load_pose_position_offset = Epl;
+        remove_offset = false;
+      }
+    }
+    //ROS_INFO_STREAM("Error Position load offset:" << std::endl << load_pose_position_offset);
+
+    if (position_cmd.use_position_horizontal || position_cmd.use_position_vertical) {
+      Epl = Rpl - Opl - load_pose_position_offset; // remove offset because the because load does not spawn perfectly under drone
+    }
+
+    if (position_cmd.use_velocity_horizontal || position_cmd.use_velocity_vertical ||
+      position_cmd.use_position_vertical) {  // even when use_position_vertical to provide dampening
+      Evl = Rv - Ovl;
+    }
+    
+  }else{
+    //ROS_INFO_STREAM("load_position = \n" << Opl);
+    if (position_cmd.use_position_horizontal || position_cmd.use_position_vertical) {
+      Epl = Opl; // since encoder gives offset from drone position
+    }
+    if (position_cmd.use_velocity_horizontal || position_cmd.use_velocity_vertical ||
+      position_cmd.use_position_vertical) {  // even when use_position_vertical to provide dampening
+      Evl = Rv - Ovl;
+    }
+  }
 
   // | --------------------- load the gains --------------------- |
   // NOTE: do not move the gains outside the for loop! Due to "Kp = Kp * (_uav_mass_ + uav_mass_difference_);"
@@ -1626,7 +1691,43 @@ for (int i = 0; i < num_pred_samples_; i++) {
   // QUESTION: how to get _uav_mass_ analoguous to controllers, in the controllers ?
   // Kp = Kp * (_uav_mass_ + uav_mass_difference_);
   // Kv = Kv * (_uav_mass_ + uav_mass_difference_);
-  
+
+  //added by Aly
+  // 2e method pandolfo
+  Eigen::Array3d  Kpl = Eigen::Array3d::Zero(3); 
+  Eigen::Array3d  Kdl = Eigen::Array3d::Zero(3); 
+ 
+  if (position_cmd.use_position_horizontal) {
+      Kpl[0] = 7.0;
+      Kpl[1] = Kpl[0];
+  } else {
+      Kpl[0] = 0;
+      Kpl[1] = 0;
+  }
+
+  if (position_cmd.use_position_vertical) {
+    Kpl[2] = 0;
+  } 
+  else {
+    Kpl[2] = 0;
+  }
+
+ 
+  if (position_cmd.use_velocity_horizontal) {
+      Kdl[0] = 0.5;
+      Kdl[1] = Kdl[0];
+  } else {
+      Kdl[0] = 0;
+      Kdl[1] = 0;
+  }
+
+  if (position_cmd.use_position_vertical) {
+    Kdl[2] = 0;
+  } 
+  else {
+    Kdl[2] = 0;
+  }
+
   // Added by Aly
   uav_mass_difference_ = std::stod(getenv("LOAD_MASS")); // can be changed in session.yml file. To take mass load into account! stod to transform string defined in session to double
 
@@ -1636,14 +1737,17 @@ for (int i = 0; i < num_pred_samples_; i++) {
   double total_mass = common_handlers_->getMass(); // total estimated mass calculated by controller
   // ROS_INFO_STREAM("DergPmTracker: total_mass = \n" << total_mass);
   // global total mass created by bryan
-  total_mass_= total_mass;
+  total_mass_= total_mass + uav_mass_difference_;
   //OLD Kp = Kp * (_uav_mass_ + uav_mass_difference_);
   //OLD Kv = Kv * (_uav_mass_ + uav_mass_difference_);
   Kp = Kp * total_mass;
   Kv = Kv * total_mass;
 
-
-  
+  //Added by Aly
+  //2e method pandolfo
+  Kpl = Kpl * total_mass;
+  Kdl = Kdl * total_mass;
+  //ROS_INFO_STREAM("RUN_TYPE \n" << getenv("RUN_TYPE") );
 
 
   // a print to test if the gains change so you know where to change:
@@ -1684,6 +1788,35 @@ for (int i = 0; i < num_pred_samples_; i++) {
   Eigen::Vector3d position_feedback = -Kp * Ep.array();
   Eigen::Vector3d velocity_feedback = -Kv * Ev.array();
   Eigen::Vector3d integral_feedback;
+
+   //added by Aly
+  //Eigen::Vector3d velocity_load_feedback = -Klv * load_lin_vel.array();
+  //ROS_INFO_STREAM("Velocity feedback:" << std::endl << velocity_load_feedback);
+  
+  if (run_type == "simulation"){ 
+    for (int i = 0; i < 3; i++) // in order to set the error to 0 before the load spawn
+    {
+      if(!payload_spawned)
+      {
+        Epl = Epl*0;
+        Evl = Evl*0;
+      }
+      if(payload_spawned && abs(Epl[i]) < 0.05)
+      {
+        Epl[i] = Epl[i]*0;
+      }
+    }
+  }
+  //ROS_INFO_STREAM("Error Position load:" << std::endl << Epl);
+  
+  Eigen::Vector3d position_load_feedback = -Kpl * Epl.array();
+  Eigen::Vector3d velocity_load_feedback = -Kdl * Evl.array();
+  //ROS_INFO_STREAM("Position feedback:" << std::endl << position_load_feedback);
+
+  //ROS_INFO_STREAM("Error Position load:" << std::endl << Epl);
+  //ROS_INFO_STREAM("Error Velocity load:" << std::endl << Evl);
+
+
   {
     std::scoped_lock lock(mutex_integrals_);
 
@@ -1697,7 +1830,9 @@ for (int i = 0; i < num_pred_samples_; i++) {
   // Eigen::Vector3d f = position_feedback + velocity_feedback + total_mass * (Eigen::Vector3d(0, 0, common_handlers_->g));// custom 1
   // OLD Eigen::Vector3d f = position_feedback + velocity_feedback + _uav_mass_ * (Eigen::Vector3d(0, 0, _g_));// custom 2
   //OLD Eigen::Vector3d f = position_feedback + velocity_feedback + _uav_mass_ * (Eigen::Vector3d(0, 0, common_handlers_->g));// custom 2
-  Eigen::Vector3d f = position_feedback + velocity_feedback + total_mass * (Eigen::Vector3d(0, 0, common_handlers_->g));// custom 2
+ 
+  // changed by Aly + Philippe
+  Eigen::Vector3d f = position_load_feedback + velocity_load_feedback + position_feedback + velocity_feedback + total_mass * (Eigen::Vector3d(0, 0, common_handlers_->g));// custom 2
   
   // also check line above uav_mass_difference_ = 0!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
@@ -3880,7 +4015,7 @@ void DergPmTracker::callbackOtherUavFutureTrajectoryTube(mrs_lib::SubscribeHandl
 
 }
 
-//added by Aly + Philippe
+//added by Aly 
 // | ----------------- load subscribtion callback ---------------- |
 
 void DergPmTracker::loadStatesCallback(const gazebo_msgs::LinkStatesConstPtr& loadmsg) {
@@ -3926,7 +4061,7 @@ void DergPmTracker::loadStatesCallback(const gazebo_msgs::LinkStatesConstPtr& lo
 
 }
 
-// Raph
+//added by Aly 
 void DergPmTracker::BacaCallback(const mrs_msgs::BacaProtocolConstPtr& msg) {
   int message_id;
   int payload_1;
@@ -3941,7 +4076,6 @@ void DergPmTracker::BacaCallback(const mrs_msgs::BacaProtocolConstPtr& msg) {
 
   float encoder_output = (float) combined/ 1000.0;
 
-  //added by Aly
   if (message_id == 24)
   {
     encoder_angle_1 = encoder_output;
