@@ -1531,7 +1531,7 @@ for (int i = 0; i < num_pred_samples_; i++) {
   
   //Added by Aly
   predicted_poses_load_out.poses.push_back(custom_pose_load);
-  ROS_INFO_STREAM("predicted poses load out \n" << predicted_poses_load_out.poses );
+  //ROS_INFO_STREAM("predicted poses load out \n" << predicted_poses_load_out.poses );
   predicted_velocities_load_out.poses.push_back(custom_vel_load);
 
   // | --------------------- define system states --------------------- |
