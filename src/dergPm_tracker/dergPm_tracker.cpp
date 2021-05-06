@@ -464,7 +464,7 @@ void DergPmTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unused]
   /*QUESTION: using se3_controller here since I want to load the se3 controllers paramters and not overwrite them. How to add paramters specific to derg tracker? How to overwrite se3 control paramters if we would use our own se3 controller?*/
   //ros::NodeHandle nh_(parent_nh, "dergPm_tracker");
   //ros::NodeHandle nh_(parent_nh, "se3_controller");
-  ros::NodeHandle nh_(parent_nh, "se3_brubotics_controller");
+  ros::NodeHandle nh_(parent_nh, "se3_brubotics_load_controller");
   common_handlers_ = common_handlers;
   _uav_name_       = uav_name;
   /*QUESTION: how to load these paramters commented below as was done in the se3controllller?*/
@@ -476,7 +476,7 @@ void DergPmTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unused]
   // | ------------------- loading parameters ------------------- |
   //mrs_lib::ParamLoader param_loader(nh_, "DergPmTracker");
   // mrs_lib::ParamLoader param_loader(nh_, "Se3Controller");
-  mrs_lib::ParamLoader param_loader(nh_, "Se3BruboticsController");
+  mrs_lib::ParamLoader param_loader(nh_, "Se3BruboticsLoadController");
 
   param_loader.loadParam("version", _version_);
 
@@ -535,8 +535,8 @@ void DergPmTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unused]
 
 
 
-  ros::NodeHandle nh2_(parent_nh, "dergbryan_tracker");
-  mrs_lib::ParamLoader param_loader2(nh2_, "DergbryanTracker");
+  ros::NodeHandle nh2_(parent_nh, "dergPm_tracker");
+  mrs_lib::ParamLoader param_loader2(nh2_, "DergPmTracker");
 
   param_loader2.loadParam("use_derg", _use_derg_);
   // param_loader2.loadParam("use_wall_constraints", use_wall_constraints_);
