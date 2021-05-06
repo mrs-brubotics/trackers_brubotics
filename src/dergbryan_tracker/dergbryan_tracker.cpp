@@ -2413,7 +2413,7 @@ void DergbryanTracker::DERG_computation(){
 
   min_wall_distance= abs(_d_w_(1,0) - predicted_poses_out.poses[0].position.x);//custom_trajectory_out.poses[0].position.x);
   for (size_t i = 0; i < num_pred_samples_; i++) {
-    if (abs(_d_w_(1,0) - predicted_poses_out.poses[0].position.x) < min_wall_distance){
+    if (abs(_d_w_(1,0) - predicted_poses_out.poses[i].position.x) < min_wall_distance){
       min_wall_distance=abs(_d_w_(1,0) - predicted_poses_out.poses[i].position.x);
     }
   }
