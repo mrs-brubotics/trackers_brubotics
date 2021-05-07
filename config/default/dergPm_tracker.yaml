@@ -35,10 +35,14 @@ dynamic_safety_margin:
   kappa:
     s: 27 #27 #27 #27 #1.5 # 1.5 #1.1 #1.5 #1.1 # saturation total thrust
     a: 27 #27 #160 #80.0 #15.0 # agent collision avoidance
+    w: 27
+    o: 27 
   enable_dsm:
     constant_dsm: 10 # used dsm if all dsms below are disabled
     s: true
     a: true #true!!!!!!!!!!!!!!!!!!!!!!!
+    w: false
+    o: false
 navigation_field:
   attraction:
     smoothing_ratio: 0.10 # smoothing factor
@@ -49,7 +53,11 @@ navigation_field:
       static_safety_margin: 0.07 # 0.00 # test if agents on a line don't collide without circulation. Increase untill no collsiions. Or check single agent step response deviation of simulation vs reality.
       circulation_gain: 0.05 # put on value < 10^-4 (e.g; 0.0) to switch off. 
       circulation_type: "xy" # "xy", "xz", "yz", "xyz"
-
+    wall:
+      enabled: false
+      influence_margin: 4.0 # called before sigma, now zeta
+      static_safety_margin: 2.0 # d_w
+      wall_position_x : 100000 # //Frank : Very big so don't disturb usual tests... TODO : link this yaml with world file
 
 
 #mpc_rate: 100.0 # rate of MPC calculation, >= 10 Hz
