@@ -246,6 +246,11 @@ private:
   // Static obstacle avoidance 
   double DSM_o_; // Dynamic Safety Margin for static obstacle avoidance
   double _kappa_o_; //1.1; //1.1; // kappa parameter of the DSM_o
+  double _zeta_o_;
+  double _delta_o_;
+  double _alpha_o_;
+  double R_o_; 
+  Eigen::Vector3d obs_position = Eigen::Vector3d::Zero(3);
   // wall avoidance 
   double DSM_w_; // Dynamic Safety Margin for static obstacle avoidance
   double _kappa_w_; //1.1; //1.1; // kappa parameter of the DSM_w
@@ -350,7 +355,8 @@ private:
   //Frank : add new DSM_w, DSM_o DONE 
   double DSM_a_;
   double _alpha_a_;
-  std::string _circ_type_;
+  std::string _circ_type_; // Default circulation for agent
+  std::string _circ_type_o; //circulation for static obstacles
 
 
 
@@ -432,6 +438,7 @@ private:
   double _constant_dsm_;
   bool _enable_repulsion_a_;
   bool _enable_repulsion_w_;
+  bool _enable_repulsion_o_;
 };
 //}
 
@@ -583,6 +590,15 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   param_loader2.loadParam("navigation_field/repulsion/wall/influence_margin", _zeta_w_);
   param_loader2.loadParam("navigation_field/repulsion/wall/static_safety_margin", _delta_w_);
   param_loader2.loadParam("navigation_field/repulsion/wall/wall_position_x", wall_p_x); //Frank : NOT FINAL, need to take account of N_w -> make it a matrix of dim N_w*3 with the position of each wall
+  //param_loader2.loadParam("navigation_field/attraction/smoothing_ratio", _eta_);
+  param_loader2.loadParam("navigation_field/repulsion/static_obstacle/enabled", _enable_repulsion_o_);
+  param_loader2.loadParam("navigation_field/repulsion/static_obstacle/influence_margin", _zeta_o_);
+  param_loader2.loadParam("navigation_field/repulsion/static_obstacle/static_safety_margin", _delta_o_);
+  param_loader2.loadParam("navigation_field/repulsion/static_obstacle/circulation_gain", _alpha_o_);
+  param_loader2.loadParam("navigation_field/repulsion/static_obstacle/circulation_type", _circ_type_o);
+  param_loader2.loadParam("navigation_field/repulsion/static_obstacle/obstacle_position_x", obs_position(0,0));
+  param_loader2.loadParam("navigation_field/repulsion/static_obstacle/obstacle_position_y", obs_position(1,0));
+  param_loader2.loadParam("navigation_field/repulsion/static_obstacle/radius", R_o_);
   // Frank: Add same parameters for the navigation field of the wall and obstable - DONE HALF
   // create publishers
   pub_goal_pose_ = nh2_.advertise<mrs_msgs::ReferenceStamped>("goal_pose", 10);
@@ -596,7 +612,7 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   chatter_publisher_ = nh2_.advertise<std_msgs::String>("chatter", 10);
   tube_min_radius_publisher_ = nh2_.advertise<std_msgs::Float32>("tube_min_radius", 10);
   future_tube_publisher_ = nh2_.advertise<trackers_brubotics::FutureTrajectoryTube>("future_trajectory_tube", 10);
-// !!!!!  from here on compare with  mpc_tracker implemntation !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+  // !!!!!  from here on compare with  mpc_tracker implemntation !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
   // create publishers for predicted trajectory 
   
   future_trajectory_out_.stamp = ros::Time::now();
@@ -2353,7 +2369,6 @@ Eigen::Vector3d DergbryanTracker::calcCirculationField(std::string type, double 
   }
   return cirulation_field;
 }
-
 void DergbryanTracker::DERG_computation(){
   // | -------------------------------------------------------------------------- |
   //                  ______________________________________________
@@ -2388,8 +2403,9 @@ void DergbryanTracker::DERG_computation(){
   MatrixXd NF_a_co  = MatrixXd::Zero(3, 1); // conservative part
   MatrixXd NF_a_nco = MatrixXd::Zero(3, 1); // non-conservative part
   MatrixXd NF_w = MatrixXd::Zero(3,1);
-  //MatrixXd NF_o_co = MatrixX::Zero(3,1);
-  //MatrixXd NF_o_nco = MatrixX::Zero(3,1);
+  MatrixXd NF_o = MatrixXd::Zero(3,1);
+  MatrixXd NF_o_co = MatrixXd::Zero(3,1);
+  MatrixXd NF_o_nco = MatrixXd::Zero(3,1);
   //Frank : Add NF_o_co, NF_o_nco, NF_w AND/Reactivate the lines below
   //Frank : How to code such that differents obstacles are treated the right way ? Back then it worked pretty well but how boutnow ? Check with 1 first then see
 
@@ -2413,61 +2429,94 @@ void DergbryanTracker::DERG_computation(){
 
   min_wall_distance= abs(_d_w_(1,0) - predicted_poses_out.poses[0].position.x);//custom_trajectory_out.poses[0].position.x);
   for (size_t i = 0; i < num_pred_samples_; i++) {
-    if (abs(_d_w_(1,0) - predicted_poses_out.poses[0].position.x) < min_wall_distance){
+    if (abs(_d_w_(1,0) - predicted_poses_out.poses[i].position.x) < min_wall_distance){
       min_wall_distance=abs(_d_w_(1,0) - predicted_poses_out.poses[i].position.x);
     }
   }
   DSM_w_=_kappa_w_*min_wall_distance;
   ROS_INFO_STREAM("DSM_w_ = \n" << DSM_w_);
   // | ----------------------- repulsion static obstacles ------------------------|
-  // // Conservative part
-  // dist_ref_obs_x_1=o_1(0,0)-applied_ref_x; // x distance between v and obstacle 1
-  // dist_ref_obs_y_1=o_1(1,0)-applied_ref_y; // y distance between v and obstacle 1
-  // dist_ref_obs_1=sqrt(dist_ref_obs_x_1*dist_ref_obs_x_1+dist_ref_obs_y_1*dist_ref_obs_y_1);
+  // Conservative part
+  MatrixXd dist_ref_obs_ = MatrixXd::Zero(4, 1);
+  MatrixXd dist_obs_ = MatrixXd::Zero(4, 1); //Frank : 3x1 vector of position with  4th element being the norm
+  double max_repulsion_obs1; 
+  double min_obs_distance; 
+  dist_ref_obs_(0)=obs_position(0,0)-applied_ref_x_; // x distance between v and obstacle 1
+  dist_ref_obs_(1)=obs_position(1,0)-applied_ref_y_; // y distance between v and obstacle 1
+  dist_ref_obs_(3)=sqrt(dist_ref_obs_(0)*dist_ref_obs_(0)+dist_ref_obs_(1)*dist_ref_obs_(1));
 
-  // max_repulsion_obs1=(sigma_o-(dist_ref_obs_1-R_o1))/(sigma_o-delta_o);
-  // if (0>max_repulsion_obs1) {
-  // max_repulsion_obs1=0;
-  // }
+  max_repulsion_obs1=arm_radius+(_zeta_o_-(dist_ref_obs_(3)-R_o_))/(_zeta_o_-_delta_o_); //Frank : Added the arm radius to add a safety around the cylinder
+  if (0>max_repulsion_obs1) {
+  max_repulsion_obs1=0;
+  }
 
-  // NF_o_co(0,0)=-(max_repulsion_obs1*(dist_ref_obs_x_1/dist_ref_obs_1));
-  // NF_o_co(1,0)=-(max_repulsion_obs1*(dist_ref_obs_y_1/dist_ref_obs_1));
-  // NF_o_co(2,0)=0;
+  NF_o_co(0,0)=-(max_repulsion_obs1*(dist_ref_obs_(0)/dist_ref_obs_(3)));
+  NF_o_co(1,0)=-(max_repulsion_obs1*(dist_ref_obs_(1)/dist_ref_obs_(3)));
+  NF_o_co(2,0)=0;
 
-  // // Non-conservative part
-  // NF_o_nco(2,0)=0;
-  // if (sigma_o>=dist_ref_obs_1-R_o1) {
-  // NF_o_nco(0,0)=alpha_o_1*(dist_ref_obs_y_1/dist_ref_obs_1);
-  // NF_o_nco(1,0)=-alpha_o_1*(dist_ref_obs_x_1/dist_ref_obs_1);
-  // } else {
-  // NF_o_nco(0,0)=0;
-  // NF_o_nco(1,0)=0;
-  // }
-  // // Both combined
-  // NF_o(0,0)=NF_o_co(0,0)+NF_o_nco(0,0);
-  // NF_o(1,0)=NF_o_co(1,0)+NF_o_nco(1,0);
-  // NF_o(2,0)=NF_o_co(2,0)+NF_o_nco(2,0);
+  // Non-conservative part
+  NF_o_nco(2,0)=0;
+  if (_zeta_o_>=dist_ref_obs_(3)-R_o_) {
+  NF_o_nco(0,0)=_alpha_o_*(dist_ref_obs_(1)/dist_ref_obs_(3));
+  NF_o_nco(1,0)=-_alpha_o_*(dist_ref_obs_(0)/dist_ref_obs_(3));
+  } else {
+  NF_o_nco(0,0)=0;
+  NF_o_nco(1,0)=0;
+  }
+  // Both combined
+  NF_o(0,0)=NF_o_co(0,0)+NF_o_nco(0,0);
+  NF_o(1,0)=NF_o_co(1,0)+NF_o_nco(1,0);
+  NF_o(2,0)=NF_o_co(2,0)+NF_o_nco(2,0);
   
+  //DSM_o_ computation
+  //// Frank: Implement this and see if it changes the performances or not
+  //// Implementation with the lambda 
+      //  Eigen::Vector3d point_mu_link0;
+     // Eigen::Vector3d point_nu_link1;
+     // std::tie(point_mu_link0, point_nu_link1) = getMinDistDirLineSegments(point_link_applied_ref, point_link_star, point_link_applied_ref_other_uav, point_link_star_other_uav);//(point0_link0, point1_link0, point0_link1, point1_link1);
 
-  // o_1(0,0)=0; // x=0
-  // o_1(1,0)=40; // y=40;
+     // double dist_x = point_nu_link1(0) - point_mu_link0(0);
+     // double dist_y = point_nu_link1(1) - point_mu_link0(1);
+     // double dist_z = point_nu_link1(2) - point_mu_link0(2);
 
-  // dist_obs_x_1=custom_trajectory_out.poses[0].position.x-o_1(0,0);
-  // dist_obs_y_1=custom_trajectory_out.poses[0].position.y-o_1(1,0);
-  // dist_obs_1=sqrt(dist_obs_x_1*dist_obs_x_1+dist_obs_y_1*dist_obs_y_1);
+    //  double dist = sqrt(dist_x*dist_x + dist_y*dist_y + dist_z*dist_z);
+  ///// Prediction part  with lambda 
+  // for (size_t i = 0; i < num_pred_samples_; i++) {
+  //    // shortest distance from predicted pos to tube link
+  //    Eigen::Vector3d point_predicted_pos(predicted_poses_out.poses[i].position.x, predicted_poses_out.poses[i].position.y, predicted_poses_out.poses[i].position.z);
+  //    double lambda = getLambda(point_link_applied_ref, point_link_star, point_predicted_pos); 
+  //    double norm;
+  //    if ((lambda <= 1) && (lambda > 0)) {
+  //      Eigen::Vector3d point_link_lambda = point_link_applied_ref + lambda*(point_link_star - point_link_applied_ref);
+  //     norm = (point_link_lambda - point_predicted_pos).norm();  
+  //    }
+  //    else if (lambda <= 0){
+  //      norm = (point_link_applied_ref - point_predicted_pos).norm(); 
+  //    }
+  //    else { // (lambda > 1)
+  //      norm = (point_link_star - point_predicted_pos).norm(); 
+  //    }
+  //
+  //    DSM_a_temp = _kappa_a_*(_Sa_perp_max_ - norm)/_Sa_perp_max_; // in _kappa_a_*[0 , 1]
+  //    if (DSM_a_temp < DSM_a_){  // choose smallest DSM_a_ over the predicted trajectory
+  //      DSM_a_ = DSM_a_temp;
+  //    }
+  dist_obs_(0)=predicted_poses_out.poses[0].position.x-obs_position(0,0);
+  dist_obs_(1)=predicted_poses_out.poses[0].position.y-obs_position(1,0);
+  dist_obs_(3)=sqrt(dist_obs_(0)*dist_obs_(0)+dist_obs_(1)*dist_obs_(1));
 
-  // min_obs_distance=dist_obs_1-R_o1;
-  // for (size_t i = 1; i < sample_hor; i++) {
-  // dist_obs_x_1=custom_trajectory_out.poses[i].position.x-o_1(0,0);
-  // dist_obs_y_1=custom_trajectory_out.poses[i].position.y-o_1(1,0);
+  min_obs_distance=dist_obs_(3)-R_o_;
+  for (size_t i = 1; i < num_pred_samples_; i++) {
+    dist_obs_(0)=predicted_poses_out.poses[i].position.x-obs_position(0,0);
+    dist_obs_(1)=predicted_poses_out.poses[i].position.y-obs_position(1,0);
 
-  // dist_obs_1=sqrt(dist_obs_x_1*dist_obs_x_1+dist_obs_y_1*dist_obs_y_1);
-  // if (dist_obs_1-R_o1<min_obs_distance) {
-  // min_obs_distance=dist_obs_1-R_o1;
-  // }
-  // }
+    dist_obs_(3)=sqrt(dist_obs_(0)*dist_obs_(0)+dist_obs_(1)*dist_obs_(1));
+    if (dist_obs_(3)-R_o_<min_obs_distance) {
+      min_obs_distance=dist_obs_(3)-R_o_;
+    }
+  }
 
-  // DSM_o=kappa_o*min_obs_distance;
+  DSM_o_=_kappa_o_*min_obs_distance;
 
   // | ------------------------ agent collision avoidance repulsion ----------------------- |
   if (_DERG_strategy_id_ == 0) {
@@ -3465,9 +3514,9 @@ void DergbryanTracker::DERG_computation(){
   //DSM_total=DSM_w;
   //}
 
-  // if(DSM_o <= DSM_total){
-  // DSM_total=DSM_o;
-  // }
+  if((DSM_o_ <= DSM_total_) && (_enable_dsm_o_)){
+    DSM_total_=DSM_o_;
+  }
   //Frank : Add the remaining cases for the other DSMs
   if((DSM_a_ <= DSM_total_) && (_enable_dsm_a_)){
     DSM_total_ = DSM_a_;
@@ -3502,7 +3551,7 @@ void DergbryanTracker::DERG_computation(){
   // NF_total(0,0)=NF_att(0,0)+ NF_a(0,0) +NF_o(0,0) + NF_w(0,0);
   // NF_total(1,0)=NF_att(1,0) + NF_a(1,0) +NF_o(1,0) + NF_w(1,0);
   // NF_total(2,0)=NF_att(2,0) + NF_a(2,0) +NF_o(2,0) + NF_w(2,0);
-  NF_total = NF_att + _enable_repulsion_a_*NF_a + _enable_repulsion_w_*NF_w; 
+  NF_total = NF_att + _enable_repulsion_a_*NF_a + _enable_repulsion_w_*NF_w + _enable_repulsion_o_*NF_o; 
   ROS_INFO_STREAM("NF_total = \n" << NF_total);
   //ROS_INFO_STREAM("NF_a = \n" << NF_a);
 
@@ -3571,7 +3620,7 @@ double DergbryanTracker::getLambda(Eigen::Vector3d &point_link_0, Eigen::Vector3
   return lambda; 
 }
 /* The function getMuSijTij returns the parametrization factor mu for link i wrt cylindrical obstacle j 
-and returns the positions of the closest distance between link i and cylinder j */
+and returns the positions of the closest distance between link i and cylinder j */ //Frank : Use this now for obstacle avoidance
 std::tuple< Eigen::Vector3d, Eigen::Vector3d> DergbryanTracker::getMinDistDirLineSegments(Eigen::Vector3d &point0_link0, Eigen::Vector3d &point1_link0, Eigen::Vector3d &point0_link1, Eigen::Vector3d &point1_link1){
   // Eigen::Vector3d direction_link0_to_link1; 
   // double distance;

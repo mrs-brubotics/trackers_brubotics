@@ -58,6 +58,14 @@ navigation_field:
       influence_margin: 4.0 # called before sigma, now zeta
       static_safety_margin: 2.0 # d_w
       wall_position_x : 100000 # //Frank : Very big so don't disturb usual tests... TODO : link this yaml with world file
-
+    static_obstacle: #Frank : TO BE ADDED IN DERGTRACKER.CPP
+      enabled: false
+      influence_margin: 4.0 # called before sigma, now zeta
+      static_safety_margin: 1.0 # delta_w
+      circulation_gain: 0.05 
+      circulation_type: "xy" # "xy", "xz", "yz", "xyz"
+      obstacle_position_x : 100000
+      obstacle_position_y: 10000
+      radius : 1 #0.5 +0.5 of security (see /worlds/...)
 
 #mpc_rate: 100.0 # rate of MPC calculation, >= 10 Hz
