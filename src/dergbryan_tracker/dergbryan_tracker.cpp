@@ -2663,8 +2663,7 @@ void DergbryanTracker::DERG_computation(){
 
 
       // Conservative part
-      bool use_rep_on_spheres_not_tubes = false;
-      if (use_rep_on_spheres_not_tubes)
+      if (!_use_tube_)
       {
         double dist = (point_link_applied_ref_other_uav - point_link_applied_ref).norm();
       }
