@@ -49,6 +49,7 @@ navigation_field:
   repulsion:
     agents:
       enabled: true
+      use_tube: false
       influence_margin: 4.0 #8.0 #4.0 # choose large enough to give uavs time to react. Increase for increased DSMs.
       static_safety_margin: 0.07 # 0.00 # test if agents on a line don't collide without circulation. Increase untill no collsiions. Or check single agent step response deviation of simulation vs reality.
       circulation_gain: 0.05 # put on value < 10^-4 (e.g; 0.0) to switch off. 

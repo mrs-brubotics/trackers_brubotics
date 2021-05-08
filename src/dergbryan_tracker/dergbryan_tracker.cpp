@@ -439,6 +439,7 @@ private:
   bool _enable_repulsion_a_;
   bool _enable_repulsion_w_;
   bool _enable_repulsion_o_;
+  bool _use_tube_;
 };
 //}
 
@@ -582,6 +583,7 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   param_loader2.loadParam("agent_collision_volumes/tube/radius/longitudinal", _Sa_long_max_);
   param_loader2.loadParam("navigation_field/attraction/smoothing_ratio", _eta_);
   param_loader2.loadParam("navigation_field/repulsion/agents/enabled", _enable_repulsion_a_);
+  param_loader2.loadParam("navigation_field/repulsion/agents/use_tube", _use_tube_);
   param_loader2.loadParam("navigation_field/repulsion/agents/influence_margin", _zeta_a_);
   param_loader2.loadParam("navigation_field/repulsion/agents/static_safety_margin", _delta_a_);
   param_loader2.loadParam("navigation_field/repulsion/agents/circulation_gain", _alpha_a_);
@@ -2661,7 +2663,7 @@ void DergbryanTracker::DERG_computation(){
 
 
       // Conservative part
-      bool use_rep_on_spheres_not_tubes = true;
+      bool use_rep_on_spheres_not_tubes = false;
       if (use_rep_on_spheres_not_tubes)
       {
         double dist = (point_link_applied_ref_other_uav - point_link_applied_ref).norm();
@@ -2674,7 +2676,10 @@ void DergbryanTracker::DERG_computation(){
 
       NF_a_co(0,0) = NF_a_co(0,0) - max_repulsion_other_uav*(dist_x / dist);
       NF_a_co(1,0) = NF_a_co(1,0) - max_repulsion_other_uav*(dist_y / dist);
+
+      if(!_use_tube_){ // If tube used NF_a_co in z should be 0.
       NF_a_co(2,0) = NF_a_co(2,0) - max_repulsion_other_uav*(dist_z / dist);
+      }
 
       // Non-conservative part
       if (_alpha_a_ >= 0.0001){
