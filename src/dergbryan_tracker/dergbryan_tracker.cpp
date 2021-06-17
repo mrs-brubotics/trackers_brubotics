@@ -333,7 +333,7 @@ private:
   double _Sa_max_;
   double Sa_;
   double _Sa_perp_max_;
-  double Sa_perp_;
+  std_msgs::Float32 Sa_perp_;
   double _Sa_long_max_;
   double Sa_long_;
   //double kappa_a = 0.3*20;
@@ -2920,7 +2920,7 @@ void DergbryanTracker::DERG_computation(){
         Sa_perp_min = norm;
       } 
     }
-    Sa_perp_ = Sa_perp_min; // update global variable    
+    Sa_perp_.data = Sa_perp_min; // update global variable    
     // publish Sa_perp_ so other uavs can use it (just a test, not actually used)
     try {
       tube_min_radius_publisher_.publish(Sa_perp_);
@@ -2934,7 +2934,7 @@ void DergbryanTracker::DERG_computation(){
     future_tube.uav_name = _uav_name_;
     future_tube.priority = avoidance_this_uav_priority_;
     // future_tube.collision_avoidance = true;
-    future_tube.min_radius = Sa_perp_;
+    future_tube.min_radius = Sa_perp_.data;
     try {
       future_tube_publisher_.publish(future_tube);
     }
@@ -3033,7 +3033,7 @@ void DergbryanTracker::DERG_computation(){
         
         //ROS_INFO_STREAM("Sa_perp_other_uav = \n" << Sa_perp_other_uav);
          
-        DSM_a_temp = _kappa_a_*(dist - 2*Ra - (Sa_perp_ + Sa_perp_other_uav)) / _zeta_a_; // in _kappa_a_*[0 , 1]
+        DSM_a_temp = _kappa_a_*(dist - 2*Ra - (Sa_perp_.data + Sa_perp_other_uav)) / _zeta_a_; // in _kappa_a_*[0 , 1]
         
      
         if (DSM_a_temp < DSM_a_){  // choose smallest DSM_a_ over the agents
@@ -3044,7 +3044,7 @@ void DergbryanTracker::DERG_computation(){
 
       // Conservative part
       // same comment as before!!!
-      double max_repulsion_other_uav = (_zeta_a_ - (dist - 2*Ra - (Sa_perp_ + Sa_perp_other_uav)))/(_zeta_a_ - _delta_a_);
+      double max_repulsion_other_uav = (_zeta_a_ - (dist - 2*Ra - (Sa_perp_.data + Sa_perp_other_uav)))/(_zeta_a_ - _delta_a_);
       if (0 > max_repulsion_other_uav) {
         max_repulsion_other_uav = 0;
       }
@@ -3055,7 +3055,7 @@ void DergbryanTracker::DERG_computation(){
 
       // Non-conservative part
       if (_alpha_a_ >= 0.0001){
-        if (_zeta_a_ >= dist - 2*Ra - (Sa_perp_ + Sa_perp_other_uav)) {
+        if (_zeta_a_ >= dist - 2*Ra - (Sa_perp_.data + Sa_perp_other_uav)) {
           NF_a_nco = NF_a_nco + calcCirculationField(_circ_type_, dist_x, dist_y, dist_z, dist);
         }
       }
@@ -3146,7 +3146,7 @@ void DergbryanTracker::DERG_computation(){
         Sa_perp_min = norm_perp;
       } 
     }
-    Sa_perp_ = Sa_perp_min; // update global variable    
+    Sa_perp_.data = Sa_perp_min; // update global variable    
     // publish Sa_perp_ so other uavs can use it (just a test, not actually used)
     try {
       tube_min_radius_publisher_.publish(Sa_perp_);
@@ -3160,7 +3160,7 @@ void DergbryanTracker::DERG_computation(){
     future_tube.uav_name = _uav_name_;
     future_tube.priority = avoidance_this_uav_priority_;
     // future_tube.collision_avoidance = true;
-    future_tube.min_radius = Sa_perp_;
+    future_tube.min_radius = Sa_perp_.data;
     future_tube.p0.x = point_link_p0[0];
     future_tube.p0.y = point_link_p0[1];
     future_tube.p0.z = point_link_p0[2];
@@ -3271,7 +3271,7 @@ void DergbryanTracker::DERG_computation(){
         
         //ROS_INFO_STREAM("Sa_perp_other_uav = \n" << Sa_perp_other_uav);
          
-        DSM_a_temp = _kappa_a_*(dist - 2*Ra - (Sa_perp_ + Sa_perp_other_uav)) / _zeta_a_; // in _kappa_a_*[0 , 1]
+        DSM_a_temp = _kappa_a_*(dist - 2*Ra - (Sa_perp_.data + Sa_perp_other_uav)) / _zeta_a_; // in _kappa_a_*[0 , 1]
         
      
         if (DSM_a_temp < DSM_a_){  // choose smallest DSM_a_ over the agents
@@ -3282,7 +3282,7 @@ void DergbryanTracker::DERG_computation(){
 
       // Conservative part
       // same comment as before!!!
-      double max_repulsion_other_uav = (_zeta_a_ - (dist - 2*Ra - (Sa_perp_ + Sa_perp_other_uav)))/(_zeta_a_ - _delta_a_);
+      double max_repulsion_other_uav = (_zeta_a_ - (dist - 2*Ra - (Sa_perp_.data + Sa_perp_other_uav)))/(_zeta_a_ - _delta_a_);
       if (0 > max_repulsion_other_uav) {
         max_repulsion_other_uav = 0;
       }
@@ -3293,7 +3293,7 @@ void DergbryanTracker::DERG_computation(){
 
       // Non-conservative part
       if (_alpha_a_ >= 0.0001){
-        if (_zeta_a_ >= dist - 2*Ra - (Sa_perp_ + Sa_perp_other_uav)) {
+        if (_zeta_a_ >= dist - 2*Ra - (Sa_perp_.data + Sa_perp_other_uav)) {
           NF_a_nco = NF_a_nco + calcCirculationField(_circ_type_, dist_x, dist_y, dist_z, dist);
         }
       }
@@ -3367,7 +3367,7 @@ void DergbryanTracker::DERG_computation(){
         Sa_perp_min = norm;
       } 
     }
-    Sa_perp_ = Sa_perp_min; // update global variable    
+    Sa_perp_.data = Sa_perp_min; // update global variable    
     // publish Sa_perp_ so other uavs can use it (just a test, not actually used)
     try {
       tube_min_radius_publisher_.publish(Sa_perp_);
@@ -3381,7 +3381,7 @@ void DergbryanTracker::DERG_computation(){
     future_tube.uav_name = _uav_name_;
     future_tube.priority = avoidance_this_uav_priority_;
     // future_tube.collision_avoidance = true;
-    future_tube.min_radius = Sa_perp_;
+    future_tube.min_radius = Sa_perp_.data;
     try {
       future_tube_publisher_.publish(future_tube);
     }
@@ -3482,7 +3482,7 @@ void DergbryanTracker::DERG_computation(){
 
 
       // Conservative part
-      double max_repulsion_other_uav = (_zeta_a_ - (dist - 2*Ra - (Sa_perp_ + Sa_perp_other_uav)))/(_zeta_a_ - _delta_a_);
+      double max_repulsion_other_uav = (_zeta_a_ - (dist - 2*Ra - (Sa_perp_.data + Sa_perp_other_uav)))/(_zeta_a_ - _delta_a_);
       if (0 > max_repulsion_other_uav) {
         max_repulsion_other_uav = 0;
       }
@@ -3493,7 +3493,7 @@ void DergbryanTracker::DERG_computation(){
 
       // Non-conservative part
       if (_alpha_a_ >= 0.0001){
-        if (_zeta_a_ >= dist - 2*Ra - (Sa_perp_ + Sa_perp_other_uav)) {
+        if (_zeta_a_ >= dist - 2*Ra - (Sa_perp_.data + Sa_perp_other_uav)) {
           NF_a_nco = NF_a_nco + calcCirculationField(_circ_type_, dist_x, dist_y, dist_z, dist);
         }
       }
