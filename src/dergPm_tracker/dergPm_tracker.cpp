@@ -670,12 +670,14 @@ void DergPmTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unused]
 
   // | --------------- Thesis B --------------- |
   run_type = getenv("RUN_TYPE");
+  /*
   if (run_type == "simulation")
   {
     custom_publisher_load_pose   = nh_.advertise<geometry_msgs::Pose>("load_pose",1);
   }else{
     //publisher for encoders
   }
+  */
   // | ------------------------------ |
   
   // TODO!!!!!
@@ -1023,24 +1025,29 @@ const mrs_msgs::PositionCommand::ConstPtr DergPmTracker::update(const mrs_msgs::
   uav_name = getenv("UAV_NAME");
   // to see how many UAVs there are
   number_of_uav = getenv("NUMBER_OF_UAV"); // is exported in the session.yaml
-  if (number_of_uav == "2")
-  {
-    // to see which UAV it is
-    if (uav_name == "uav1")
+  if (run_type == "simulation"){
+    if (number_of_uav == "2")
     {
-      uav_id = true; //uav 1
-    }else{
-      uav_id = false; //uav 2
+      // to see which UAV it is
+      if (uav_name == "uav1")
+      {
+        uav_id = true; //uav 1
+      }else{
+        uav_id = false; //uav 2
+      }
     }
   }
 
+  //ROS_INFO_STREAM("RUN_TYPE \n" << run_type );
+  std::string slash = "/";
+  //ROS_INFO_STREAM("UAV_NAME \n" << run_type  );
   if (run_type == "simulation")
   {
     // subscriber of the simulation
     load_state_sub =  nh_.subscribe("/gazebo/link_states", 1, &DergPmTracker::loadStatesCallback, this, ros::TransportHints().tcpNoDelay());
   }else{
     // subscriber of the encoder
-    data_payload_sub = nh_.subscribe("/uav1/serial/received_message", 1, &DergPmTracker::BacaCallback, this, ros::TransportHints().tcpNoDelay());
+    data_payload_sub = nh_.subscribe(slash.append(uav_name.append("/serial/received_message")), 1, &DergPmTracker::BacaCallback, this, ros::TransportHints().tcpNoDelay());
   }
   // | --------------------------------- |
 
@@ -1442,10 +1449,6 @@ void DergPmTracker::trajectory_prediction_general(mrs_msgs::PositionCommand posi
   // Rvl - velocity reference load in global frame
   Eigen::Vector3d Rpl = Eigen::Vector3d::Zero(3);
 
-  // Opl - position load in global frame
-  // Ovl - velocity load in global frame
-  Eigen::Vector3d Epl = Eigen::Vector3d::Zero(3); // Load position control error
-  Eigen::Vector3d Evl = Eigen::Vector3d::Zero(3); // Load velocity control error
   cable_length = std::stod(getenv("CABLE_LENGTH")); // is changed inside session.yml to take length cable into account! stod to transform string defined in session to double.
 
   if (run_type == "simulation"){
@@ -1606,31 +1609,34 @@ for (int i = 0; i < num_pred_samples_; i++) {
   // ROS_INFO_STREAM("Ev = \n" << Ev);
 
   // | --------------------- Thesis B --------------------- |
+  Eigen::Vector3d Epl = Eigen::Vector3d::Zero(3); // Load position control error
+  Eigen::Vector3d Evl = Eigen::Vector3d::Zero(3); // Load velocity control error
   Eigen::Vector3d Opl(load_pose_position[0], load_pose_position[1], load_pose_position[2]);
   Eigen::Vector3d Ovl(load_lin_vel[0], load_lin_vel[1], load_lin_vel[2]);
-
-  if(payload_spawned){
-    if(remove_offset){
-      Epl = Rpl - Opl;
-      load_pose_position_offset = Epl;
-      remove_offset = false;
+  if (run_type == "simulation"){
+    if(payload_spawned){
+      if(remove_offset){
+        Epl = Rpl - Opl;
+        load_pose_position_offset = Epl;
+        remove_offset = false;
+      }
     }
-  }
 
-  if (position_cmd.use_position_horizontal || position_cmd.use_position_vertical) {
-    Epl = Rpl - Opl - load_pose_position_offset; // remove offset because the because load does not spawn perfectly under drone
-  }
+    if (position_cmd.use_position_horizontal || position_cmd.use_position_vertical) {
+      Epl = Rpl - Opl - load_pose_position_offset; // remove offset because the load does not spawn perfectly under drone
+    }
 
-  if (position_cmd.use_velocity_horizontal || position_cmd.use_velocity_vertical ||
-      position_cmd.use_position_vertical) {  // even when use_position_vertical to provide dampening
-    Evl = Rv - Ovl;
+    if (position_cmd.use_velocity_horizontal || position_cmd.use_velocity_vertical ||
+        position_cmd.use_position_vertical) {  // even when use_position_vertical to provide dampening
+      Evl = Rv - Ovl;
+    }
   }else{
     if (position_cmd.use_position_horizontal || position_cmd.use_position_vertical) {
-      Epl = Opl; // since encoder gives offset from drone position
+      Epl = -Opl; // since encoder gives offset from drone position
     }
     if (position_cmd.use_velocity_horizontal || position_cmd.use_velocity_vertical ||
       position_cmd.use_position_vertical) {  // even when use_position_vertical to provide dampening
-      Evl = Rv - Ovl;
+      Evl = -Ovl;
     }
   }
 
@@ -1732,12 +1738,16 @@ for (int i = 0; i < num_pred_samples_; i++) {
   uav_mass_difference_ = std::stod(getenv("LOAD_MASS"));  // can be changed in session.yml file. To take mass load into account! stod to transform string defined in session to double
   //double total_mass = common_handlers_->getMass(); // total estimated mass calculated by controller
   double total_mass = 0;
-  if(payload_spawned){
-    total_mass = _uav_mass_ + uav_mass_difference_;
-    //ROS_INFO_STREAM("Mass spawned: TOTAL_MASS \n" << total_mass);
+  if (run_type == "simulation"){ 
+    if(payload_spawned){
+      total_mass = _uav_mass_ + uav_mass_difference_;
+      //ROS_INFO_STREAM("Mass spwaned" << std::endl << total_mass);
+    }else{
+      total_mass = _uav_mass_;
+      //ROS_INFO_STREAM("Mass NOT spwaned" << std::endl << total_mass);
+    }
   }else{
-    total_mass = _uav_mass_;
-    //ROS_INFO_STREAM("Mass not spawned: TOTAL_MASS \n" << total_mass);
+    total_mass = _uav_mass_ + uav_mass_difference_;
   }
   // | --------------- --------------- |
 
