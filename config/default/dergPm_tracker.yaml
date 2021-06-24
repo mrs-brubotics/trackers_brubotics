@@ -2,7 +2,7 @@
 use_derg: true # if false it bypasses the desired goal reference directly, but still computes the trajectory predictions
 network: # TODO import from default and custom config uav_names at a single location
   robot_names: [
-    uav1, uav2, uav3, uav4 , uav5, uav6, uav7, uav8, uav9 , uav10
+    uav1, uav2, uav3, uav4 , uav5, uav6, uav7, uav8, uav9 , uav10, nuc3, nuc4
   ]
 constraints:
   total_thrust:
@@ -49,6 +49,7 @@ navigation_field:
   repulsion:
     agents:
       enabled: true
+      use_tube: false
       influence_margin: 4.0 #8.0 #4.0 # choose large enough to give uavs time to react. Increase for increased DSMs.
       static_safety_margin: 0.07 # 0.00 # test if agents on a line don't collide without circulation. Increase untill no collsiions. Or check single agent step response deviation of simulation vs reality.
       circulation_gain: 0.05 # put on value < 10^-4 (e.g; 0.0) to switch off. 
@@ -58,6 +59,14 @@ navigation_field:
       influence_margin: 4.0 # called before sigma, now zeta
       static_safety_margin: 2.0 # d_w
       wall_position_x : 100000 # //Frank : Very big so don't disturb usual tests... TODO : link this yaml with world file
-
+    static_obstacle: #Frank : TO BE ADDED IN DERGTRACKER.CPP
+      enabled: false
+      influence_margin: 4.0 # called before sigma, now zeta
+      static_safety_margin: 1.0 # delta_w
+      circulation_gain: 0.05 
+      circulation_type: "xy" # "xy", "xz", "yz", "xyz"
+      obstacle_position_x : 100000
+      obstacle_position_y: 10000
+      radius : 1 #0.5 +0.5 of security (see /worlds/...)
 
 #mpc_rate: 100.0 # rate of MPC calculation, >= 10 Hz
