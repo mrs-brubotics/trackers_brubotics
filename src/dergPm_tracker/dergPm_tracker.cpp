@@ -1023,9 +1023,10 @@ const mrs_msgs::PositionCommand::ConstPtr DergPmTracker::update(const mrs_msgs::
 
   // | ----------------- Thesis B ---------------- |
   uav_name = getenv("UAV_NAME");
-  // to see how many UAVs there are
-  number_of_uav = getenv("NUMBER_OF_UAV"); // is exported in the session.yaml
+  
   if (run_type == "simulation"){
+    // to see how many UAVs there are
+    number_of_uav = getenv("NUMBER_OF_UAV"); // is exported in the session.yaml
     if (number_of_uav == "2")
     {
       // to see which UAV it is
