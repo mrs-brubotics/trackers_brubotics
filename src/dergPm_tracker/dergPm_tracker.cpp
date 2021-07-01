@@ -209,11 +209,6 @@ private:
   geometry_msgs::PoseArray predicted_velocities_out; // array of predicted velocities
   geometry_msgs::PoseArray predicted_accelerations_out; // array of predicted accelerations
   geometry_msgs::PoseArray predicted_attituderate_out; // array of predicted attituderates
-
-  // Thesis B
-  geometry_msgs::PoseArray predicted_poses_load_out; // array of predicted poses
-  geometry_msgs::PoseArray predicted_velocities_load_out; // array of predicted velocities
-  geometry_msgs::PoseArray predicted_accelerations_load_out; // array of predicted accelerations
   
   double dt_ = 0.010; // ERG sample time = controller sample time
   double custom_dt_ = 0.010;//0.001;//0.020; //0.010; // controller sampling time (in seconds) used in prediction
@@ -239,9 +234,6 @@ private:
   // | ----------------- Thesis B ---------------- |
   ros::Publisher custom_publisher_load_pose;
   ros::Subscriber load_state_sub;
-  ros::Publisher custom_predicted_load_pose_publisher;
-  ros::Publisher custom_predicted_load_vel_publisher;
-  ros::Publisher custom_predicted_load_acc_publisher;
   geometry_msgs::Pose load_pose;
   geometry_msgs::Twist load_velocity;
   void loadStatesCallback(const gazebo_msgs::LinkStatesConstPtr& loadmsg);
@@ -256,8 +248,6 @@ private:
   float encoder_angle_2;
   float encoder_velocity_1;
   float encoder_velocity_2;
-  Eigen::Vector3d old_vel;
-  Eigen::Vector3d new_vel;
 
   //merge controller 1 and 2 uavs
   bool uav_id = false; // false = uav2, true = uav1
@@ -666,11 +656,6 @@ void DergPmTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unused]
   // !!!!!  from here on compare with  mpc_tracker implemntation !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
   // create publishers for predicted trajectory 
   
-  // Thesis B
-  custom_predicted_load_pose_publisher = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_load_poses", 10);
-  custom_predicted_load_vel_publisher = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_load_vels", 10);
-  custom_predicted_load_acc_publisher = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_load_accs", 10);
-
   future_trajectory_out_.stamp = ros::Time::now();
   future_trajectory_out_.uav_name = _uav_name_;
   future_trajectory_out_.priority = avoidance_this_uav_priority_;
@@ -1156,10 +1141,6 @@ const mrs_msgs::PositionCommand::ConstPtr DergPmTracker::update(const mrs_msgs::
   uav_posistion_out_.points.clear();
   future_trajectory_out_.points.clear();
 
-  //Thesis B
-  predicted_poses_load_out.poses.clear(); // array of predicted poses
-  predicted_velocities_load_out.poses.clear(); // array of predicted velocities
-  predicted_accelerations_load_out.poses.clear(); // array of predicted accelerations
 
       
   
@@ -1509,11 +1490,6 @@ geometry_msgs::Pose predicted_thrust;
 geometry_msgs::Pose predicted_thrust_norm; 
 geometry_msgs::Pose predicted_attituderate; 
 
-// Thesis B
-geometry_msgs::Pose custom_load_pose;
-geometry_msgs::Pose custom_load_vel;
-geometry_msgs::Pose custom_load_acceleration;
-
 Eigen::Matrix3d R;
 Eigen::Matrix3d Rdot;
 Eigen::Matrix3d skew_Ow;
@@ -1530,15 +1506,6 @@ for (int i = 0; i < num_pred_samples_; i++) {
     custom_vel.position.x = uav_state.velocity.linear.x; //init_vel(0,0);
     custom_vel.position.y = uav_state.velocity.linear.y;
     custom_vel.position.z = uav_state.velocity.linear.z;
-
-    // Thesis B
-    custom_load_pose.position.x = load_pose_position[0]; //init_pos(0,0);
-    custom_load_pose.position.y = load_pose_position[1]; //init_pos(1,0);
-    custom_load_pose.position.z = load_pose_position[2]; //init_pos(2,0);
-
-    custom_load_vel.position.x = load_lin_vel[0]; //init_vel(0,0);
-    custom_load_vel.position.y = load_lin_vel[1];
-    custom_load_vel.position.z = load_lin_vel[2];
 
     // R - current uav attitude
     R = mrs_lib::AttitudeConverter(uav_state.pose.orientation);
@@ -1571,25 +1538,6 @@ for (int i = 0; i < num_pred_samples_; i++) {
     uav_state.pose.position.z = uav_state.pose.position.z + uav_state.velocity.linear.z*custom_dt_;
     custom_pose.position.z = uav_state.pose.position.z;
        
-    // Thesis B
-    load_lin_vel[0] = load_lin_vel[0] + custom_load_acceleration.position.x*custom_dt_;
-    custom_load_vel.position.x = load_lin_vel[0];
-
-    load_lin_vel[1] = load_lin_vel[1] + custom_load_acceleration.position.y*custom_dt_;
-    custom_load_vel.position.y = load_lin_vel[1];
-
-    load_lin_vel[2] = load_lin_vel[2] + custom_load_acceleration.position.z*custom_dt_;
-    custom_load_vel.position.z = load_lin_vel[2];
-
-    load_pose_position[0] = load_pose_position[0] + load_lin_vel[0]*custom_dt_;
-    custom_load_pose.position.x = load_pose_position[0];
-
-    load_pose_position[1] = load_pose_position[1] + load_lin_vel[1]*custom_dt_;
-    custom_load_pose.position.y = load_pose_position[1];
-
-    load_pose_position[2] = load_pose_position[2] + load_lin_vel[2]*custom_dt_;
-    custom_load_pose.position.z = load_pose_position[2];
-
 
        //t = q_feedback + other terms
     skew_Ow << 0     , -attitude_rate_pred(2), attitude_rate_pred(1),
@@ -1628,9 +1576,6 @@ for (int i = 0; i < num_pred_samples_; i++) {
 
   predicted_poses_out.poses.push_back(custom_pose);
   predicted_velocities_out.poses.push_back(custom_vel);
-  predicted_poses_load_out.poses.push_back(custom_load_pose); // array of predicted poses
-  predicted_velocities_load_out.poses.push_back(custom_load_vel); // array of predicted velocities
-
   
   
 
@@ -2156,19 +2101,11 @@ for (int i = 0; i < num_pred_samples_; i++) {
   //Eigen::Vector3d acceleration_uav = 1/_uav_mass_ * (f + _uav_mass_ * (Eigen::Vector3d(0, 0, -common_handlers_->g)));
   // OLD Eigen::Vector3d acceleration_uav = 1/_uav_mass_ * (thrust_force*R.col(2) + _uav_mass_ * (Eigen::Vector3d(0, 0, -common_handlers_->g)));
   Eigen::Vector3d acceleration_uav = 1/total_mass * (thrust_force*R.col(2) + total_mass * (Eigen::Vector3d(0, 0, -common_handlers_->g)));
+  
   custom_acceleration.position.x = acceleration_uav[0];
   custom_acceleration.position.y = acceleration_uav[1];
   custom_acceleration.position.z = acceleration_uav[2];
   predicted_accelerations_out.poses.push_back(custom_acceleration);
-
-  
-  // Thesis B
-  Eigen::Vector3d acceleration_load = (new_vel - old_vel)/custom_dt_;
-  custom_load_acceleration.position.y = acceleration_load[1];
-  custom_load_acceleration.position.x = acceleration_load[0];
-  custom_load_acceleration.position.z = acceleration_load[2];
-  predicted_accelerations_load_out.poses.push_back(custom_load_acceleration);
-  
 
   // prepare the attitude feedback
   Eigen::Vector3d q_feedback = -Kq*(1.0) * Eq.array();
@@ -2617,25 +2554,7 @@ catch (...) {
   ROS_ERROR("[DergPmTracker]: Exception caught during publishing topic %s.", custom_predicted_attrate_publisher.getTopic().c_str());
 }
 
-// Thesis B
-try {
-  custom_predicted_load_pose_publisher.publish(predicted_poses_load_out); 
-}
-catch (...) {
-  ROS_ERROR("[DergPmTracker]: Exception caught during publishing topic %s.", custom_predicted_pose_publisher.getTopic().c_str());
-}
-try {
-  custom_predicted_load_vel_publisher.publish(predicted_velocities_load_out);
-}
-catch (...) {
-  ROS_ERROR("[DergPmTracker]: Exception caught during publishing topic %s.", custom_predicted_vel_publisher.getTopic().c_str());
-}
-try {
-  custom_predicted_load_acc_publisher.publish(predicted_accelerations_load_out);
-}
-catch (...) {
-  ROS_ERROR("[DergPmTracker]: Exception caught during publishing topic %s.", custom_predicted_acc_publisher.getTopic().c_str());
-}
+
 
 
 }
@@ -4137,20 +4056,10 @@ void DergPmTracker::loadStatesCallback(const gazebo_msgs::LinkStatesConstPtr& lo
     }   
   }
   
-  old_vel[0] = load_pose_position[0];
-  old_vel[1] = load_pose_position[1];
-  old_vel[2] = load_pose_position[2];
-
   load_pose = loadmsg->pose[load_index];
   load_pose_position[0] = load_pose.position.x;
   load_pose_position[1] = load_pose.position.y;
   load_pose_position[2] = load_pose.position.z;
-
-  new_vel[0] = load_pose_position[0];
-  new_vel[1] = load_pose_position[1];
-  new_vel[2] = load_pose_position[2];
-  ROS_INFO_STREAM("Old vel = \n" << old_vel);
-  ROS_INFO_STREAM("New vel = \n" << new_vel);
 
   for (int i = 0; i < 3; i++) // to set it to zero when the load hasn't spawn yet
   {
