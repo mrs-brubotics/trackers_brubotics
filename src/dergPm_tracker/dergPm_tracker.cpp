@@ -265,6 +265,7 @@ private:
   std::string load_gains_switch;
   Eigen::Vector3d load_pose_position_offset = Eigen::Vector3d::Zero(3);
   std::string run_type;
+  Eigen::Vector3d acceleration_load;
   
   double cable_length;
   float encoder_angle_1;
@@ -1562,15 +1563,6 @@ for (int i = 0; i < num_pred_samples_; i++) {
     custom_vel.position.y = uav_state.velocity.linear.y;
     custom_vel.position.z = uav_state.velocity.linear.z;
 
-
-    //Thesis B
-    custom_load_pose.position.x = load_pose_position.x;
-    custom_load_pose.position.y = load_pose_position.y;
-    custom_load_pose.position.z = load_pose_position.z;
-
-    custom_load_vel.position.x = load_lin_vel[0];
-    custom_load_vel.position.y = load_lin_vel[1];
-    custom_load_vel.position.z = load_lin_vel[2];
     // R - current uav attitude
     R = mrs_lib::AttitudeConverter(uav_state.pose.orientation);
     //R = Eigen::Matrix3d::Identity(3, 3); // fake attitude
@@ -1580,14 +1572,41 @@ for (int i = 0; i < num_pred_samples_; i++) {
     // ROS_INFO_STREAM("R (i=0)  = \n" << R);
     // ROS_INFO_STREAM("attitude_rate_pred (i=0)  = \n" << attitude_rate_pred);
     // ROS_INFO_STREAM("Ow (i=0) = \n" << Ow);
-    Eigen::Vector3d acceleration_load;
-    acceleration_load[0] = (custom_load_vel.position.x - old_load_lin_vel[0])/custom_dt_;
-    acceleration_load[1] = (custom_load_vel.position.y - old_load_lin_vel[1])/custom_dt_;
-    acceleration_load[2] = (custom_load_vel.position.z - old_load_lin_vel[2])/custom_dt_;
+    if(payload_spawned){
+      //Thesis B
+      custom_load_pose.position.x = load_pose_position.x;
+      custom_load_pose.position.y = load_pose_position.y;
+      custom_load_pose.position.z = load_pose_position.z;
 
-    custom_load_acceleration.position.x = acceleration_load[0];
-    custom_load_acceleration.position.y = acceleration_load[1];
-    custom_load_acceleration.position.z = acceleration_load[2];
+      custom_load_vel.position.x = load_lin_vel[0];
+      custom_load_vel.position.y = load_lin_vel[1];
+      custom_load_vel.position.z = load_lin_vel[2];
+
+      acceleration_load[0] = (custom_load_vel.position.x - old_load_lin_vel[0])/custom_dt_;
+      acceleration_load[1] = (custom_load_vel.position.y - old_load_lin_vel[1])/custom_dt_;
+      acceleration_load[2] = (custom_load_vel.position.z - old_load_lin_vel[2])/custom_dt_;
+
+      custom_load_acceleration.position.x = acceleration_load[0];
+      custom_load_acceleration.position.y = acceleration_load[1];
+      custom_load_acceleration.position.z = acceleration_load[2];
+    }else{
+      custom_load_pose.position.x = 0;
+      custom_load_pose.position.y = 0;
+      custom_load_pose.position.z = 0;
+
+      custom_load_vel.position.x = 0;
+      custom_load_vel.position.y = 0;
+      custom_load_vel.position.z = 0;
+
+      acceleration_load[0] = 0;
+      acceleration_load[1] = 0;
+      acceleration_load[2] = 0;
+
+      custom_load_acceleration.position.x = acceleration_load[0];
+      custom_load_acceleration.position.y = acceleration_load[1];
+      custom_load_acceleration.position.z = acceleration_load[2];
+    }
+
     
   } 
   else{
@@ -1616,23 +1635,17 @@ for (int i = 0; i < num_pred_samples_; i++) {
     pred_old_load_lin_vel[1] = custom_load_vel.position.y;
     pred_old_load_lin_vel[2] = custom_load_vel.position.z;
     //ROS_INFO_STREAM("Old velocity \n" << pred_old_load_lin_vel[0]);
-    load_lin_vel[0] = load_lin_vel[0] + custom_load_acceleration.position.x*custom_dt_;
-    custom_load_vel.position.x = load_lin_vel[0];
+    custom_load_vel.position.x = custom_load_vel.position.x + custom_load_acceleration.position.x*custom_dt_;
 
-    load_lin_vel[1] = load_lin_vel[1] + custom_load_acceleration.position.y*custom_dt_;
-    custom_load_vel.position.y = load_lin_vel[1];
+    custom_load_vel.position.y  = custom_load_vel.position.y + custom_load_acceleration.position.y*custom_dt_;
 
-    load_lin_vel[2] = load_lin_vel[2] + custom_load_acceleration.position.z*custom_dt_;
-    custom_load_vel.position.z = load_lin_vel[2];
+    custom_load_vel.position.z = custom_load_vel.position.z + custom_load_acceleration.position.z*custom_dt_;
 
-    load_pose_position.x = load_pose_position.x + load_lin_vel[0]*custom_dt_;
-    custom_load_pose.position.x = load_pose_position.x;
+    custom_load_pose.position.x = custom_load_pose.position.x + custom_load_vel.position.x*custom_dt_;
 
-    load_pose_position.y = load_pose_position.y + load_lin_vel[1]*custom_dt_;
-    custom_load_pose.position.y = load_pose_position.y;
+    custom_load_pose.position.y= custom_load_pose.position.y + custom_load_vel.position.y*custom_dt_;
 
-    load_pose_position.z = load_pose_position.z + load_lin_vel[2]*custom_dt_;
-    custom_load_pose.position.z = load_pose_position.z;
+    custom_load_pose.position.z = custom_load_pose.position.z + custom_load_vel.position.z*custom_dt_;
     //ROS_INFO_STREAM("New velocity \n" << custom_load_vel.position.x);
 
     Eigen::Vector3d acceleration_load;
@@ -2280,11 +2293,11 @@ for (int i = 0; i < num_pred_samples_; i++) {
   //Eigen::Vector3d acceleration_uav = 1/_uav_mass_ * (f + _uav_mass_ * (Eigen::Vector3d(0, 0, -common_handlers_->g)));
   // OLD Eigen::Vector3d acceleration_uav = 1/_uav_mass_ * (thrust_force*R.col(2) + _uav_mass_ * (Eigen::Vector3d(0, 0, -common_handlers_->g)));
   // Eigen::Vector3d acceleration_load = (load_lin_vel - old_load_lin_vel)/custom_dt_;
-  // Eigen::Vector3d acceleration_uav = 1/_uav_mass_ * ((f + _uav_mass_ * (Eigen::Vector3d(0, 0, -common_handlers_->g))) - load_mass_*(acceleration_load - (Eigen::Vector3d(0, 0, -common_handlers_->g))));
+  Eigen::Vector3d acceleration_uav = (1/_uav_mass_ )* ((thrust_force*R.col(2) + _uav_mass_ * (Eigen::Vector3d(0, 0, -common_handlers_->g))) - load_mass_*(acceleration_load + (Eigen::Vector3d(0, 0, common_handlers_->g))));
   
-  //custom_acceleration.position.x = acceleration_uav[0];
-  //custom_acceleration.position.y = acceleration_uav[1];
-  //custom_acceleration.position.z = acceleration_uav[2];
+  custom_acceleration.position.x = acceleration_uav[0];
+  custom_acceleration.position.y = acceleration_uav[1];
+  custom_acceleration.position.z = acceleration_uav[2];
   
   
   //Thesis B
@@ -2313,13 +2326,20 @@ for (int i = 0; i < num_pred_samples_; i++) {
   //custom_acceleration.position.z = (1/_uav_mass_)*(Kpl[2]*Epl[2] + Kdl[2]*Evl[2] + Kp[2]*(position_cmd.position.z-custom_pose.position.z) + Kv[2]*(position_cmd.velocity.z - custom_vel.position.z)) - (1/_uav_mass_)*abs(load_mass_*acceleration_load[2]);
 
 //whorking when load is initialised but fault in thrust
-  custom_acceleration.position.x = Kp[0]*(position_cmd.position.x-custom_pose.position.x) + Kv[0]*(position_cmd.velocity.x - custom_vel.position.x) ;
-  custom_acceleration.position.y = Kp[1]*(position_cmd.position.y-custom_pose.position.y) + Kv[1]*(position_cmd.velocity.y - custom_vel.position.y) ;
-  custom_acceleration.position.z = Kp[2]*(position_cmd.position.z-custom_pose.position.z) + Kv[2]*(position_cmd.velocity.z - custom_vel.position.z) ;
+  //custom_acceleration.position.x = Kp[0]*(position_cmd.position.x-custom_pose.position.x) + Kv[0]*(position_cmd.velocity.x - custom_vel.position.x) ;
+  //custom_acceleration.position.y = Kp[1]*(position_cmd.position.y-custom_pose.position.y) + Kv[1]*(position_cmd.velocity.y - custom_vel.position.y) ;
+  //custom_acceleration.position.z = Kp[2]*(position_cmd.position.z-custom_pose.position.z) + Kv[2]*(position_cmd.velocity.z - custom_vel.position.z) ;
 
   //Eigen::Vector3d acceleration_load = (load_lin_vel - old_load_lin_vel)/custom_dt_;
   //Eigen::Vector3d acceleration_load = custom_acceleration;
 
+// with kpl and kdl
+  //custom_acceleration.position.x = (1/_uav_mass_)*(Kpl[0]*(position_cmd.position.x - custom_load_pose.position.x) + Kdl[0]*(position_cmd.velocity.x - custom_load_vel.position.x) + Kp[0]*(position_cmd.position.x-custom_pose.position.x) + Kv[0]*(position_cmd.velocity.x - custom_vel.position.x)) - (load_mass_/_uav_mass_)*(acceleration_load[0]);
+  //custom_acceleration.position.y = (1/_uav_mass_)*(Kpl[1]*(position_cmd.position.y - custom_load_pose.position.y) + Kdl[1]*(position_cmd.velocity.y - custom_load_vel.position.y) + Kp[1]*(position_cmd.position.y-custom_pose.position.y) + Kv[1]*(position_cmd.velocity.y - custom_vel.position.y))  - (load_mass_/_uav_mass_)*(acceleration_load[1]);
+  //custom_acceleration.position.z = (1/_uav_mass_)*(Kpl[2]*(position_cmd.position.z - custom_load_pose.position.z - cable_length) + Kdl[2]*(position_cmd.velocity.z - custom_load_vel.position.z) + Kp[2]*(position_cmd.position.z-custom_pose.position.z) + Kv[2]*(position_cmd.velocity.z - custom_vel.position.z))  - (load_mass_/_uav_mass_)*(acceleration_load[2]);
+  //ROS_INFO_STREAM("load position feedback = \n" << Kpl[0]*(position_cmd.position.x - custom_load_pose.position.x));
+  //ROS_INFO_STREAM("load velocity feedback = \n" << Kdl[0]*(position_cmd.velocity.x - custom_load_vel.position.x));
+  //ROS_INFO_STREAM("Tension = \n" << (load_mass_/_uav_mass_)*(acceleration_load[0]));
   //custom_load_acceleration.position.x = (1/load_mass_)*(-_uav_mass_*custom_acceleration.position.x + f[0]);
   //custom_load_acceleration.position.y = (1/load_mass_)*(-_uav_mass_*custom_acceleration.position.x + f[1]);
   //custom_load_acceleration.position.z = (1/load_mass_)*(-_uav_mass_*custom_acceleration.position.x + f[2]);
