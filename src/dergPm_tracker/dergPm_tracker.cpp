@@ -1079,16 +1079,16 @@ const mrs_msgs::PositionCommand::ConstPtr DergPmTracker::update(const mrs_msgs::
   //ROS_INFO_STREAM("RUN_TYPE \n" << run_type );
   std::string slash = "/";
   //ROS_INFO_STREAM("UAV_NAME \n" << run_type  );
-  old_load_lin_vel[0] = load_lin_vel[0];  // initialise the old load velocity befor subscribing to the actual load velocity
-  old_load_lin_vel[1] = load_lin_vel[1];
-  old_load_lin_vel[2] = load_lin_vel[2];
+  //old_load_lin_vel[0] = load_lin_vel[0];  // initialise the old load velocity befor subscribing to the actual load velocity
+  //old_load_lin_vel[1] = load_lin_vel[1];
+  //old_load_lin_vel[2] = load_lin_vel[2];
   //ROS_INFO_STREAM("old load velocity = \n" << old_load_lin_vel);
   if (run_type == "simulation")
   {
     // subscriber of the simulation
-    ROS_INFO_STREAM("load velocity 1 = \n" << load_lin_vel);
+    //ROS_INFO_STREAM("load velocity 1 = \n" << load_lin_vel);
     load_state_sub =  nh_.subscribe("/gazebo/link_states", 1, &DergPmTracker::loadStatesCallback, this, ros::TransportHints().tcpNoDelay());
-    ROS_INFO_STREAM("load velocity 2 = \n" << load_lin_vel);
+    //ROS_INFO_STREAM("load velocity 2 = \n" << load_lin_vel);
   }else{
     // subscriber of the encoder
     data_payload_sub = nh_.subscribe(slash.append(uav_name.append("/serial/received_message")), 1, &DergPmTracker::BacaCallback, this, ros::TransportHints().tcpNoDelay());
@@ -1140,8 +1140,8 @@ const mrs_msgs::PositionCommand::ConstPtr DergPmTracker::update(const mrs_msgs::
   pub_goal_pose_.publish(goal_pose);
 
 
-  
-
+  //ROS_INFO_STREAM("old load velocity = \n" << old_load_lin_vel);
+  //ROS_INFO_STREAM("load velocity = \n" << load_lin_vel);
   
   if (_use_derg_){
     // initially applied_ref_x_, applied_ref_y_, applied_ref_z_ is defined as stay where you are when starting_bool = 1;
@@ -1615,7 +1615,7 @@ for (int i = 0; i < num_pred_samples_; i++) {
     pred_old_load_lin_vel[0] = custom_load_vel.position.x; //update of the old velocity of the load
     pred_old_load_lin_vel[1] = custom_load_vel.position.y;
     pred_old_load_lin_vel[2] = custom_load_vel.position.z;
-
+    //ROS_INFO_STREAM("Old velocity \n" << pred_old_load_lin_vel[0]);
     load_lin_vel[0] = load_lin_vel[0] + custom_load_acceleration.position.x*custom_dt_;
     custom_load_vel.position.x = load_lin_vel[0];
 
@@ -1633,6 +1633,7 @@ for (int i = 0; i < num_pred_samples_; i++) {
 
     load_pose_position.z = load_pose_position.z + load_lin_vel[2]*custom_dt_;
     custom_load_pose.position.z = load_pose_position.z;
+    //ROS_INFO_STREAM("New velocity \n" << custom_load_vel.position.x);
 
     Eigen::Vector3d acceleration_load;
     acceleration_load[0] = (custom_load_vel.position.x - pred_old_load_lin_vel[0])/custom_dt_;
@@ -4338,12 +4339,18 @@ void DergPmTracker::loadStatesCallback(const gazebo_msgs::LinkStatesConstPtr& lo
         load_pose_position.z = 0;
       }
 
+  old_load_lin_vel[0] = load_lin_vel[0];  // initialise the old load velocity 
+  old_load_lin_vel[1] = load_lin_vel[1];
+  old_load_lin_vel[2] = load_lin_vel[2];
+
   load_velocity = loadmsg->twist[load_index];
   custom_publisher_load_pose.publish(load_pose);
 
+  //ROS_INFO_STREAM("load velocity 1 = \n" << load_lin_vel);
   load_lin_vel[0]= load_velocity.linear.x;
   load_lin_vel[1]= load_velocity.linear.y;
   load_lin_vel[2]= load_velocity.linear.z;
+  //ROS_INFO_STREAM("load velocity 2 = \n" << load_lin_vel);
 }
 
 void DergPmTracker::BacaCallback(const mrs_msgs::BacaProtocolConstPtr& msg) {
