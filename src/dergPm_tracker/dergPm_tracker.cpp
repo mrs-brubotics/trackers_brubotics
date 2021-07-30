@@ -2293,11 +2293,11 @@ for (int i = 0; i < num_pred_samples_; i++) {
   //Eigen::Vector3d acceleration_uav = 1/_uav_mass_ * (f + _uav_mass_ * (Eigen::Vector3d(0, 0, -common_handlers_->g)));
   // OLD Eigen::Vector3d acceleration_uav = 1/_uav_mass_ * (thrust_force*R.col(2) + _uav_mass_ * (Eigen::Vector3d(0, 0, -common_handlers_->g)));
   // Eigen::Vector3d acceleration_load = (load_lin_vel - old_load_lin_vel)/custom_dt_;
-  Eigen::Vector3d acceleration_uav = (1/_uav_mass_ )* ((thrust_force*R.col(2) + _uav_mass_ * (Eigen::Vector3d(0, 0, -common_handlers_->g))) - load_mass_*(acceleration_load + (Eigen::Vector3d(0, 0, common_handlers_->g))));
+  //Eigen::Vector3d acceleration_uav = (1/_uav_mass_ )* ((thrust_force*R.col(2) + _uav_mass_ * (Eigen::Vector3d(0, 0, -common_handlers_->g))) - load_mass_*(acceleration_load + (Eigen::Vector3d(0, 0, common_handlers_->g))));
   
-  custom_acceleration.position.x = acceleration_uav[0];
-  custom_acceleration.position.y = acceleration_uav[1];
-  custom_acceleration.position.z = acceleration_uav[2];
+  //custom_acceleration.position.x = acceleration_uav[0];
+  //custom_acceleration.position.y = acceleration_uav[1];
+  //custom_acceleration.position.z = acceleration_uav[2];
   
   
   //Thesis B
@@ -2334,9 +2334,9 @@ for (int i = 0; i < num_pred_samples_; i++) {
   //Eigen::Vector3d acceleration_load = custom_acceleration;
 
 // with kpl and kdl
-  //custom_acceleration.position.x = (1/_uav_mass_)*(Kpl[0]*(position_cmd.position.x - custom_load_pose.position.x) + Kdl[0]*(position_cmd.velocity.x - custom_load_vel.position.x) + Kp[0]*(position_cmd.position.x-custom_pose.position.x) + Kv[0]*(position_cmd.velocity.x - custom_vel.position.x)) - (load_mass_/_uav_mass_)*(acceleration_load[0]);
-  //custom_acceleration.position.y = (1/_uav_mass_)*(Kpl[1]*(position_cmd.position.y - custom_load_pose.position.y) + Kdl[1]*(position_cmd.velocity.y - custom_load_vel.position.y) + Kp[1]*(position_cmd.position.y-custom_pose.position.y) + Kv[1]*(position_cmd.velocity.y - custom_vel.position.y))  - (load_mass_/_uav_mass_)*(acceleration_load[1]);
-  //custom_acceleration.position.z = (1/_uav_mass_)*(Kpl[2]*(position_cmd.position.z - custom_load_pose.position.z - cable_length) + Kdl[2]*(position_cmd.velocity.z - custom_load_vel.position.z) + Kp[2]*(position_cmd.position.z-custom_pose.position.z) + Kv[2]*(position_cmd.velocity.z - custom_vel.position.z))  - (load_mass_/_uav_mass_)*(acceleration_load[2]);
+  custom_acceleration.position.x = (1/_uav_mass_)*(Kpl[0]*(position_cmd.position.x - custom_load_pose.position.x) + Kdl[0]*(position_cmd.velocity.x - custom_load_vel.position.x) + Kp[0]*(position_cmd.position.x-custom_pose.position.x) + Kv[0]*(position_cmd.velocity.x - custom_vel.position.x)) - (load_mass_/_uav_mass_)*(acceleration_load[0]);
+  custom_acceleration.position.y = (1/_uav_mass_)*(Kpl[1]*(position_cmd.position.y - custom_load_pose.position.y) + Kdl[1]*(position_cmd.velocity.y - custom_load_vel.position.y) + Kp[1]*(position_cmd.position.y-custom_pose.position.y) + Kv[1]*(position_cmd.velocity.y - custom_vel.position.y))  - (load_mass_/_uav_mass_)*(acceleration_load[1]);
+  custom_acceleration.position.z = (1/_uav_mass_)*(Kpl[2]*(position_cmd.position.z - custom_load_pose.position.z - cable_length) + Kdl[2]*(position_cmd.velocity.z - custom_load_vel.position.z) + Kp[2]*(position_cmd.position.z-custom_pose.position.z) + Kv[2]*(position_cmd.velocity.z - custom_vel.position.z))  - (load_mass_/_uav_mass_)*(acceleration_load[2]);
   //ROS_INFO_STREAM("load position feedback = \n" << Kpl[0]*(position_cmd.position.x - custom_load_pose.position.x));
   //ROS_INFO_STREAM("load velocity feedback = \n" << Kdl[0]*(position_cmd.velocity.x - custom_load_vel.position.x));
   //ROS_INFO_STREAM("Tension = \n" << (load_mass_/_uav_mass_)*(acceleration_load[0]));
