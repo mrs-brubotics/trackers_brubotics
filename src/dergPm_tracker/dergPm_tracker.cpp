@@ -252,6 +252,7 @@ private:
   geometry_msgs::Pose load_pose;
   Eigen::Vector3d old_load_lin_vel = Eigen::Vector3d::Zero(3);
   Eigen::Vector3d pred_old_load_lin_vel = Eigen::Vector3d::Zero(3);
+  Eigen::Vector3d load_lin_vel_before_pred = Eigen::Vector3d::Zero(3);
   geometry_msgs::Twist load_velocity;
   geometry_msgs::Vector3 load_pose_error;
   geometry_msgs::Vector3 load_velocity_error;
@@ -1573,6 +1574,9 @@ for (int i = 0; i < num_pred_samples_; i++) {
     // ROS_INFO_STREAM("R (i=0)  = \n" << R);
     // ROS_INFO_STREAM("attitude_rate_pred (i=0)  = \n" << attitude_rate_pred);
     // ROS_INFO_STREAM("Ow (i=0) = \n" << Ow);
+
+    // Thesis B: Step 2: initialize the custom load predictions for the first iteration
+    
     if(payload_spawned){
       //Thesis B
       custom_load_pose.position.x = load_pose_position.x;
@@ -1583,6 +1587,7 @@ for (int i = 0; i < num_pred_samples_; i++) {
       custom_load_vel.position.y = load_lin_vel[1];
       custom_load_vel.position.z = load_lin_vel[2];
 
+      // define the load acceleration 
       acceleration_load[0] = (custom_load_vel.position.x - old_load_lin_vel[0])/custom_dt_;
       acceleration_load[1] = (custom_load_vel.position.y - old_load_lin_vel[1])/custom_dt_;
       acceleration_load[2] = (custom_load_vel.position.z - old_load_lin_vel[2])/custom_dt_;
@@ -1590,7 +1595,7 @@ for (int i = 0; i < num_pred_samples_; i++) {
       custom_load_acceleration.position.x = acceleration_load[0];
       custom_load_acceleration.position.y = acceleration_load[1];
       custom_load_acceleration.position.z = acceleration_load[2];
-    }else{
+    }else{ //Thesis B: Step 3: When the is no payload, the initialization is zero
       custom_load_pose.position.x = 0;
       custom_load_pose.position.y = 0;
       custom_load_pose.position.z = 0;
@@ -1632,31 +1637,58 @@ for (int i = 0; i < num_pred_samples_; i++) {
        
 
     //Thesis B
-    pred_old_load_lin_vel[0] = custom_load_vel.position.x; //update of the old velocity of the load
-    pred_old_load_lin_vel[1] = custom_load_vel.position.y;
-    pred_old_load_lin_vel[2] = custom_load_vel.position.z;
-    //ROS_INFO_STREAM("Old velocity \n" << pred_old_load_lin_vel[0]);
-    custom_load_vel.position.x = custom_load_vel.position.x + custom_load_acceleration.position.x*custom_dt_;
+    //Thesis B: Step 4: calculate the predicted load state
+    if(payload_spawned){
+      //Thesis B
+      pred_old_load_lin_vel[0] = custom_load_vel.position.x; //update of the old velocity of the load for the predictions
+      pred_old_load_lin_vel[1] = custom_load_vel.position.y;
+      pred_old_load_lin_vel[2] = custom_load_vel.position.z;
+      //ROS_INFO_STREAM("Old velocity \n" << pred_old_load_lin_vel[0]);
+      load_lin_vel[0] = load_lin_vel[0] + custom_load_acceleration.position.x*custom_dt_;
+      custom_load_vel.position.x = load_lin_vel[0];
 
-    custom_load_vel.position.y  = custom_load_vel.position.y + custom_load_acceleration.position.y*custom_dt_;
+      load_lin_vel[1] = load_lin_vel[1] + custom_load_acceleration.position.y*custom_dt_;
+      custom_load_vel.position.y = load_lin_vel[1];
 
-    custom_load_vel.position.z = custom_load_vel.position.z + custom_load_acceleration.position.z*custom_dt_;
+      load_lin_vel[2] = load_lin_vel[2] + custom_load_acceleration.position.z*custom_dt_;
+      custom_load_vel.position.z = load_lin_vel[2];
 
-    custom_load_pose.position.x = custom_load_pose.position.x + custom_load_vel.position.x*custom_dt_;
+      load_pose_position.x = load_pose_position.x + load_lin_vel[0]*custom_dt_;
+      custom_load_pose.position.x = load_pose_position.x;
 
-    custom_load_pose.position.y= custom_load_pose.position.y + custom_load_vel.position.y*custom_dt_;
+      load_pose_position.y = load_pose_position.y + load_lin_vel[1]*custom_dt_;
+      custom_load_pose.position.y = load_pose_position.y;
 
-    custom_load_pose.position.z = custom_load_pose.position.z + custom_load_vel.position.z*custom_dt_;
-    //ROS_INFO_STREAM("New velocity \n" << custom_load_vel.position.x);
+      load_pose_position.z = load_pose_position.z + load_lin_vel[2]*custom_dt_;
+      custom_load_pose.position.z = load_pose_position.z;
+      //ROS_INFO_STREAM("New velocity \n" << custom_load_vel.position.x);
 
-    Eigen::Vector3d acceleration_load;
-    acceleration_load[0] = (custom_load_vel.position.x - pred_old_load_lin_vel[0])/custom_dt_;
-    acceleration_load[1] = (custom_load_vel.position.y - pred_old_load_lin_vel[1])/custom_dt_;
-    acceleration_load[2] = (custom_load_vel.position.z - pred_old_load_lin_vel[2])/custom_dt_;
+      Eigen::Vector3d acceleration_load;
+      acceleration_load[0] = (custom_load_vel.position.x - pred_old_load_lin_vel[0])/custom_dt_;
+      acceleration_load[1] = (custom_load_vel.position.y - pred_old_load_lin_vel[1])/custom_dt_;
+      acceleration_load[2] = (custom_load_vel.position.z - pred_old_load_lin_vel[2])/custom_dt_;
 
-    custom_load_acceleration.position.x = acceleration_load[0];
-    custom_load_acceleration.position.y = acceleration_load[1];
-    custom_load_acceleration.position.z = acceleration_load[2];
+      custom_load_acceleration.position.x = acceleration_load[0];
+      custom_load_acceleration.position.y = acceleration_load[1];
+      custom_load_acceleration.position.z = acceleration_load[2];
+    }else{
+      custom_load_pose.position.x = 0;
+      custom_load_pose.position.y = 0;
+      custom_load_pose.position.z = 0;
+
+      custom_load_vel.position.x = 0;
+      custom_load_vel.position.y = 0;
+      custom_load_vel.position.z = 0;
+
+      acceleration_load[0] = 0;
+      acceleration_load[1] = 0;
+      acceleration_load[2] = 0;
+
+      custom_load_acceleration.position.x = acceleration_load[0];
+      custom_load_acceleration.position.y = acceleration_load[1];
+      custom_load_acceleration.position.z = acceleration_load[2];
+    }
+    
 
        //t = q_feedback + other terms
     skew_Ow << 0     , -attitude_rate_pred(2), attitude_rate_pred(1),
@@ -1745,7 +1777,7 @@ for (int i = 0; i < num_pred_samples_; i++) {
         } 
     }
 
-
+  //Thesis B: step 5: calculate the errors
     if (position_cmd.use_position_horizontal || position_cmd.use_position_vertical) {
       Epl = Rpl - Opl - load_pose_position_offset; // remove offset because the load does not spawn perfectly under drone
       //(position relative to base frame)
@@ -2037,6 +2069,7 @@ for (int i = 0; i < num_pred_samples_; i++) {
   //OLD Eigen::Vector3d f = position_feedback + velocity_feedback + _uav_mass_ * (Eigen::Vector3d(0, 0, common_handlers_->g));// custom 2
   
   // | --------------- Thesis B --------------- |
+  //Thesis B: step 6: calculate f
   Eigen::Vector3d f = position_load_feedback + velocity_load_feedback + position_feedback + velocity_feedback + feed_forward ;
   // | ------------------------------ |
   // also check line above uav_mass_difference_ = 0!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -2293,8 +2326,10 @@ for (int i = 0; i < num_pred_samples_; i++) {
   predicted_thrust_norm.position.x = thrust_force; // change later to a non vec type
   predicted_thrust_out.poses.push_back(predicted_thrust_norm);
   //Eigen::Vector3d acceleration_uav = 1/_uav_mass_ * (f + _uav_mass_ * (Eigen::Vector3d(0, 0, -common_handlers_->g)));
-  // OLD Eigen::Vector3d acceleration_uav = 1/_uav_mass_ * (+ _uav_mass_ * (Eigen::Vector3d(0, 0, -common_handlers_->g)));
-  // Eigen::Vector3d acceleration_load = (load_lin_vel - old_load_lin_vel)/custom_dt_;
+  // OLD Eigen::Vector3d acceleration_uav = 1/_uav_mass_ * (thrust_force*R.col(2) + _uav_mass_ * (Eigen::Vector3d(0, 0, -common_handlers_->g)));
+ 
+ 
+  //Thesis B: step 7: calculating the predicted uav acceleration
   Eigen::Vector3d acceleration_uav = (1/_uav_mass_ )* ((thrust_force*R.col(2)  + _uav_mass_ * (Eigen::Vector3d(0, 0, -common_handlers_->g))) - load_mass_*(acceleration_load + (Eigen::Vector3d(0, 0, common_handlers_->g))));
   
   custom_acceleration.position.x = acceleration_uav[0];
@@ -2303,7 +2338,11 @@ for (int i = 0; i < num_pred_samples_; i++) {
   
   
   //Thesis B
-
+  // workin for uav_state
+  //custom_acceleration.position.x = (1/_uav_mass_)*(Kp[0]*(position_cmd.position.x-custom_pose.position.x) + Kv[0]*(position_cmd.velocity.x - custom_vel.position.x)) - (load_mass_/_uav_mass_)*(acceleration_load[0]);
+  //custom_acceleration.position.y = (1/_uav_mass_)*(Kp[1]*(position_cmd.position.y-custom_pose.position.y) + Kv[1]*(position_cmd.velocity.y - custom_vel.position.y))  - (load_mass_/_uav_mass_)*(acceleration_load[1]);
+  //custom_acceleration.position.z = (1/_uav_mass_)*(Kp[2]*(position_cmd.position.z-custom_pose.position.z) + Kv[2]*(position_cmd.velocity.z - custom_vel.position.z))  - (load_mass_/_uav_mass_)*(acceleration_load[2]);
+  
 
 // with kpl and kdl
   //custom_acceleration.position.x = (1/_uav_mass_)*(Kpl[0]*(position_cmd.position.x - custom_load_pose.position.x) + Kdl[0]*(uav_state.velocity.linear.x - custom_load_vel.position.x) + Kp[0]*(position_cmd.position.x-custom_pose.position.x) + Kv[0]*(position_cmd.velocity.x - custom_vel.position.x)) - (load_mass_/_uav_mass_)*(acceleration_load[0]);
@@ -4316,9 +4355,10 @@ void DergPmTracker::loadStatesCallback(const gazebo_msgs::LinkStatesConstPtr& lo
         load_pose_position.z = 0;
       }
 
-  old_load_lin_vel[0] = load_lin_vel[0];  // initialise the old load velocity 
-  old_load_lin_vel[1] = load_lin_vel[1];
-  old_load_lin_vel[2] = load_lin_vel[2];
+  // Thesis B: Step 1: update velocity and save old load velocity
+  old_load_lin_vel[0] = load_lin_vel_before_pred[0];  // initialise the old load velocity 
+  old_load_lin_vel[1] = load_lin_vel_before_pred[1];
+  old_load_lin_vel[2] = load_lin_vel_before_pred[2];
 
   load_velocity = loadmsg->twist[load_index];
   custom_publisher_load_pose.publish(load_pose);
@@ -4328,6 +4368,10 @@ void DergPmTracker::loadStatesCallback(const gazebo_msgs::LinkStatesConstPtr& lo
   load_lin_vel[1]= load_velocity.linear.y;
   load_lin_vel[2]= load_velocity.linear.z;
   //ROS_INFO_STREAM("load velocity 2 = \n" << load_lin_vel);
+
+  load_lin_vel_before_pred[0] = load_lin_vel[0]; // in order have the real load velocity each time the update function starts again (not changed in prediction)
+  load_lin_vel_before_pred[1] = load_lin_vel[1];
+  load_lin_vel_before_pred[2] = load_lin_vel[2];
 }
 
 void DergPmTracker::BacaCallback(const mrs_msgs::BacaProtocolConstPtr& msg) {
