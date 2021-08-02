@@ -217,6 +217,7 @@
     geometry_msgs::PoseArray predicted_load_poses_out; // array of predicted load poses
     geometry_msgs::PoseArray predicted_load_velocities_out; // array of predicted load velocities
     geometry_msgs::PoseArray predicted_load_accelerations_out; // array of predicted load accelerations
+    geometry_msgs::PoseArray predicted_tension_force_out; // array of predicted tension forces
     
     double dt_ = 0.010; // ERG sample time = controller sample time
     double custom_dt_ = 0.010;//0.001;//0.020; //0.010; // controller sampling time (in seconds) used in prediction
@@ -244,23 +245,28 @@
     ros::Publisher custom_predicted_load_pose_publisher;
     ros::Publisher custom_predicted_load_vel_publisher;
     ros::Publisher custom_predicted_load_acc_publisher; 
+    ros::Publisher custom_predicted_tension_force;
 
     // | ----------------- Thesis B ---------------- |
-    ros::Publisher custom_publisher_load_pose;
+    ros::Publisher custom_publisher_tracker_load_pose;
+    ros::Publisher custom_publisher_tracker_load_vel;
+    ros::Publisher custom_publisher_tracker_uav_state;
+    ros::Publisher custom_publisher_tracker_load_old_vel;
+    //ros::Publisher custom_publisher_load_pose;
     ros::Publisher custom_publisher_load_pose_experiments;
     ros::Publisher custom_publisher_load_pose_error;
     ros::Publisher custom_publisher_load_velocity_error;
+    ros::Publisher custom_publisher_tension_force;
     ros::Subscriber load_state_sub;
     geometry_msgs::Pose load_pose;
-    Eigen::Vector3d old_load_lin_vel = Eigen::Vector3d::Zero(3);
-    Eigen::Vector3d pred_old_load_lin_vel = Eigen::Vector3d::Zero(3);
+    geometry_msgs::Vector3 old_load_lin_vel;
     Eigen::Vector3d load_lin_vel_before_pred = Eigen::Vector3d::Zero(3);
     geometry_msgs::Twist load_velocity;
     geometry_msgs::Vector3 load_pose_error;
     geometry_msgs::Vector3 load_velocity_error;
     void loadStatesCallback(const gazebo_msgs::LinkStatesConstPtr& loadmsg);
-    Eigen::Vector3d load_lin_vel = Eigen::Vector3d::Zero(3);
-    geometry_msgs::Vector3 load_pose_position;
+    Eigen::Vector3d load_lin_vel_ = Eigen::Vector3d::Zero(3);
+    geometry_msgs::Vector3 load_pose_position_;
     Eigen::Vector3d rel_load_pose_position = Eigen::Vector3d::Zero(3);
     Eigen::Vector3d Difference_load_drone_position = Eigen::Vector3d::Zero(3);
     bool payload_spawned = false;
@@ -689,6 +695,7 @@
     custom_predicted_load_pose_publisher = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_load_poses", 10);
     custom_predicted_load_vel_publisher = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_load_vels", 10);
     custom_predicted_load_acc_publisher = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_load_accs", 10);
+    custom_predicted_tension_force = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_tension_force", 10);
     
     future_trajectory_out_.stamp = ros::Time::now();
     future_trajectory_out_.uav_name = _uav_name_;
@@ -704,6 +711,11 @@
 
     // | --------------- Thesis B --------------- |
     run_type = getenv("RUN_TYPE");
+    custom_publisher_tracker_load_pose   = nh2_.advertise<geometry_msgs::Pose>("tracker_load_pose",10);
+    custom_publisher_tracker_load_vel   = nh2_.advertise<geometry_msgs::Twist>("tracker_load_vel",10);
+    custom_publisher_tracker_uav_state   = nh2_.advertise<mrs_msgs::UavState>("tracker_uav_state",10);
+    custom_publisher_tracker_load_old_vel   = nh2_.advertise<geometry_msgs::Vector3>("tracker_load_old_vel",10);
+    custom_publisher_tension_force = nh2_.advertise<geometry_msgs::Pose>("tracker_custom_tension_force",10);
     /*
     if (run_type == "simulation")
     {
@@ -1011,10 +1023,6 @@
       applied_ref_y_ = position_cmd.position.y;
       applied_ref_z_ = position_cmd.position.z;
 
-      //thesis b
-      //old_load_lin_vel[0] = load_lin_vel[0];
-      //old_load_lin_vel[1] = load_lin_vel[1];
-      //old_load_lin_vel[2] = load_lin_vel[2];
 
       //add heading applied ref
     return mrs_msgs::PositionCommand::ConstPtr(new mrs_msgs::PositionCommand(position_cmd));
@@ -1084,16 +1092,13 @@
     //ROS_INFO_STREAM("RUN_TYPE \n" << run_type );
     std::string slash = "/";
     //ROS_INFO_STREAM("UAV_NAME \n" << run_type  );
-    //old_load_lin_vel[0] = load_lin_vel[0];  // initialise the old load velocity befor subscribing to the actual load velocity
-    //old_load_lin_vel[1] = load_lin_vel[1];
-    //old_load_lin_vel[2] = load_lin_vel[2];
     //ROS_INFO_STREAM("old load velocity = \n" << old_load_lin_vel);
     if (run_type == "simulation")
     {
       // subscriber of the simulation
-      //ROS_INFO_STREAM("load velocity 1 = \n" << load_lin_vel);
+      //ROS_INFO_STREAM("load velocity 1 = \n" << load_lin_vel_);
       load_state_sub =  nh_.subscribe("/gazebo/link_states", 1, &DergPmTracker::loadStatesCallback, this, ros::TransportHints().tcpNoDelay());
-      //ROS_INFO_STREAM("load velocity 2 = \n" << load_lin_vel);
+      //ROS_INFO_STREAM("load velocity 2 = \n" << load_lin_vel_);
     }else{
       // subscriber of the encoder
       data_payload_sub = nh_.subscribe(slash.append(uav_name.append("/serial/received_message")), 1, &DergPmTracker::BacaCallback, this, ros::TransportHints().tcpNoDelay());
@@ -1144,9 +1149,11 @@
     goal_pose.reference.heading = goal_heading_;
     pub_goal_pose_.publish(goal_pose);
 
+    //Thesis B: step ?
+    custom_publisher_tracker_uav_state.publish(uav_state_); 
 
     //ROS_INFO_STREAM("old load velocity = \n" << old_load_lin_vel);
-    //ROS_INFO_STREAM("load velocity = \n" << load_lin_vel);
+    //ROS_INFO_STREAM("load velocity = \n" << load_lin_vel_);
     
     if (_use_derg_){
       // initially applied_ref_x_, applied_ref_y_, applied_ref_z_ is defined as stay where you are when starting_bool = 1;
@@ -1154,7 +1161,9 @@
       position_cmd.position.y     = applied_ref_y_;
       position_cmd.position.z     = applied_ref_z_;
       position_cmd.heading        = goal_heading_;
-      trajectory_prediction_general(position_cmd, uav_heading, last_attitude_cmd);
+      if(payload_spawned){
+        trajectory_prediction_general(position_cmd, uav_heading, last_attitude_cmd);
+      }
       DERG_computation(); // modifies the applied reference
       position_cmd.position.x     = applied_ref_x_;
       position_cmd.position.y     = applied_ref_y_;
@@ -1168,7 +1177,9 @@
       position_cmd.position.y     = goal_y_;//+ 0.1*sin(3.14*time_for_sinus_bryan);
       position_cmd.position.z     = goal_z_;//+ 0.1*sin(3.14*time_for_sinus_bryan);
       position_cmd.heading        = goal_heading_;
-      trajectory_prediction_general(position_cmd, uav_heading, last_attitude_cmd);
+      if(payload_spawned){
+        trajectory_prediction_general(position_cmd, uav_heading, last_attitude_cmd);
+      }
     }
 
     // set applied ref = desired goal ref (bypass tracker)
@@ -1194,6 +1205,7 @@
     predicted_load_poses_out.poses.clear();
     predicted_load_velocities_out.poses.clear();
     predicted_load_accelerations_out.poses.clear();
+    predicted_tension_force_out.poses.clear();
 
     
 
@@ -1481,7 +1493,10 @@
 
     // | --------------------- initialize the state of the UAV --------------------- |
     mrs_msgs::UavState uav_state = uav_state_; // uav_state represents the locally defined predicted state
-
+    Eigen::Vector3d load_lin_vel = load_lin_vel_;
+    geometry_msgs::Vector3 load_pose_position = load_pose_position_ ;
+    Eigen::Vector3d pred_old_load_lin_vel = Eigen::Vector3d::Zero(3);
+    
     // | --------------------- initialize body and world integrals --------------------- |
     /* NOTE: this part is added by Bryan, was originally in the controllers activate function */
       Ib_b_[0] = -last_attitude_cmd->disturbance_bx_b;
@@ -1539,6 +1554,7 @@
   //predicted_load_velocities_out.header.frame_id = uav_state_.header.frame_id;
   predicted_load_accelerations_out.header.stamp = ros::Time::now();
   //predicted_load_accelerations_out.header.frame_id = uav_state_.header.frame_id;
+  predicted_tension_force_out.header.stamp = ros::Time::now();
 
   geometry_msgs::Pose custom_pose;
   geometry_msgs::Pose custom_vel;
@@ -1548,7 +1564,8 @@
   geometry_msgs::Pose custom_load_acceleration;
   geometry_msgs::Pose predicted_thrust; 
   geometry_msgs::Pose predicted_thrust_norm; 
-  geometry_msgs::Pose predicted_attituderate; 
+  geometry_msgs::Pose predicted_attituderate;
+  geometry_msgs::Pose custom_tension_force;
 
   Eigen::Matrix3d R;
   Eigen::Matrix3d Rdot;
@@ -1578,42 +1595,23 @@
       // ROS_INFO_STREAM("Ow (i=0) = \n" << Ow);
 
       // Thesis B: Step 2: initialize the custom load predictions for the first iteration
+      custom_load_pose.position.x = load_pose_position.x;
+      custom_load_pose.position.y = load_pose_position.y;
+      custom_load_pose.position.z = load_pose_position.z;
+
+      custom_load_vel.position.x = load_lin_vel[0];
+      custom_load_vel.position.y = load_lin_vel[1];
+      custom_load_vel.position.z = load_lin_vel[2];
+
+      // define the load acceleration 
+      acceleration_load[0] = (custom_load_vel.position.x - old_load_lin_vel.x)/load_vel_dt;
+      acceleration_load[1] = (custom_load_vel.position.y - old_load_lin_vel.y)/load_vel_dt;
+      acceleration_load[2] = (custom_load_vel.position.z - old_load_lin_vel.z)/load_vel_dt;
+
+      custom_load_acceleration.position.x = acceleration_load[0];
+      custom_load_acceleration.position.y = acceleration_load[1];
+      custom_load_acceleration.position.z = acceleration_load[2];
       
-      if(payload_spawned){
-        //Thesis B
-        custom_load_pose.position.x = load_pose_position.x;
-        custom_load_pose.position.y = load_pose_position.y;
-        custom_load_pose.position.z = load_pose_position.z;
-
-        custom_load_vel.position.x = load_lin_vel[0];
-        custom_load_vel.position.y = load_lin_vel[1];
-        custom_load_vel.position.z = load_lin_vel[2];
-
-        // define the load acceleration 
-        acceleration_load[0] = (custom_load_vel.position.x - old_load_lin_vel[0])/load_vel_dt;
-        acceleration_load[1] = (custom_load_vel.position.y - old_load_lin_vel[1])/load_vel_dt;
-        acceleration_load[2] = (custom_load_vel.position.z - old_load_lin_vel[2])/load_vel_dt;
-
-        custom_load_acceleration.position.x = acceleration_load[0];
-        custom_load_acceleration.position.y = acceleration_load[1];
-        custom_load_acceleration.position.z = acceleration_load[2];
-      }else{ //Thesis B: Step 3: When the is no payload, the initialization is zero
-        custom_load_pose.position.x = 0;
-        custom_load_pose.position.y = 0;
-        custom_load_pose.position.z = 0;
-
-        custom_load_vel.position.x = 0;
-        custom_load_vel.position.y = 0;
-        custom_load_vel.position.z = 0;
-
-        acceleration_load[0] = 0;
-        acceleration_load[1] = 0;
-        acceleration_load[2] = 0;
-
-        custom_load_acceleration.position.x = acceleration_load[0];
-        custom_load_acceleration.position.y = acceleration_load[1];
-        custom_load_acceleration.position.z = acceleration_load[2];
-      }
 
       
     } 
@@ -1638,58 +1636,39 @@
       custom_pose.position.z = uav_state.pose.position.z;
         
 
-      //Thesis B
+ 
       //Thesis B: Step 4: calculate the predicted load state
-      if(payload_spawned){
-        //Thesis B
-        pred_old_load_lin_vel[0] = custom_load_vel.position.x; //update of the old velocity of the load for the predictions
-        pred_old_load_lin_vel[1] = custom_load_vel.position.y;
-        pred_old_load_lin_vel[2] = custom_load_vel.position.z;
-        //ROS_INFO_STREAM("Old velocity \n" << pred_old_load_lin_vel[0]);
-        load_lin_vel[0] = load_lin_vel[0] + custom_load_acceleration.position.x*custom_dt_;
-        custom_load_vel.position.x = load_lin_vel[0];
+      pred_old_load_lin_vel[0] = custom_load_vel.position.x; //update of the old velocity of the load for the predictions
+      pred_old_load_lin_vel[1] = custom_load_vel.position.y;
+      pred_old_load_lin_vel[2] = custom_load_vel.position.z;
+      //ROS_INFO_STREAM("Old velocity \n" << pred_old_load_lin_vel[0]);
+      load_lin_vel[0] = load_lin_vel[0] + custom_load_acceleration.position.x*custom_dt_;
+      custom_load_vel.position.x = load_lin_vel[0];
 
-        load_lin_vel[1] = load_lin_vel[1] + custom_load_acceleration.position.y*custom_dt_;
-        custom_load_vel.position.y = load_lin_vel[1];
+      load_lin_vel[1] = load_lin_vel[1] + custom_load_acceleration.position.y*custom_dt_;
+      custom_load_vel.position.y = load_lin_vel[1];
 
-        load_lin_vel[2] = load_lin_vel[2] + custom_load_acceleration.position.z*custom_dt_;
-        custom_load_vel.position.z = load_lin_vel[2];
+      load_lin_vel[2] = load_lin_vel[2] + custom_load_acceleration.position.z*custom_dt_;
+      custom_load_vel.position.z = load_lin_vel[2];
 
-        load_pose_position.x = load_pose_position.x + load_lin_vel[0]*custom_dt_;
-        custom_load_pose.position.x = load_pose_position.x;
+      load_pose_position.x = load_pose_position.x + load_lin_vel[0]*custom_dt_;
+      custom_load_pose.position.x = load_pose_position.x;
 
-        load_pose_position.y = load_pose_position.y + load_lin_vel[1]*custom_dt_;
-        custom_load_pose.position.y = load_pose_position.y;
+      load_pose_position.y = load_pose_position.y + load_lin_vel[1]*custom_dt_;
+      custom_load_pose.position.y = load_pose_position.y;
 
-        load_pose_position.z = load_pose_position.z + load_lin_vel[2]*custom_dt_;
-        custom_load_pose.position.z = load_pose_position.z;
-        //ROS_INFO_STREAM("New velocity \n" << custom_load_vel.position.x);
+      load_pose_position.z = load_pose_position.z + load_lin_vel[2]*custom_dt_;
+      custom_load_pose.position.z = load_pose_position.z;
+      //ROS_INFO_STREAM("New velocity \n" << custom_load_vel.position.x);
 
-        Eigen::Vector3d acceleration_load;
-        acceleration_load[0] = (custom_load_vel.position.x - pred_old_load_lin_vel[0])/custom_dt_;
-        acceleration_load[1] = (custom_load_vel.position.y - pred_old_load_lin_vel[1])/custom_dt_;
-        acceleration_load[2] = (custom_load_vel.position.z - pred_old_load_lin_vel[2])/custom_dt_;
+      Eigen::Vector3d acceleration_load;
+      acceleration_load[0] = (custom_load_vel.position.x - pred_old_load_lin_vel[0])/custom_dt_;
+      acceleration_load[1] = (custom_load_vel.position.y - pred_old_load_lin_vel[1])/custom_dt_;
+      acceleration_load[2] = (custom_load_vel.position.z - pred_old_load_lin_vel[2])/custom_dt_;
 
-        custom_load_acceleration.position.x = acceleration_load[0];
-        custom_load_acceleration.position.y = acceleration_load[1];
-        custom_load_acceleration.position.z = acceleration_load[2];
-      }else{
-        custom_load_pose.position.x = 0;
-        custom_load_pose.position.y = 0;
-        custom_load_pose.position.z = 0;
-
-        custom_load_vel.position.x = 0;
-        custom_load_vel.position.y = 0;
-        custom_load_vel.position.z = 0;
-
-        acceleration_load[0] = 0;
-        acceleration_load[1] = 0;
-        acceleration_load[2] = 0;
-
-        custom_load_acceleration.position.x = acceleration_load[0];
-        custom_load_acceleration.position.y = acceleration_load[1];
-        custom_load_acceleration.position.z = acceleration_load[2];
-      }
+      custom_load_acceleration.position.x = acceleration_load[0];
+      custom_load_acceleration.position.y = acceleration_load[1];
+      custom_load_acceleration.position.z = acceleration_load[2];
       
 
         //t = q_feedback + other terms
@@ -1818,7 +1797,7 @@
       custom_publisher_load_pose_error.publish(load_pose_error);
       custom_publisher_load_velocity_error.publish(load_velocity_error);
 
-      //ROS_INFO_STREAM("Se3BruboticsLoadController: Load_pose_position = \n" << load_pose_position);
+      //ROS_INFO_STREAM("Se3BruboticsLoadController: load_pose_position = \n" << load_pose_position);
       //ROS_INFO_STREAM("Se3BruboticsLoadController: Epl (Rpl-load_pose)= \n" << Epl);
     }
     // 2e method pandolfo
@@ -2337,7 +2316,13 @@
     custom_acceleration.position.x = acceleration_uav[0];
     custom_acceleration.position.y = acceleration_uav[1];
     custom_acceleration.position.z = acceleration_uav[2];
-    
+
+    custom_tension_force.position.x = load_mass_*(acceleration_load[0]);
+    custom_tension_force.position.y = load_mass_*(acceleration_load[1]);
+    custom_tension_force.position.z = load_mass_*(acceleration_load[2] + (common_handlers_->g));
+
+    custom_publisher_tension_force.publish(custom_tension_force);
+    predicted_tension_force_out.poses.push_back(custom_tension_force);
     
     //Thesis B
     // workin for uav_state
@@ -2346,12 +2331,17 @@
     //custom_acceleration.position.z = (1/_uav_mass_)*(Kp[2]*(position_cmd.position.z-custom_pose.position.z) + Kv[2]*(position_cmd.velocity.z - custom_vel.position.z))  - (load_mass_/_uav_mass_)*(acceleration_load[2]);
     
 
-  // with kpl and kdl
+    // using (m_q - m)
+    //custom_acceleration.position.x = (1/(_uav_mass_ - total_mass))*(Kpl[0]*(position_cmd.position.x - custom_load_pose.position.x) + Kdl[0]*(uav_state.velocity.linear.x - custom_load_vel.position.x) + Kp[0]*(position_cmd.position.x-custom_pose.position.x) + Kv[0]*(position_cmd.velocity.x - custom_vel.position.x)) - (load_mass_/(_uav_mass_ - total_mass))*(acceleration_load[0]);
+    //custom_acceleration.position.y = (1/(_uav_mass_ - total_mass))*(Kpl[1]*(position_cmd.position.y - custom_load_pose.position.y) + Kdl[1]*(uav_state.velocity.linear.y - custom_load_vel.position.y) + Kp[1]*(position_cmd.position.y-custom_pose.position.y) + Kv[1]*(position_cmd.velocity.y - custom_vel.position.y))  - (load_mass_/(_uav_mass_ - total_mass))*(acceleration_load[1]);
+    //custom_acceleration.position.z = (1/(_uav_mass_ - total_mass))*(Kpl[2]*(position_cmd.position.z - custom_load_pose.position.z - cable_length) + Kdl[2]*(uav_state.velocity.linear.z - custom_load_vel.position.z) + Kp[2]*(position_cmd.position.z-custom_pose.position.z) + Kv[2]*(position_cmd.velocity.z - custom_vel.position.z))  - (load_mass_/(_uav_mass_ - total_mass))*(acceleration_load[2]);
+    
+    // with kpl and kdl (m_q)
     //custom_acceleration.position.x = (1/_uav_mass_)*(Kpl[0]*(position_cmd.position.x - custom_load_pose.position.x) + Kdl[0]*(uav_state.velocity.linear.x - custom_load_vel.position.x) + Kp[0]*(position_cmd.position.x-custom_pose.position.x) + Kv[0]*(position_cmd.velocity.x - custom_vel.position.x)) - (load_mass_/_uav_mass_)*(acceleration_load[0]);
     //custom_acceleration.position.y = (1/_uav_mass_)*(Kpl[1]*(position_cmd.position.y - custom_load_pose.position.y) + Kdl[1]*(uav_state.velocity.linear.y - custom_load_vel.position.y) + Kp[1]*(position_cmd.position.y-custom_pose.position.y) + Kv[1]*(position_cmd.velocity.y - custom_vel.position.y))  - (load_mass_/_uav_mass_)*(acceleration_load[1]);
     //custom_acceleration.position.z = (1/_uav_mass_)*(Kpl[2]*(position_cmd.position.z - custom_load_pose.position.z - cable_length) + Kdl[2]*(uav_state.velocity.linear.z - custom_load_vel.position.z) + Kp[2]*(position_cmd.position.z-custom_pose.position.z) + Kv[2]*(position_cmd.velocity.z - custom_vel.position.z))  - (load_mass_/_uav_mass_)*(acceleration_load[2]);
     
-    
+
     predicted_accelerations_out.poses.push_back(custom_acceleration);
     
 
@@ -2822,8 +2812,32 @@
   catch (...) {
     ROS_ERROR("[DergPmTracker]: Exception caught during publishing topic %s.", custom_predicted_load_acc_publisher.getTopic().c_str());
   }
-
-
+  try {
+    custom_predicted_tension_force.publish(predicted_tension_force_out);
+  }
+  catch (...) {
+    ROS_ERROR("[DergPmTracker]: Exception caught during publishing topic %s.", custom_predicted_tension_force.getTopic().c_str());
+  }
+  /*
+  try {
+    custom_publisher_tracker_load_pose.publish(load_pose);
+  }
+  catch (...) {
+    ROS_ERROR("[DergPmTracker]: Exception caught during publishing topic %s.", custom_publisher_tracker_load_pose.getTopic().c_str());
+  }
+  try {
+    custom_publisher_tracker_load_vel.publish(load_velocity);
+  }
+  catch (...) {
+    ROS_ERROR("[DergPmTracker]: Exception caught during publishing topic %s.", custom_publisher_tracker_load_vel.getTopic().c_str());
+  }
+  try {
+    custom_publisher_tracker_uav_state.publish(uav_state_);
+  }
+  catch (...) {
+    ROS_ERROR("[DergPmTracker]: Exception caught during publishing topic %s.", custom_publisher_tracker_uav_state.getTopic().c_str());
+  }
+  */
 
   }
 
@@ -4324,60 +4338,60 @@
       }   
     }
 
-    //old_load_lin_vel[0] = load_lin_vel[0];
-    //old_load_lin_vel[1] = load_lin_vel[1];
-    //old_load_lin_vel[2] = load_lin_vel[2];  
     load_pose = loadmsg->pose[load_index];
-    load_pose_position.x = load_pose.position.x;
-    load_pose_position.y = load_pose.position.y;
-    load_pose_position.z = load_pose.position.z;
+    load_pose_position_.x = load_pose.position.x;
+    load_pose_position_.y = load_pose.position.y;
+    load_pose_position_.z = load_pose.position.z;
 
     //ROS_INFO_STREAM("Load Pose \n" << load_pose );
 
     // for (int i = 0; i < 3; i++) // to set it to zero when the load hasn't spawn yet
     // {
-    //     if (load_pose_position[i] > 1000)
+    //     if (load_pose_position_[i] > 1000)
     //     {
-    //       load_pose_position[i] = 0;
+    //       load_pose_position_[i] = 0;
     //     } else {
-    //       load_pose_position[i] = load_pose_position[i];
+    //       load_pose_position_[i] = load_pose_position_[i];
     //     }
     // }
 
-    if (load_pose_position.x > 1000)
+    if (load_pose_position_.x > 1000)
         {
-          load_pose_position.x = 0;
+          load_pose_position_.x = 0;
         }
-    if (load_pose_position.y > 1000)
+    if (load_pose_position_.y > 1000)
         {
-          load_pose_position.y = 0;
+          load_pose_position_.y = 0;
         }
-    if (load_pose_position.z > 1000)
+    if (load_pose_position_.z > 1000)
         {
-          load_pose_position.z = 0;
+          load_pose_position_.z = 0;
         }
 
     // Thesis B: Step 1: update velocity and save old load velocity
     last_load_vel_time = load_vel_time;
-    old_load_lin_vel[0] = load_lin_vel_before_pred[0];  // initialise the old load velocity 
-    old_load_lin_vel[1] = load_lin_vel_before_pred[1];
-    old_load_lin_vel[2] = load_lin_vel_before_pred[2];
+    old_load_lin_vel.x = load_lin_vel_before_pred[0];  // initialise the old load velocity 
+    old_load_lin_vel.y = load_lin_vel_before_pred[1];
+    old_load_lin_vel.z = load_lin_vel_before_pred[2];
 
     load_velocity = loadmsg->twist[load_index];
-    custom_publisher_load_pose.publish(load_pose);
-    
     load_vel_time = ros::Time::now();;
     //load_vel_dt = (load_vel_time - last_load_vel_time).toSec();
-    //ROS_INFO_STREAM("load velocity 1 = \n" << load_lin_vel);
-    load_lin_vel[0]= load_velocity.linear.x;
-    load_lin_vel[1]= load_velocity.linear.y;
-    load_lin_vel[2]= load_velocity.linear.z;
-    //ROS_INFO_STREAM("load velocity 2 = \n" << load_lin_vel);
+    //ROS_INFO_STREAM("load velocity 1 = \n" << load_lin_vel_);
+    load_lin_vel_[0]= load_velocity.linear.x;
+    load_lin_vel_[1]= load_velocity.linear.y;
+    load_lin_vel_[2]= load_velocity.linear.z;
+    ROS_INFO_STREAM("Old load velocity = \n" << old_load_lin_vel);
+    ROS_INFO_STREAM("New load velocity = \n" << load_lin_vel_);
 
-    load_lin_vel_before_pred[0] = load_lin_vel[0]; // in order have the real load velocity each time the update function starts again (not changed in prediction)
-    load_lin_vel_before_pred[1] = load_lin_vel[1];
-    load_lin_vel_before_pred[2] = load_lin_vel[2];
+    load_lin_vel_before_pred[0] = load_velocity.linear.x; // in order have the real load velocity each time the update function starts again (not changed in prediction)
+    load_lin_vel_before_pred[1] = load_velocity.linear.y;
+    load_lin_vel_before_pred[2] = load_velocity.linear.z;
     //ROS_INFO_STREAM("dt = \n" << (last_load_vel_time - load_vel_time).toSec() );
+
+    custom_publisher_tracker_load_pose.publish(load_pose);
+    custom_publisher_tracker_load_vel.publish(load_velocity);
+    custom_publisher_tracker_load_old_vel.publish(old_load_lin_vel);
   }
 
   void DergPmTracker::BacaCallback(const mrs_msgs::BacaProtocolConstPtr& msg) {
@@ -4416,14 +4430,14 @@
     Difference_load_drone_position[1] = (-(rel_load_pose_position[0]*sin(uav_heading) + rel_load_pose_position[1]*cos(uav_heading))); // y relative to drone in absolute coordinate
     Difference_load_drone_position[2] = (rel_load_pose_position[2]); // z relative to drone in absolute coordinate
 
-    //load_pose.position.x = load_pose_position[0];
-    //load_pose.position.y = load_pose_position[1];
-    //load_pose.position.z = load_pose_position[2];
+    //load_pose.position.x = load_pose_position_[0];
+    //load_pose.position.y = load_pose_position_[1];
+    //load_pose.position.z = load_pose_position_[2];
     
     //ROS_INFO_STREAM("Load Pose \n" << load_pose );
-    load_lin_vel[0]= encoder_velocity_1*cable_length;
-    load_lin_vel[1]= encoder_velocity_2*cable_length;
-    load_lin_vel[2]= 0;
+    load_lin_vel_[0]= encoder_velocity_1*cable_length;
+    load_lin_vel_[1]= encoder_velocity_2*cable_length;
+    load_lin_vel_[2]= 0;
     
   }
   // | ---------------------------------- | 
