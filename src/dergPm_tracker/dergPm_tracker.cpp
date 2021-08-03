@@ -257,6 +257,7 @@
     ros::Publisher custom_publisher_load_pose_error;
     ros::Publisher custom_publisher_load_velocity_error;
     ros::Publisher custom_publisher_tension_force;
+    ros::Publisher custom_publisher_tracker_load_acceleration;
     ros::Subscriber load_state_sub;
     geometry_msgs::Pose load_pose;
     geometry_msgs::Vector3 old_load_lin_vel;
@@ -716,6 +717,7 @@
     custom_publisher_tracker_uav_state   = nh2_.advertise<mrs_msgs::UavState>("tracker_uav_state",10);
     custom_publisher_tracker_load_old_vel   = nh2_.advertise<geometry_msgs::Vector3>("tracker_load_old_vel",10);
     custom_publisher_tension_force = nh2_.advertise<geometry_msgs::Pose>("tracker_custom_tension_force",10);
+    custom_publisher_tracker_load_acceleration = nh2_.advertise<geometry_msgs::Vector3>("tracker_custom_tracker_load_acceleration",10);
     /*
     if (run_type == "simulation")
     {
@@ -2321,7 +2323,14 @@
     custom_tension_force.position.y = load_mass_*(acceleration_load[1]);
     custom_tension_force.position.z = load_mass_*(acceleration_load[2] + (common_handlers_->g));
 
+    geometry_msgs::Vector3 acceleration_load_to_publish;
+
+    acceleration_load_to_publish.x = acceleration_load[0];
+    acceleration_load_to_publish.y = acceleration_load[1];
+    acceleration_load_to_publish.z = acceleration_load[2];
+
     custom_publisher_tension_force.publish(custom_tension_force);
+    custom_publisher_tracker_load_acceleration.publish(acceleration_load_to_publish);
     predicted_tension_force_out.poses.push_back(custom_tension_force);
     
     //Thesis B
