@@ -223,7 +223,7 @@
     double custom_dt_ = 0.010;//0.001;//0.020; //0.010; // controller sampling time (in seconds) used in prediction
     double _pred_horizon_;//1.5//0.15;//1.5; //0.15; //1.5; //0.4; // prediction horizon (in seconds)
     int num_pred_samples_;
-    double load_vel_dt = 0.004;
+    double load_vel_dt; //= 0.004;
 
 
     MatrixXd init_pos = MatrixXd::Zero(3, 1);
@@ -275,7 +275,6 @@
     std::string load_gains_switch;
     Eigen::Vector3d load_pose_position_offset = Eigen::Vector3d::Zero(3);
     std::string run_type;
-    Eigen::Vector3d acceleration_load;
     
     
     double cable_length;
@@ -935,6 +934,7 @@
                                                                 [[maybe_unused]] const mrs_msgs::AttitudeCommand::ConstPtr &last_attitude_cmd) {
 
     // debug:
+    last_load_vel_time = load_vel_time;
     std_msgs::String msg;
     msg.data = "Some chatter in the update routine";
     try {
@@ -1210,7 +1210,10 @@
     predicted_tension_force_out.poses.clear();
 
     
-
+  
+  load_vel_time = ros::Time::now();;
+  load_vel_dt = (load_vel_time - last_load_vel_time).toSec();
+  ROS_INFO_STREAM("Time= \n" << load_vel_dt);
   //   // return a position command
     return mrs_msgs::PositionCommand::ConstPtr(new mrs_msgs::PositionCommand(position_cmd));
   }
@@ -1568,6 +1571,7 @@
   geometry_msgs::Pose predicted_thrust_norm; 
   geometry_msgs::Pose predicted_attituderate;
   geometry_msgs::Pose custom_tension_force;
+  Eigen::Vector3d acceleration_load;
 
   Eigen::Matrix3d R;
   Eigen::Matrix3d Rdot;
@@ -1661,9 +1665,7 @@
 
       load_pose_position.z = load_pose_position.z + load_lin_vel[2]*custom_dt_;
       custom_load_pose.position.z = load_pose_position.z;
-      //ROS_INFO_STREAM("New velocity \n" << custom_load_vel.position.x);
 
-      Eigen::Vector3d acceleration_load;
       acceleration_load[0] = (custom_load_vel.position.x - pred_old_load_lin_vel[0])/custom_dt_;
       acceleration_load[1] = (custom_load_vel.position.y - pred_old_load_lin_vel[1])/custom_dt_;
       acceleration_load[2] = (custom_load_vel.position.z - pred_old_load_lin_vel[2])/custom_dt_;
@@ -1714,6 +1716,8 @@
     predicted_load_poses_out.poses.push_back(custom_load_pose);
     predicted_load_velocities_out.poses.push_back(custom_load_vel);
     predicted_load_accelerations_out.poses.push_back(custom_load_acceleration);
+    //ROS_INFO_STREAM("Pred old load lin vel \n" << pred_old_load_lin_vel);
+    //ROS_INFO_STREAM(" Custom load vel \n" << custom_load_vel);
 
     // | --------------------- define system states --------------------- |
     // Op - position in global frame
@@ -4378,20 +4382,20 @@
         }
 
     // Thesis B: Step 1: update velocity and save old load velocity
-    last_load_vel_time = load_vel_time;
+    //last_load_vel_time = load_vel_time;
     old_load_lin_vel.x = load_lin_vel_before_pred[0];  // initialise the old load velocity 
     old_load_lin_vel.y = load_lin_vel_before_pred[1];
     old_load_lin_vel.z = load_lin_vel_before_pred[2];
 
     load_velocity = loadmsg->twist[load_index];
-    load_vel_time = ros::Time::now();;
+    //load_vel_time = ros::Time::now();;
     //load_vel_dt = (load_vel_time - last_load_vel_time).toSec();
     //ROS_INFO_STREAM("load velocity 1 = \n" << load_lin_vel_);
     load_lin_vel_[0]= load_velocity.linear.x;
     load_lin_vel_[1]= load_velocity.linear.y;
     load_lin_vel_[2]= load_velocity.linear.z;
-    ROS_INFO_STREAM("Old load velocity = \n" << old_load_lin_vel);
-    ROS_INFO_STREAM("New load velocity = \n" << load_lin_vel_);
+    //ROS_INFO_STREAM("Old load velocity = \n" << old_load_lin_vel);
+    //ROS_INFO_STREAM("New load velocity = \n" << load_lin_vel_);
 
     load_lin_vel_before_pred[0] = load_velocity.linear.x; // in order have the real load velocity each time the update function starts again (not changed in prediction)
     load_lin_vel_before_pred[1] = load_velocity.linear.y;
