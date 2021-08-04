@@ -275,6 +275,7 @@
     std::string load_gains_switch;
     Eigen::Vector3d load_pose_position_offset = Eigen::Vector3d::Zero(3);
     std::string run_type;
+    Eigen::Vector3d acceleration_load_;
     
     
     double cable_length;
@@ -1157,6 +1158,8 @@
     //ROS_INFO_STREAM("old load velocity = \n" << old_load_lin_vel);
     //ROS_INFO_STREAM("load velocity = \n" << load_lin_vel_);
     
+    
+
     if (_use_derg_){
       // initially applied_ref_x_, applied_ref_y_, applied_ref_z_ is defined as stay where you are when starting_bool = 1;
       position_cmd.position.x     = applied_ref_x_;
@@ -1213,7 +1216,7 @@
   
   load_vel_time = ros::Time::now();;
   load_vel_dt = (load_vel_time - last_load_vel_time).toSec();
-  ROS_INFO_STREAM("Time= \n" << load_vel_dt);
+  //ROS_INFO_STREAM("Time= \n" << load_vel_dt);
   //   // return a position command
     return mrs_msgs::PositionCommand::ConstPtr(new mrs_msgs::PositionCommand(position_cmd));
   }
@@ -1501,6 +1504,7 @@
     Eigen::Vector3d load_lin_vel = load_lin_vel_;
     geometry_msgs::Vector3 load_pose_position = load_pose_position_ ;
     Eigen::Vector3d pred_old_load_lin_vel = Eigen::Vector3d::Zero(3);
+    Eigen::Vector3d acceleration_load = acceleration_load_;
     
     // | --------------------- initialize body and world integrals --------------------- |
     /* NOTE: this part is added by Bryan, was originally in the controllers activate function */
@@ -1571,7 +1575,7 @@
   geometry_msgs::Pose predicted_thrust_norm; 
   geometry_msgs::Pose predicted_attituderate;
   geometry_msgs::Pose custom_tension_force;
-  Eigen::Vector3d acceleration_load;
+  
 
   Eigen::Matrix3d R;
   Eigen::Matrix3d Rdot;
@@ -1610,9 +1614,9 @@
       custom_load_vel.position.z = load_lin_vel[2];
 
       // define the load acceleration 
-      acceleration_load[0] = (custom_load_vel.position.x - old_load_lin_vel.x)/load_vel_dt;
-      acceleration_load[1] = (custom_load_vel.position.y - old_load_lin_vel.y)/load_vel_dt;
-      acceleration_load[2] = (custom_load_vel.position.z - old_load_lin_vel.z)/load_vel_dt;
+      //acceleration_load[0] = (custom_load_vel.position.x - old_load_lin_vel.x)/load_vel_dt;
+      //acceleration_load[1] = (custom_load_vel.position.y - old_load_lin_vel.y)/load_vel_dt;
+      //acceleration_load[2] = (custom_load_vel.position.z - old_load_lin_vel.z)/load_vel_dt;
 
       custom_load_acceleration.position.x = acceleration_load[0];
       custom_load_acceleration.position.y = acceleration_load[1];
@@ -1644,9 +1648,9 @@
 
  
       //Thesis B: Step 4: calculate the predicted load state
-      pred_old_load_lin_vel[0] = custom_load_vel.position.x; //update of the old velocity of the load for the predictions
-      pred_old_load_lin_vel[1] = custom_load_vel.position.y;
-      pred_old_load_lin_vel[2] = custom_load_vel.position.z;
+      pred_old_load_lin_vel[0] = load_lin_vel[0]; //update of the old velocity of the load for the predictions
+      pred_old_load_lin_vel[1] = load_lin_vel[1];
+      pred_old_load_lin_vel[2] = load_lin_vel[2];
       //ROS_INFO_STREAM("Old velocity \n" << pred_old_load_lin_vel[0]);
       load_lin_vel[0] = load_lin_vel[0] + custom_load_acceleration.position.x*custom_dt_;
       custom_load_vel.position.x = load_lin_vel[0];
@@ -1665,6 +1669,8 @@
 
       load_pose_position.z = load_pose_position.z + load_lin_vel[2]*custom_dt_;
       custom_load_pose.position.z = load_pose_position.z;
+
+
 
       acceleration_load[0] = (custom_load_vel.position.x - pred_old_load_lin_vel[0])/custom_dt_;
       acceleration_load[1] = (custom_load_vel.position.y - pred_old_load_lin_vel[1])/custom_dt_;
@@ -2315,17 +2321,30 @@
     //Eigen::Vector3d acceleration_uav = 1/_uav_mass_ * (f + _uav_mass_ * (Eigen::Vector3d(0, 0, -common_handlers_->g)));
     // OLD Eigen::Vector3d acceleration_uav = 1/_uav_mass_ * (thrust_force*R.col(2) + _uav_mass_ * (Eigen::Vector3d(0, 0, -common_handlers_->g)));
   
-  
+    custom_tension_force.position.x = load_mass_*(acceleration_load[0]);
+    custom_tension_force.position.y = load_mass_*(acceleration_load[1]);
+    custom_tension_force.position.z = load_mass_*(acceleration_load[2] + (common_handlers_->g));
+
+    Eigen::Vector3d custom_tension_force_vec;
+
+    custom_tension_force_vec[0] = custom_tension_force.position.x;
+    custom_tension_force_vec[1] = custom_tension_force.position.y;
+    custom_tension_force_vec[2] = custom_tension_force.position.z;
+
     //Thesis B: step 7: calculating the predicted uav acceleration
-    Eigen::Vector3d acceleration_uav = (1/_uav_mass_ )* ((thrust_force*R.col(2)  + _uav_mass_ * (Eigen::Vector3d(0, 0, -common_handlers_->g))) - load_mass_*(acceleration_load + (Eigen::Vector3d(0, 0, common_handlers_->g))));
+    //Eigen::Vector3d acceleration_uav = (1/_uav_mass_ )* ((thrust_force*R.col(2)  + _uav_mass_ * (Eigen::Vector3d(0, 0, -common_handlers_->g))) - load_mass_*(acceleration_load + (Eigen::Vector3d(0, 0, common_handlers_->g))));
+
+    Eigen::Vector3d acceleration_uav = (1/_uav_mass_ )* ((thrust_force*R.col(2)  + _uav_mass_ * (Eigen::Vector3d(0, 0, -common_handlers_->g))) - custom_tension_force_vec);
     
     custom_acceleration.position.x = acceleration_uav[0];
     custom_acceleration.position.y = acceleration_uav[1];
     custom_acceleration.position.z = acceleration_uav[2];
 
-    custom_tension_force.position.x = load_mass_*(acceleration_load[0]);
-    custom_tension_force.position.y = load_mass_*(acceleration_load[1]);
-    custom_tension_force.position.z = load_mass_*(acceleration_load[2] + (common_handlers_->g));
+    acceleration_load = (1/load_mass_)*(total_mass * (Eigen::Vector3d(0, 0, -common_handlers_->g)) + thrust_force*R.col(2) - _uav_mass_*acceleration_uav);
+
+    custom_load_acceleration.position.x = acceleration_load[0];
+    custom_load_acceleration.position.y = acceleration_load[1];
+    custom_load_acceleration.position.z = acceleration_load[2];
 
     geometry_msgs::Vector3 acceleration_load_to_publish;
 
@@ -4401,6 +4420,15 @@
     load_lin_vel_before_pred[1] = load_velocity.linear.y;
     load_lin_vel_before_pred[2] = load_velocity.linear.z;
     //ROS_INFO_STREAM("dt = \n" << (last_load_vel_time - load_vel_time).toSec() );
+
+
+    // define the load acceleration 
+    acceleration_load_[0] = (load_lin_vel_[0] - old_load_lin_vel.x)/load_vel_dt;
+    acceleration_load_[1] = (load_lin_vel_[1] - old_load_lin_vel.y)/load_vel_dt;
+    acceleration_load_[2] = (load_lin_vel_[2] - old_load_lin_vel.z)/load_vel_dt;
+    //ROS_INFO_STREAM("load velocity = \n" << load_lin_vel_);
+    //ROS_INFO_STREAM("Old load velocity = \n" << old_load_lin_vel);
+    //ROS_INFO_STREAM("Load acceleration = \n" << acceleration_load_);
 
     custom_publisher_tracker_load_pose.publish(load_pose);
     custom_publisher_tracker_load_vel.publish(load_velocity);
