@@ -84,6 +84,17 @@
     void trajectory_prediction_general(mrs_msgs::PositionCommand position_cmd, double uav_heading, const mrs_msgs::AttitudeCommand::ConstPtr &last_attitude_cmd);
     void DERG_computation();
     // Eigen::Matrix<double, 2, 2>
+
+    //Thesis b: step ?: Functions
+    // void MultiplyMatrix(int mat_mult[10][10], int mat1[10][10], int row1, int col1, int mat2[10][10], int row2, int col2);
+    // void Minor(float b[10][10],float a[10][10],int i,int n);
+    // float det(float a[10][10],int n);
+    // void transpose(float c[10][10],float d[10][10],int n,float det);
+    // void cofactor(float a[10][10],float d[10][10],int n,float determinant);
+    // void inverse(float a[10][10],float d[10][10],int n,float det);
+    //----------------------------------------------------------------------------//
+
+
     Eigen::Vector3d calcCirculationField(std::string type, double dist_x, double dist_y, double dist_z, double dist);
     double getLambda(Eigen::Vector3d &point_link_0, Eigen::Vector3d &point_link_1, Eigen::Vector3d &point_sphere);
     std::tuple< Eigen::Vector3d, Eigen::Vector3d> getMinDistDirLineSegments(Eigen::Vector3d &point0_link0, Eigen::Vector3d &point1_link0, Eigen::Vector3d &point0_link1, Eigen::Vector3d &point1_link1);
@@ -1073,7 +1084,6 @@
     //   }
     // }
 
-    // | ----------------- Thesis B ---------------- |
 
     uav_name = getenv("UAV_NAME");
     
@@ -1576,12 +1586,12 @@
   geometry_msgs::Pose predicted_attituderate;
   geometry_msgs::Pose custom_tension_force;
 
-  std_msgs::Float32 theta_load_cable;
-  std_msgs::Float32 phi_load_cable;  
-  std_msgs::Float32 theta_dot_load_cable;
-  std_msgs::Float32 phi_dot_load_cable;  
-  std_msgs::Float32 theta_dot_dot_load_cable;
-  std_msgs::Float32 phi_dot_dot_load_cable;
+  double theta_load_cable;
+  double phi_load_cable;  
+  double theta_dot_load_cable;
+  double phi_dot_load_cable;  
+  double theta_dot_dot_load_cable;
+  double phi_dot_dot_load_cable;
 
   Eigen::Matrix3d R;
   Eigen::Matrix3d Rdot;
@@ -1612,22 +1622,22 @@
 
       // Thesis B: Step 2: initialize the custom load predictions for the first iteration
       
-      theta_load_cable.data = asin((load_pose_position.x - uav_state.pose.position.x)/cable_length); 
-      phi_load_cable.data = asin((load_pose_position.y - uav_state.pose.position.y)/cable_length);
+      theta_load_cable = asin((load_pose_position.x - uav_state.pose.position.x)/cable_length); 
+      phi_load_cable = asin((load_pose_position.y - uav_state.pose.position.y)/cable_length);
 
-      theta_dot_load_cable.data = pow(1 - pow((load_pose_position.x - uav_state.pose.position.x)/cable_length,2),-1/2) * ((load_lin_vel[0] - uav_state.velocity.linear.x)/cable_length); 
-      phi_dot_load_cable.data = pow(1 - pow((load_pose_position.y - uav_state.pose.position.y)/cable_length,2),-1/2) * ((load_lin_vel[1] - uav_state.velocity.linear.y)/cable_length); 
+      theta_dot_load_cable = pow(1 - pow((load_pose_position.x - uav_state.pose.position.x)/cable_length,2),-1/2) * ((load_lin_vel[0] - uav_state.velocity.linear.x)/cable_length); 
+      phi_dot_load_cable = pow(1 - pow((load_pose_position.y - uav_state.pose.position.y)/cable_length,2),-1/2) * ((load_lin_vel[1] - uav_state.velocity.linear.y)/cable_length); 
 
-      theta_dot_dot_load_cable.data = (-1/2)*pow(1 - ((load_pose_position.x - uav_state.pose.position.x)/cable_length),-3/2)*(-2)*((load_pose_position.x - uav_state.pose.position.x)/cable_length)*((load_lin_vel[0] - uav_state.velocity.linear.x)/cable_length) + pow(1 - pow((load_pose_position.x - uav_state.pose.position.x)/cable_length,2),-1/2)*((acceleration_load[0] - custom_acceleration.position.x)/cable_length);
-      phi_dot_dot_load_cable.data = (-1/2)*pow(1 - ((load_pose_position.y - uav_state.pose.position.y)/cable_length),-3/2)*(-2)*((load_pose_position.y - uav_state.pose.position.y)/cable_length)*((load_lin_vel[1] - uav_state.velocity.linear.y)/cable_length) + pow(1 - pow((load_pose_position.y - uav_state.pose.position.y)/cable_length,2),-1/2)*((acceleration_load[1] - custom_acceleration.position.y)/cable_length);
+      theta_dot_dot_load_cable = (-1/2)*pow(1 - ((load_pose_position.x - uav_state.pose.position.x)/cable_length),-3/2)*(-2)*((load_pose_position.x - uav_state.pose.position.x)/cable_length)*((load_lin_vel[0] - uav_state.velocity.linear.x)/cable_length) + pow(1 - pow((load_pose_position.x - uav_state.pose.position.x)/cable_length,2),-1/2)*((acceleration_load[0] - custom_acceleration.position.x)/cable_length);
+      phi_dot_dot_load_cable = (-1/2)*pow(1 - ((load_pose_position.y - uav_state.pose.position.y)/cable_length),-3/2)*(-2)*((load_pose_position.y - uav_state.pose.position.y)/cable_length)*((load_lin_vel[1] - uav_state.velocity.linear.y)/cable_length) + pow(1 - pow((load_pose_position.y - uav_state.pose.position.y)/cable_length,2),-1/2)*((acceleration_load[1] - custom_acceleration.position.y)/cable_length);
 
       // custom_load_pose.position.x = load_pose_position.x;
       // custom_load_pose.position.y = load_pose_position.y;
       // custom_load_pose.position.z = load_pose_position.z;
 
-      // custom_load_vel.position.x = load_lin_vel[0];
-      // custom_load_vel.position.y = load_lin_vel[1];
-      // custom_load_vel.position.z = load_lin_vel[2];
+      custom_load_vel.position.x = load_lin_vel[0];
+      custom_load_vel.position.y = load_lin_vel[1];
+      custom_load_vel.position.z = load_lin_vel[2];
 
       // define the load acceleration
 
@@ -1635,9 +1645,9 @@
       //acceleration_load[1] = (custom_load_vel.position.y - old_load_lin_vel.y)/load_vel_dt;
       //acceleration_load[2] = (custom_load_vel.position.z - old_load_lin_vel.z)/load_vel_dt;
 
-      // custom_load_acceleration.position.x = acceleration_load[0];
-      // custom_load_acceleration.position.y = acceleration_load[1];
-      // custom_load_acceleration.position.z = acceleration_load[2];
+      custom_load_acceleration.position.x = acceleration_load[0];
+      custom_load_acceleration.position.y = acceleration_load[1];
+      custom_load_acceleration.position.z = acceleration_load[2];
     } 
     else{
       // TODO: in control predictions define custom_acceleration also via uav_state
@@ -1662,27 +1672,31 @@
 
  
       //Thesis B: Step 4: calculate the predicted load state
+      theta_dot_load_cable = theta_dot_load_cable + theta_dot_dot_load_cable*custom_dt_;
+      phi_dot_load_cable = phi_dot_load_cable + phi_dot_dot_load_cable*custom_dt_;
 
-      theta_dot_dot_load_cable.data = 0; //To fill in 
-      phi_dot_dot_load_cable.data = 0; //To fill in 
+      theta_load_cable = theta_load_cable + theta_dot_load_cable*custom_dt_;
+      phi_load_cable = phi_load_cable + phi_dot_load_cable*custom_dt_;
 
-      acceleration_load[0] = 0; //To fill in 
-      acceleration_load[1] = 0; //To fill in 
-      acceleration_load[2] = 0; //To fill in 
+      load_pose_position.x = sin(theta_load_cable)*cable_length + uav_state.pose.position.x; 
+      load_pose_position.y = sin(phi_load_cable)*cable_length + uav_state.pose.position.y; 
+      load_pose_position.z = sqrt(pow(cable_length,2)-pow(load_pose_position.x,2)-pow(load_pose_position.y,2)) + uav_state.pose.position.z; 
 
-      theta_dot_load_cable.data = theta_dot_load_cable.data + theta_dot_dot_load_cable.data*custom_dt_;
-      phi_dot_load_cable.data = phi_dot_load_cable.data + phi_dot_dot_load_cable.data*custom_dt_;
+      load_lin_vel[0] = cos(theta_load_cable)*cable_length*theta_dot_load_cable + uav_state.velocity.linear.x;  
+      load_lin_vel[1] = cos(phi_load_cable)*cable_length*phi_dot_load_cable + uav_state.velocity.linear.y; 
+      load_lin_vel[2] = (1/2)*pow(pow(cable_length,2)-pow(load_pose_position.x,2)-pow(load_pose_position.y,2),-1/2)*(-2*load_pose_position.x*load_lin_vel[0] - 2*load_pose_position.y*load_lin_vel[1]) + uav_state.velocity.linear.z; 
 
-      load_lin_vel[0] = 0; //To fill in 
-      load_lin_vel[1] = 0; //To fill in
-      load_lin_vel[2] = 0; //To fill in
+      custom_load_vel.position.x = load_lin_vel[0];
+      custom_load_vel.position.y = load_lin_vel[1];
+      custom_load_vel.position.z = load_lin_vel[2];
 
-      theta_load_cable.data = theta_load_cable.data + theta_dot_load_cable.data*custom_dt_;
-      phi_load_cable.data = phi_load_cable.data + phi_dot_load_cable.data*custom_dt_;
+      acceleration_load[0] = -sin(theta_load_cable)*cable_length*pow(theta_dot_load_cable,2) + cos(theta_load_cable)*cable_length*theta_dot_dot_load_cable + custom_acceleration.position.x;
+      acceleration_load[1] = -sin(phi_load_cable)*cable_length*pow(phi_dot_load_cable,2) + cos(phi_load_cable)*cable_length*phi_dot_dot_load_cable + custom_acceleration.position.y;
+      acceleration_load[2] = (-1/4)*pow(pow(cable_length,2)-pow(load_pose_position.x,2)-pow(load_pose_position.y,2),-3/2)*pow((-2*load_pose_position.x*load_lin_vel[0] - 2*load_pose_position.y*load_lin_vel[1]),2) + (1/2)*pow(pow(cable_length,2)-pow(load_pose_position.x,2)-pow(load_pose_position.y,2),-1/2)*(-2*pow(load_lin_vel[0],2) - 2*load_pose_position.x*acceleration_load[0] -2*pow(load_lin_vel[1],2) - 2*load_pose_position.x*acceleration_load[1]) + custom_acceleration.position.z;  
 
-      load_pose_position.x = 0; //To fill in
-      load_pose_position.y = 0; //To fill in
-      load_pose_position.z = 0; //To fill in
+      custom_load_acceleration.position.x = acceleration_load[0];
+      custom_load_acceleration.position.y = acceleration_load[1];
+      custom_load_acceleration.position.z = acceleration_load[2];
 
       // pred_old_load_lin_vel[0] = load_lin_vel[0]; //update of the old velocity of the load for the predictions
       // pred_old_load_lin_vel[1] = load_lin_vel[1];
@@ -2355,6 +2369,44 @@
     //Eigen::Vector3d acceleration_uav = 1/_uav_mass_ * (f + _uav_mass_ * (Eigen::Vector3d(0, 0, -common_handlers_->g)));
     // OLD Eigen::Vector3d acceleration_uav = 1/_uav_mass_ * (thrust_force*R.col(2) + _uav_mass_ * (Eigen::Vector3d(0, 0, -common_handlers_->g)));
   
+    //Thesis B: step 7: calculating the predicted uav acceleration
+    //Eigen::Vector3d acceleration_uav = (1/_uav_mass_ )* ((thrust_force*R.col(2)  + _uav_mass_ * (Eigen::Vector3d(0, 0, -common_handlers_->g))) - load_mass_*(acceleration_load + (Eigen::Vector3d(0, 0, common_handlers_->g))));
+
+    //-------------based on new EOM with angles----------------//
+
+    Eigen::MatrixXd M_matrix = Eigen::MatrixXd(5, 5);
+    M_matrix(0,0) = _uav_mass_ + load_mass_; M_matrix(0,1) = 0; M_matrix(0,2) = 0; M_matrix(0,3) = 0; M_matrix(0,4) = cable_length*load_mass_*cos(theta_load_cable);
+    M_matrix(1,0) = 0; M_matrix(1,1) = _uav_mass_ + load_mass_; M_matrix(1,2) = 0; M_matrix(1,3) = -cable_length*load_mass_*cos(phi_load_cable)*sin(theta_load_cable); M_matrix(1,4) = cable_length*load_mass_*sin(phi_load_cable)*sin(theta_load_cable);
+    M_matrix(2,0) = 0; M_matrix(2,1) = 0; M_matrix(2,2) = _uav_mass_ + load_mass_; M_matrix(2,3) = -cable_length*load_mass_*cos(theta_load_cable)*sin(phi_load_cable); M_matrix(2,4) = -cable_length*load_mass_*cos(phi_load_cable)*sin(theta_load_cable);
+    M_matrix(3,0) = 0; M_matrix(3,1) = -cable_length*load_mass_*cos(phi_load_cable)*sin(theta_load_cable); M_matrix(3,2) = -cable_length*load_mass_*sin(phi_load_cable)*cos(theta_load_cable); M_matrix(3,3) = pow(cable_length,2)*load_mass_*pow(cos(theta_load_cable),2); M_matrix(3,4) = 0;
+    M_matrix(4,0) = cable_length*load_mass_*cos(theta_load_cable); M_matrix(4,1) = cable_length*load_mass_*sin(phi_load_cable)*sin(theta_load_cable); M_matrix(4,2) = -cable_length*load_mass_*cos(phi_load_cable)*sin(theta_load_cable); M_matrix(4,3) = 0; M_matrix(4,4) = pow(cable_length,2)*load_mass_;
+
+    Eigen::MatrixXd V_matrix = Eigen::MatrixXd(5, 5);
+    V_matrix(0,0) = 0; V_matrix(0,1) = 0; V_matrix(0,2) = 0; V_matrix(0,3) = 0; V_matrix(0,4) = -cable_length*theta_dot_load_cable*load_mass_*sin(theta_load_cable);
+    V_matrix(1,0) = 0; V_matrix(1,1) = 0; V_matrix(1,2) = 0; V_matrix(1,3) = cable_length*load_mass_*(phi_dot_load_cable*sin(phi_load_cable)*cos(theta_load_cable) + theta_dot_load_cable*cos(phi_load_cable)*sin(theta_load_cable)); V_matrix(1,4) = cable_length*load_mass_*(phi_dot_load_cable*cos(phi_load_cable)*sin(theta_load_cable) + theta_dot_load_cable*sin(phi_load_cable)*cos(theta_load_cable));
+    V_matrix(2,0) = 0; V_matrix(2,1) = 0; V_matrix(2,2) = 0; V_matrix(2,3) = -cable_length*load_mass_*(phi_dot_load_cable*cos(phi_load_cable)*cos(theta_load_cable) - theta_dot_load_cable*sin(phi_load_cable)*sin(theta_load_cable)); V_matrix(2,4) = -cable_length*load_mass_*(theta_dot_load_cable*cos(phi_load_cable)*cos(theta_load_cable) - phi_dot_load_cable*sin(phi_load_cable)*sin(theta_load_cable));
+    V_matrix(3,0) = 0; V_matrix(3,1) = 0; V_matrix(3,2) = 0; V_matrix(3,3) = (-1/2)*pow(cable_length,2)*theta_dot_load_cable*load_mass_*sin(2*theta_load_cable); V_matrix(3,4) = (-1/2)*pow(cable_length,2)*phi_dot_load_cable*load_mass_*sin(2*theta_load_cable);
+    V_matrix(4,0) = 0; V_matrix(4,1) = 0; V_matrix(4,2) = 0; V_matrix(4,3) = (1/2)*pow(cable_length,2)*phi_dot_load_cable*load_mass_*sin(2*theta_load_cable); V_matrix(4,4) = 0;
+
+    Eigen::MatrixXd G_vector = Eigen::MatrixXd(5, 1);
+    G_vector(0,0) = 0; G_vector(1,0) = 0; G_vector(2,0) = (load_mass_+_uav_mass_)*common_handlers_->g; G_vector(3,0) = cable_length*common_handlers_->g*load_mass_*cos(theta_load_cable)*sin(phi_load_cable); G_vector(4,0) = cable_length*common_handlers_->g*load_mass_*cos(phi_load_cable)*sin(theta_load_cable);
+
+    Eigen::MatrixXd u_vector = Eigen::MatrixXd(5, 1);
+    u_vector(0,0) = f[0]; u_vector(1,0) = f[1]; u_vector(2,0) = f[2]; u_vector(3,0) = 0; u_vector(4,0) = 0;
+
+    Eigen::MatrixXd q_state = Eigen::MatrixXd(5, 1);
+    Eigen::MatrixXd q_state_dot = Eigen::MatrixXd(5, 1);
+    Eigen::MatrixXd q_state_dot_dot = Eigen::MatrixXd(5, 1);
+    q_state(0,0) = uav_state.pose.position.x; q_state(1,0) = uav_state.pose.position.y; q_state(2,0) = uav_state.pose.position.z; q_state(3,0) = theta_load_cable; q_state(4,0) = phi_load_cable;
+    q_state_dot(0,0) = uav_state.velocity.linear.x; q_state_dot(1,0) = uav_state.velocity.linear.y; q_state_dot(2,0) = uav_state.velocity.linear.z; q_state_dot(3,0) = theta_dot_load_cable; q_state_dot(4,0) = phi_dot_load_cable;
+    q_state_dot_dot = (M_matrix.inverse())*(u_vector - V_matrix*q_state_dot - G_vector);
+
+    acceleration_load[0] = q_state_dot_dot(0,0);
+    acceleration_load[1] = q_state_dot_dot(1,0);
+    acceleration_load[2] = q_state_dot_dot(2,0);
+    theta_dot_dot_load_cable = q_state_dot_dot(3,0);
+    phi_dot_dot_load_cable = q_state_dot_dot(4,0);
+
     custom_tension_force.position.x = load_mass_*(acceleration_load[0]);
     custom_tension_force.position.y = load_mass_*(acceleration_load[1]);
     custom_tension_force.position.z = load_mass_*(acceleration_load[2] + (common_handlers_->g));
@@ -2365,8 +2417,29 @@
     custom_tension_force_vec[1] = custom_tension_force.position.y;
     custom_tension_force_vec[2] = custom_tension_force.position.z;
 
-    //Thesis B: step 7: calculating the predicted uav acceleration
-    //Eigen::Vector3d acceleration_uav = (1/_uav_mass_ )* ((thrust_force*R.col(2)  + _uav_mass_ * (Eigen::Vector3d(0, 0, -common_handlers_->g))) - load_mass_*(acceleration_load + (Eigen::Vector3d(0, 0, common_handlers_->g))));
+    // //Test matrix calculation
+    // Eigen::MatrixXd test_matrix_1 = Eigen::MatrixXd(3, 3); 
+    // test_matrix_1(0,0) = 1; test_matrix_1(0,1) = 2; test_matrix_1(0,2) = 7;
+    // test_matrix_1(1,0) = 4; test_matrix_1(1,1) = 2; test_matrix_1(1,2) = 2;
+    // test_matrix_1(2,0) = 2; test_matrix_1(2,1) = 5; test_matrix_1(2,2) = 3;
+    
+    // Eigen::MatrixXd test_matrix_2 = Eigen::MatrixXd(3, 3); 
+    // test_matrix_2(0,0) = 2; test_matrix_2(0,1) = 2; test_matrix_2(0,2) = 2;
+    // test_matrix_2(1,0) = 1; test_matrix_2(1,1) = 1; test_matrix_2(1,2) = 1;
+    // test_matrix_2(2,0) = 3; test_matrix_2(2,1) = 3; test_matrix_2(2,2) = 3;
+
+
+    // Eigen::MatrixXd multiplied_test = Eigen::MatrixXd(3, 3); 
+    // multiplied_test = test_matrix_1*test_matrix_2;    
+
+    // Eigen::MatrixXd inverse_test = multiplied_test.inverse();
+
+    // ROS_INFO_STREAM("Test multiplied matrix \n" << multiplied_test );
+    // ROS_INFO_STREAM("Test inverse matrix \n" << inverse_test );
+
+    //---------------------------------------------------------//
+
+
 
     Eigen::Vector3d acceleration_uav = (1/_uav_mass_ )* ((thrust_force*R.col(2)  + _uav_mass_ * (Eigen::Vector3d(0, 0, -common_handlers_->g))) - custom_tension_force_vec); //To change
     
@@ -2906,6 +2979,115 @@
   */
 
   }
+
+  //Thesis b: step ? making a function to multiply and inverse matrices
+  // void DergPmTracker::MultiplyMatrix(int mat_mult[10][10], int mat1[10][10], int row1, int col1, int mat2[10][10], int row2, int col2){
+  //   int i,j,k;
+  //   for(i = 0; i < row1; ++i){
+  //     for(j = 0; j < col2; ++j){
+  //       for(k=0; k<col1; ++k){
+  //         mat_mult[i][j] += mat1[i][k] * mat2[k][j];
+  //       }
+  //     }
+	//   }
+  // }
+  //   //	calculate minor of matrix OR build new matrix : k-had = minor
+  // void DergPmTracker::Minor(float b[10][10],float a[10][10],int i,int n){
+  //   int j,l,h=0,k=0;
+  //   for(l=1;l<n;l++){
+  //     for( j=0;j<n;j++){
+  //       if(j == i){
+  //         continue;
+  //       }
+  //       b[h][k] = a[l][j];
+  //       k++;
+  //       if(k == (n-1)){
+  //         h++;
+  //         k=0;
+  //       }
+  //     }
+  //   }
+  // }
+
+  // //	calculate determinant of matrix
+  // float DergPmTracker::det(float a[10][10],int n){
+  //   int i;
+  //   float b[10][10],sum=0;
+  //   if (n == 1){
+  //     return a[0][0];
+  //   }
+  //   else if(n == 2){
+  //     return (a[0][0]*a[1][1]-a[0][1]*a[1][0]);
+  //   }
+  //   else{
+  //     for(i=0;i<n;i++){
+  //       Minor(b,a,i,n);	// read function
+  //       sum = (float) (sum+a[0][i]*pow(-1,i)*det(b,(n-1)));	// read function	// sum = determinant matrix
+  //     }
+  //   }
+  // return sum;
+  // }
+
+  // //	calculate transpose of matrix
+  // void DergPmTracker::transpose(float c[10][10],float d[10][10],int n,float det){
+  //   int i,j;
+  //   float b[10][10];
+  //   for (i=0;i<n;i++){
+  //     for (j=0;j<n;j++){
+  //       b[i][j] = c[j][i];
+  //     }
+  //   }
+  //   for (i=0;i<n;i++){
+  //     for (j=0;j<n;j++){
+  //       d[i][j] = b[i][j]/det;	// array d[][] = inverse matrix
+  //     }
+  //   }
+  // }
+
+  // //	calculate cofactor of matrix
+  // void DergPmTracker::cofactor(float a[10][10],float d[10][10],int n,float determinant){
+  //   float b[10][10],c[10][10];
+  //   int l,h,m,k,i,j;
+  //   for (h=0;h<n;h++){
+  //     for (l=0;l<n;l++){
+  //       m=0;
+  //       k=0;
+  //       for (i=0;i<n;i++){
+  //         for (j=0;j<n;j++){
+  //           if (i != h && j != l){
+  //             b[m][k]=a[i][j];
+  //             if (k<(n-2)){
+  //               k++;
+  //             }
+  //             else{
+  //               k=0;
+  //               m++;
+  //             }
+  //           }
+  //         }
+  //       }
+  //       c[h][l] = (float) pow(-1,(h+l))*det(b,(n-1));	// c = cofactor Matrix
+  //     }
+  //   }
+  //   transpose(c,d,n,determinant);	// read function
+  // }
+
+  // //	calculate inverse of matrix
+  // void DergPmTracker::inverse(float a[10][10],float d[10][10],int n,float det){
+  //   if(det == 0){
+  //     ROS_INFO("[DergPmTracker]: Inverse of Entered Matrix is not possible");
+  //   }
+  //   else if(n == 1){
+  //     d[0][0] = 1;
+  //   }
+  //   else{
+  //     cofactor(a,d,n,det);	
+  //   }
+  // }
+
+  //----------------------------------------------------------------//
+
+
 
   Eigen::Vector3d DergPmTracker::calcCirculationField(std::string type, double dist_x, double dist_y, double dist_z, double dist ){
     Eigen::Vector3d cirulation_field = Eigen::Vector3d::Zero(3);
