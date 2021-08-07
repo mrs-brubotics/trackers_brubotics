@@ -1634,21 +1634,17 @@
       // ROS_INFO_STREAM("Ow (i=0) = \n" << Ow);
 
       // Thesis B: Step 2: initialize the custom load predictions for the first iteration
-      ROS_INFO_STREAM("load_pose_position  = \n" << load_pose_position);
+      // custom_load_pose.position.x = load_pose_position.x;
+      // custom_load_pose.position.y = load_pose_position.y;
+      // custom_load_pose.position.z = load_pose_position.z;
 
-      custom_load_pose.position.x = load_pose_position.x;
-      custom_load_pose.position.y = load_pose_position.y;
-      custom_load_pose.position.z = load_pose_position.z;
+      // custom_load_vel.position.x = load_lin_vel[0];
+      // custom_load_vel.position.y = load_lin_vel[1];
+      // custom_load_vel.position.z = load_lin_vel[2];
 
-      // ROS_INFO_STREAM("load_pose_position.z = \n" << load_pose_position.z);
-
-      custom_load_vel.position.x = load_lin_vel[0];
-      custom_load_vel.position.y = load_lin_vel[1];
-      custom_load_vel.position.z = load_lin_vel[2];
-
-      custom_load_acceleration.position.x = acceleration_load[0];
-      custom_load_acceleration.position.y = acceleration_load[1];
-      custom_load_acceleration.position.z = acceleration_load[2];
+      // custom_load_acceleration.position.x = acceleration_load[0];
+      // custom_load_acceleration.position.y = acceleration_load[1];
+      // custom_load_acceleration.position.z = acceleration_load[2];
 
       // Thesis b: Test 06/08
       theta_load_cable = asin((load_pose_position.x - uav_state.pose.position.x)/cable_length); 
@@ -1657,16 +1653,8 @@
       theta_dot_load_cable = pow(1 - pow((load_pose_position.x - uav_state.pose.position.x)/cable_length,2),-1/2) * ((load_lin_vel[0] - uav_state.velocity.linear.x)/cable_length); 
       phi_dot_load_cable = pow(1 - pow((load_pose_position.y - uav_state.pose.position.y)/cable_length,2),-1/2) * ((load_lin_vel[1] - uav_state.velocity.linear.y)/cable_length); 
 
-      theta_dot_dot_load_cable = (-1/2)*pow(1 - pow((load_pose_position.x - uav_state.pose.position.x)/cable_length,2),-3/2)*(-2)*((load_pose_position.x - uav_state.pose.position.x)/cable_length)*((load_lin_vel[0] - uav_state.velocity.linear.x)/cable_length) + pow(1 - pow((load_pose_position.x - uav_state.pose.position.x)/cable_length,2),-1/2)*((acceleration_load[0] - custom_acceleration.position.x)/cable_length);
-      phi_dot_dot_load_cable = (-1/2)*pow(1 - pow((load_pose_position.y - uav_state.pose.position.y)/cable_length,2),-3/2)*(-2)*((load_pose_position.y - uav_state.pose.position.y)/cable_length)*((load_lin_vel[1] - uav_state.velocity.linear.y)/cable_length) + pow(1 - pow((load_pose_position.y - uav_state.pose.position.y)/cable_length,2),-1/2)*((acceleration_load[1] - custom_acceleration.position.y)/cable_length); 
-
-      // ROS_INFO_STREAM("theta_load_cable = \n" << theta_load_cable);
-      // ROS_INFO_STREAM("phi_load_cable = \n" << phi_load_cable);
-      // ROS_INFO_STREAM("theta_dot_load_cable  = \n" << theta_dot_load_cable);
-      // ROS_INFO_STREAM("phi_dot_load_cable = \n" << phi_dot_load_cable);
-      // ROS_INFO_STREAM("theta_dot_dot_load_cable = \n" << theta_dot_dot_load_cable);
-      // ROS_INFO_STREAM("phi_dot_dot_load_cable = \n" << phi_dot_dot_load_cable);
-    
+      theta_dot_dot_load_cable = (-1/2)*pow(1 - ((load_pose_position.x - uav_state.pose.position.x)/cable_length),-3/2)*(-2)*((load_pose_position.x - uav_state.pose.position.x)/cable_length)*((load_lin_vel[0] - uav_state.velocity.linear.x)/cable_length) + pow(1 - pow((load_pose_position.x - uav_state.pose.position.x)/cable_length,2),-1/2)*((acceleration_load[0] - custom_acceleration.position.x)/cable_length);
+      phi_dot_dot_load_cable = (-1/2)*pow(1 - ((load_pose_position.y - uav_state.pose.position.y)/cable_length),-3/2)*(-2)*((load_pose_position.y - uav_state.pose.position.y)/cable_length)*((load_lin_vel[1] - uav_state.velocity.linear.y)/cable_length) + pow(1 - pow((load_pose_position.y - uav_state.pose.position.y)/cable_length,2),-1/2)*((acceleration_load[1] - custom_acceleration.position.y)/cable_length); 
     } 
     else{
       // TODO: in control predictions define custom_acceleration also via uav_state
@@ -1713,15 +1701,11 @@
 
       acceleration_load[0] = -sin(theta_load_cable)*cable_length*pow(theta_dot_load_cable,2) + cos(theta_load_cable)*cable_length*theta_dot_dot_load_cable + custom_acceleration.position.x;
       acceleration_load[1] = -sin(phi_load_cable)*cable_length*pow(phi_dot_load_cable,2) + cos(phi_load_cable)*cable_length*phi_dot_dot_load_cable + custom_acceleration.position.y;
-      acceleration_load[2] = (-1/4)*pow(pow(cable_length,2)-pow(load_pose_position.x,2)-pow(load_pose_position.y,2),-3/2)*pow((-2*load_pose_position.x*load_lin_vel[0] - 2*load_pose_position.y*load_lin_vel[1]),2) + (1/2)*pow(pow(cable_length,2)-pow(load_pose_position.x,2)-pow(load_pose_position.y,2),-1/2)*(-2*pow(load_lin_vel[0],2) - 2*load_pose_position.x*acceleration_load[0] -2*pow(load_lin_vel[1],2) - 2*load_pose_position.y*acceleration_load[1]) + custom_acceleration.position.z;      
+      acceleration_load[2] = (-1/4)*pow(pow(cable_length,2)-pow(load_pose_position.x,2)-pow(load_pose_position.y,2),-3/2)*pow((-2*load_pose_position.x*load_lin_vel[0] - 2*load_pose_position.y*load_lin_vel[1]),2) + (1/2)*pow(pow(cable_length,2)-pow(load_pose_position.x,2)-pow(load_pose_position.y,2),-1/2)*(-2*pow(load_lin_vel[0],2) - 2*load_pose_position.x*acceleration_load[0] -2*pow(load_lin_vel[1],2) - 2*load_pose_position.x*acceleration_load[1]) + custom_acceleration.position.z;      
 
       custom_load_acceleration.position.x = acceleration_load[0];
       custom_load_acceleration.position.y = acceleration_load[1];
       custom_load_acceleration.position.z = acceleration_load[2];
-
-      // ROS_INFO_STREAM("custom_load_pose = \n" << custom_load_pose);
-      // ROS_INFO_STREAM("custom_load_vel = \n" << custom_load_vel);
-      // ROS_INFO_STREAM("custom_load_acceleration  = \n" << custom_load_acceleration);
 
         //t = q_feedback + other terms
       skew_Ow << 0     , -attitude_rate_pred(2), attitude_rate_pred(1),
@@ -1772,9 +1756,8 @@
     predicted_load_poses_out.poses.push_back(custom_load_pose);
     predicted_load_velocities_out.poses.push_back(custom_load_vel);
     predicted_load_accelerations_out.poses.push_back(custom_load_acceleration);
-    // ROS_INFO_STREAM("custom_load_pose \n" << custom_load_pose);
-    // ROS_INFO_STREAM(" custom_load_vel \n" << custom_load_vel);
-    // ROS_INFO_STREAM(" custom_load_acceleration \n" << custom_load_acceleration);
+    //ROS_INFO_STREAM("Pred old load lin vel \n" << pred_old_load_lin_vel);
+    //ROS_INFO_STREAM(" Custom load vel \n" << custom_load_vel);
 
     // | --------------------- define system states --------------------- |
     // Op - position in global frame
@@ -1832,7 +1815,7 @@
         Evl = Ov - Ovl;
         //(speed relative to base frame)
     }
-    Epl[2] = 0;
+    Epl[2] = 0.0;
     }else{
         
       load_pose_position.x = Op[0] + Difference_load_drone_position[0];
@@ -1863,7 +1846,7 @@
 
       //ROS_INFO_STREAM("Se3BruboticsLoadController: load_pose_position = \n" << load_pose_position);
       //ROS_INFO_STREAM("Se3BruboticsLoadController: Epl (Rpl-load_pose)= \n" << Epl);
-      Epl[2] = 0;
+      Epl[2] = 0.0;
     }
     // 2e method pandolfo
     Eigen::Array3d  Kpl = Eigen::Array3d::Zero(3); 
@@ -2122,6 +2105,7 @@
     // | --------------- Thesis B --------------- |
     //Thesis B: step 6: calculate f
     Eigen::Vector3d f = position_load_feedback + velocity_load_feedback + position_feedback + velocity_feedback + feed_forward ;
+    // ROS_INFO_STREAM("f = \n" << f);
     // | ------------------------------ |
     // also check line above uav_mass_difference_ = 0!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
@@ -2180,6 +2164,8 @@
     // calculate the force in spherical coordinates
     double theta = acos(f_norm[2]);
     double phi   = atan2(f_norm[1], f_norm[0]);
+
+
 
 
     // ROS_INFO_STREAM("theta = \n" << theta*180/3.1415);
@@ -4515,37 +4501,37 @@
 
     // Thesis B: Step 1: update velocity and save old load velocity
     //last_load_vel_time = load_vel_time;
-    // old_load_lin_vel.x = load_lin_vel_before_pred[0];  // initialise the old load velocity 
-    // old_load_lin_vel.y = load_lin_vel_before_pred[1];
-    // old_load_lin_vel.z = load_lin_vel_before_pred[2];
+    old_load_lin_vel.x = load_lin_vel_before_pred[0];  // initialise the old load velocity 
+    old_load_lin_vel.y = load_lin_vel_before_pred[1];
+    old_load_lin_vel.z = load_lin_vel_before_pred[2];
 
-    // load_velocity = loadmsg->twist[load_index];
-    // //load_vel_time = ros::Time::now();;
-    // //load_vel_dt = (load_vel_time - last_load_vel_time).toSec();
-    // //ROS_INFO_STREAM("load velocity 1 = \n" << load_lin_vel_);
-    // load_lin_vel_[0]= load_velocity.linear.x;
-    // load_lin_vel_[1]= load_velocity.linear.y;
-    // load_lin_vel_[2]= load_velocity.linear.z;
-    // //ROS_INFO_STREAM("Old load velocity = \n" << old_load_lin_vel);
-    // //ROS_INFO_STREAM("New load velocity = \n" << load_lin_vel_);
+    load_velocity = loadmsg->twist[load_index];
+    //load_vel_time = ros::Time::now();;
+    //load_vel_dt = (load_vel_time - last_load_vel_time).toSec();
+    //ROS_INFO_STREAM("load velocity 1 = \n" << load_lin_vel_);
+    load_lin_vel_[0]= load_velocity.linear.x;
+    load_lin_vel_[1]= load_velocity.linear.y;
+    load_lin_vel_[2]= load_velocity.linear.z;
+    //ROS_INFO_STREAM("Old load velocity = \n" << old_load_lin_vel);
+    //ROS_INFO_STREAM("New load velocity = \n" << load_lin_vel_);
 
-    // load_lin_vel_before_pred[0] = load_velocity.linear.x; // in order have the real load velocity each time the update function starts again (not changed in prediction)
-    // load_lin_vel_before_pred[1] = load_velocity.linear.y;
-    // load_lin_vel_before_pred[2] = load_velocity.linear.z;
-    // //ROS_INFO_STREAM("dt = \n" << (last_load_vel_time - load_vel_time).toSec() );
+    load_lin_vel_before_pred[0] = load_velocity.linear.x; // in order have the real load velocity each time the update function starts again (not changed in prediction)
+    load_lin_vel_before_pred[1] = load_velocity.linear.y;
+    load_lin_vel_before_pred[2] = load_velocity.linear.z;
+    //ROS_INFO_STREAM("dt = \n" << (last_load_vel_time - load_vel_time).toSec() );
 
 
-    // // define the load acceleration 
-    // acceleration_load_[0] = (load_lin_vel_[0] - old_load_lin_vel.x)/load_vel_dt;
-    // acceleration_load_[1] = (load_lin_vel_[1] - old_load_lin_vel.y)/load_vel_dt;
-    // acceleration_load_[2] = (load_lin_vel_[2] - old_load_lin_vel.z)/load_vel_dt;
+    // define the load acceleration 
+    acceleration_load_[0] = (load_lin_vel_[0] - old_load_lin_vel.x)/load_vel_dt;
+    acceleration_load_[1] = (load_lin_vel_[1] - old_load_lin_vel.y)/load_vel_dt;
+    acceleration_load_[2] = (load_lin_vel_[2] - old_load_lin_vel.z)/load_vel_dt;
     //ROS_INFO_STREAM("load velocity = \n" << load_lin_vel_);
     //ROS_INFO_STREAM("Old load velocity = \n" << old_load_lin_vel);
     //ROS_INFO_STREAM("Load acceleration = \n" << acceleration_load_);
 
-    // custom_publisher_tracker_load_pose.publish(load_pose);
-    // custom_publisher_tracker_load_vel.publish(load_velocity);
-    // custom_publisher_tracker_load_old_vel.publish(old_load_lin_vel);
+    custom_publisher_tracker_load_pose.publish(load_pose);
+    custom_publisher_tracker_load_vel.publish(load_velocity);
+    custom_publisher_tracker_load_old_vel.publish(old_load_lin_vel);
   }
 
   void DergPmTracker::BacaCallback(const mrs_msgs::BacaProtocolConstPtr& msg) {
