@@ -1687,25 +1687,13 @@
       load_pose_position.y = sin(phi_load_cable)*cable_length + uav_state.pose.position.y; 
       load_pose_position.z = sqrt(pow(cable_length,2)-pow(load_pose_position.x,2)-pow(load_pose_position.y,2)) + uav_state.pose.position.z; 
 
-      custom_load_pose.position.x = load_pose_position.x;
-      custom_load_pose.position.y = load_pose_position.y;
-      custom_load_pose.position.z = load_pose_position.z;
-
       load_lin_vel[0] = cos(theta_load_cable)*cable_length*theta_dot_load_cable + uav_state.velocity.linear.x;  
       load_lin_vel[1] = cos(phi_load_cable)*cable_length*phi_dot_load_cable + uav_state.velocity.linear.y; 
       load_lin_vel[2] = (1/2)*pow(pow(cable_length,2)-pow(load_pose_position.x,2)-pow(load_pose_position.y,2),-1/2)*(-2*load_pose_position.x*load_lin_vel[0] - 2*load_pose_position.y*load_lin_vel[1]) + uav_state.velocity.linear.z; 
 
-      custom_load_vel.position.x = load_lin_vel[0];
-      custom_load_vel.position.y = load_lin_vel[1];
-      custom_load_vel.position.z = load_lin_vel[2];
-
       acceleration_load[0] = -sin(theta_load_cable)*cable_length*pow(theta_dot_load_cable,2) + cos(theta_load_cable)*cable_length*theta_dot_dot_load_cable + custom_acceleration.position.x;
       acceleration_load[1] = -sin(phi_load_cable)*cable_length*pow(phi_dot_load_cable,2) + cos(phi_load_cable)*cable_length*phi_dot_dot_load_cable + custom_acceleration.position.y;
       acceleration_load[2] = (-1/4)*pow(pow(cable_length,2)-pow(load_pose_position.x,2)-pow(load_pose_position.y,2),-3/2)*pow((-2*load_pose_position.x*load_lin_vel[0] - 2*load_pose_position.y*load_lin_vel[1]),2) + (1/2)*pow(pow(cable_length,2)-pow(load_pose_position.x,2)-pow(load_pose_position.y,2),-1/2)*(-2*pow(load_lin_vel[0],2) - 2*load_pose_position.x*acceleration_load[0] -2*pow(load_lin_vel[1],2) - 2*load_pose_position.x*acceleration_load[1]) + custom_acceleration.position.z;      
-
-      custom_load_acceleration.position.x = acceleration_load[0];
-      custom_load_acceleration.position.y = acceleration_load[1];
-      custom_load_acceleration.position.z = acceleration_load[2];
 
         //t = q_feedback + other terms
       skew_Ow << 0     , -attitude_rate_pred(2), attitude_rate_pred(1),
@@ -1815,7 +1803,7 @@
         Evl = Ov - Ovl;
         //(speed relative to base frame)
     }
-    Epl[2] = 0.0;
+    Epl[2] = 0;
     }else{
         
       load_pose_position.x = Op[0] + Difference_load_drone_position[0];
@@ -1846,7 +1834,7 @@
 
       //ROS_INFO_STREAM("Se3BruboticsLoadController: load_pose_position = \n" << load_pose_position);
       //ROS_INFO_STREAM("Se3BruboticsLoadController: Epl (Rpl-load_pose)= \n" << Epl);
-      Epl[2] = 0.0;
+      Epl[2] = 0;
     }
     // 2e method pandolfo
     Eigen::Array3d  Kpl = Eigen::Array3d::Zero(3); 
@@ -2105,7 +2093,6 @@
     // | --------------- Thesis B --------------- |
     //Thesis B: step 6: calculate f
     Eigen::Vector3d f = position_load_feedback + velocity_load_feedback + position_feedback + velocity_feedback + feed_forward ;
-    // ROS_INFO_STREAM("f = \n" << f);
     // | ------------------------------ |
     // also check line above uav_mass_difference_ = 0!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
@@ -2164,8 +2151,6 @@
     // calculate the force in spherical coordinates
     double theta = acos(f_norm[2]);
     double phi   = atan2(f_norm[1], f_norm[0]);
-
-
 
 
     // ROS_INFO_STREAM("theta = \n" << theta*180/3.1415);
