@@ -2188,7 +2188,7 @@
     // | --------------- Thesis B --------------- |
     //Thesis B: step 6: calculate f
     Eigen::Vector3d f = position_load_feedback + velocity_load_feedback + position_feedback + velocity_feedback + feed_forward ;
-    ROS_INFO_STREAM("f = \n" << f);
+    // ROS_INFO_STREAM("f = \n" << f);
     // ROS_INFO_STREAM("position_load_feedback = \n" << position_load_feedback);
     // ROS_INFO_STREAM("velocity_load_feedback = \n" << velocity_load_feedback);
     // ROS_INFO_STREAM("velocity_feedback = \n" << velocity_feedback);
@@ -2504,7 +2504,7 @@
     // ROS_INFO_STREAM("V = \n" << V_matrix);
 
     Eigen::MatrixXd G_vector = Eigen::MatrixXd(5, 1);
-    G_vector(0,0) = 0; G_vector(1,0) = 0; G_vector(2,0) = -(load_mass_+_uav_mass_)*common_handlers_->g; 
+    G_vector(0,0) = 0; G_vector(1,0) = 0; G_vector(2,0) = (load_mass_+_uav_mass_)*common_handlers_->g; //SHOULD BE - !!!!!
     G_vector(3,0) = cable_length*common_handlers_->g*load_mass_*cos(theta_load_cable)*sin(phi_load_cable); 
     G_vector(4,0) = cable_length*common_handlers_->g*load_mass_*cos(phi_load_cable)*sin(theta_load_cable);
 
@@ -2541,13 +2541,13 @@
     theta_dot_dot_load_cable = q_state_dot_dot(3,0);
     phi_dot_dot_load_cable = q_state_dot_dot(4,0);
 
-    ROS_INFO_STREAM("q_state_dot_dot = \n" << q_state_dot_dot);
+    // ROS_INFO_STREAM("q_state_dot_dot = \n" << q_state_dot_dot);
 
-    ROS_INFO_STREAM("M_matrix.inverse()= \n" << M_matrix.inverse() );
-    ROS_INFO_STREAM("u_vector - V_matrix*q_state_dot - G_vector= \n" << u_vector - V_matrix*q_state_dot - G_vector);
-    ROS_INFO_STREAM("u_vector= \n" << u_vector );
-    ROS_INFO_STREAM("V_matrix*q_state_dot= \n" << V_matrix*q_state_dot );
-    ROS_INFO_STREAM("G_vector= \n" << G_vector );
+    // ROS_INFO_STREAM("M_matrix.inverse()= \n" << M_matrix.inverse() );
+    // ROS_INFO_STREAM("u_vector - V_matrix*q_state_dot - G_vector= \n" << u_vector - V_matrix*q_state_dot - G_vector);
+    // ROS_INFO_STREAM("u_vector= \n" << u_vector );
+    // ROS_INFO_STREAM("V_matrix*q_state_dot= \n" << V_matrix*q_state_dot );
+    // ROS_INFO_STREAM("G_vector= \n" << G_vector );
     // ROS_INFO_STREAM("cos= \n" << cos(theta_load_cable) );
     // ROS_INFO_STREAM("cos²= \n" << pow(cos(theta_load_cable),2.0) );
     // ROS_INFO_STREAM("acceleration_uav[0]= \n" << acceleration_uav[0] );
