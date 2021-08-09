@@ -1655,11 +1655,21 @@
       theta_load_cable = asin((load_pose_position.x - uav_state.pose.position.x)/cable_length); 
       phi_load_cable = asin((load_pose_position.y - uav_state.pose.position.y)/cable_length);
 
-      theta_dot_load_cable = pow(1.0 - pow((load_pose_position.x - uav_state.pose.position.x)/cable_length,2.0),-1.0/2.0) * ((load_lin_vel[0] - uav_state.velocity.linear.x)/cable_length); 
-      phi_dot_load_cable = pow(1.0 - pow((load_pose_position.y - uav_state.pose.position.y)/cable_length,2.0),-1.0/2.0) * ((load_lin_vel[1] - uav_state.velocity.linear.y)/cable_length); 
+      theta_dot_load_cable = pow(1.0 - pow((load_pose_position.x - uav_state.pose.position.x)/cable_length,2.0),-1.0/2.0) 
+      * ((load_lin_vel[0] - uav_state.velocity.linear.x)/cable_length); 
+      phi_dot_load_cable = pow(1.0 - pow((load_pose_position.y - uav_state.pose.position.y)/cable_length,2.0),-1.0/2.0) 
+      * ((load_lin_vel[1] - uav_state.velocity.linear.y)/cable_length); 
 
-      theta_dot_dot_load_cable = (-1.0/2.0)*pow(1 - pow((load_pose_position.x - uav_state.pose.position.x)/cable_length,2.0),-3.0/2.0)*(-2.0)*((load_pose_position.x - uav_state.pose.position.x)/cable_length)*((load_lin_vel[0] - uav_state.velocity.linear.x)/cable_length) + pow(1.0 - pow((load_pose_position.x - uav_state.pose.position.x)/cable_length,2.0),-1.0/2.0)*((acceleration_load[0] - custom_acceleration.position.x)/cable_length);
-      phi_dot_dot_load_cable = (-1.0/2.0)*pow(1 - pow((load_pose_position.y - uav_state.pose.position.y)/cable_length,2.0),-3.0/2.0)*(-2.0)*((load_pose_position.y - uav_state.pose.position.y)/cable_length)*((load_lin_vel[1] - uav_state.velocity.linear.y)/cable_length) + pow(1.0 - pow((load_pose_position.y - uav_state.pose.position.y)/cable_length,2.0),-1.0/2.0)*((acceleration_load[1] - custom_acceleration.position.y)/cable_length); 
+      theta_dot_dot_load_cable = (-1.0/2.0)*pow(1 - pow((load_pose_position.x - uav_state.pose.position.x)/cable_length,2.0),-3.0/2.0)
+      *(-2.0)*((load_pose_position.x - uav_state.pose.position.x)/cable_length)
+      *((load_lin_vel[0] - uav_state.velocity.linear.x)/cable_length) 
+      + pow(1.0 - pow((load_pose_position.x - uav_state.pose.position.x)/cable_length,2.0),-1.0/2.0)
+      *((acceleration_load[0] - custom_acceleration.position.x)/cable_length);
+      phi_dot_dot_load_cable = (-1.0/2.0)*pow(1 - pow((load_pose_position.y - uav_state.pose.position.y)/cable_length,2.0),-3.0/2.0)
+      *(-2.0)*((load_pose_position.y - uav_state.pose.position.y)/cable_length)
+      *((load_lin_vel[1] - uav_state.velocity.linear.y)/cable_length) 
+      + pow(1.0 - pow((load_pose_position.y - uav_state.pose.position.y)/cable_length,2.0),-1.0/2.0)
+      *((acceleration_load[1] - custom_acceleration.position.y)/cable_length); 
 
       // ROS_INFO_STREAM("theta_load_cable = \n" << theta_load_cable);
       // ROS_INFO_STREAM("phi_load_cable = \n" << phi_load_cable);
@@ -1704,7 +1714,8 @@
 
       load_pose_position.x = sin(theta_load_cable)*cable_length + uav_state.pose.position.x; 
       load_pose_position.y = sin(phi_load_cable)*cable_length + uav_state.pose.position.y; 
-      load_pose_position.z = -sqrt(pow(cable_length,2.0)-pow(load_pose_position.x-uav_state.pose.position.x,2.0)-pow(load_pose_position.y-uav_state.pose.position.y,2.0)) + uav_state.pose.position.z; 
+      load_pose_position.z = -sqrt(pow(cable_length,2.0)-pow(load_pose_position.x-uav_state.pose.position.x,2.0)
+      -pow(load_pose_position.y-uav_state.pose.position.y,2.0)) + uav_state.pose.position.z; 
       // ROS_INFO_STREAM("load_pose_position  = \n" << load_pose_position);
 
       custom_load_pose.position.x = load_pose_position.x;
@@ -1712,20 +1723,35 @@
       custom_load_pose.position.z = load_pose_position.z;
 
       load_lin_vel[0] = cos(theta_load_cable)*cable_length*theta_dot_load_cable + uav_state.velocity.linear.x;  
+
       load_lin_vel[1] = cos(phi_load_cable)*cable_length*phi_dot_load_cable + uav_state.velocity.linear.y; 
-      load_lin_vel[2] = (1.0/2.0)*pow(pow(cable_length,2.0)-pow(load_pose_position.x-uav_state.pose.position.x,2.0)-pow(load_pose_position.y-uav_state.pose.position.y,2.0),-1.0/2.0)*(-2.0*(load_pose_position.x-uav_state.pose.position.x)*(load_lin_vel[0]-uav_state.velocity.linear.x) - 2.0*(load_pose_position.y-uav_state.pose.position.y)*(load_lin_vel[1]-uav_state.velocity.linear.y)) + uav_state.velocity.linear.z; 
+
+      load_lin_vel[2] = (1.0/2.0)*pow(pow(cable_length,2.0)-pow(load_pose_position.x-uav_state.pose.position.x,2.0)
+      -pow(load_pose_position.y-uav_state.pose.position.y,2.0),-1.0/2.0)
+      *(-2.0*(load_pose_position.x-uav_state.pose.position.x)*(load_lin_vel[0]-uav_state.velocity.linear.x) 
+      - 2.0*(load_pose_position.y-uav_state.pose.position.y)*(load_lin_vel[1]-uav_state.velocity.linear.y)) 
+      + uav_state.velocity.linear.z; 
 
       custom_load_vel.position.x = load_lin_vel[0];
       custom_load_vel.position.y = load_lin_vel[1];
       custom_load_vel.position.z = load_lin_vel[2];
 
-      acceleration_load[0] = -sin(theta_load_cable)*cable_length*pow(theta_dot_load_cable,2.0) + cos(theta_load_cable)*cable_length*theta_dot_dot_load_cable + custom_acceleration.position.x;
-      acceleration_load[1] = -sin(phi_load_cable)*cable_length*pow(phi_dot_load_cable,2.0) + cos(phi_load_cable)*cable_length*phi_dot_dot_load_cable + custom_acceleration.position.y;
-      acceleration_load[2] = (-1.0/4.0)*pow(pow(cable_length,2.0)-pow(load_pose_position.x-uav_state.pose.position.x,2.0)-pow(load_pose_position.y-uav_state.pose.position.y,2.0),-3.0/2.0)
-                              *pow((-2.0*(load_pose_position.x-uav_state.pose.position.x)*(load_lin_vel[0]-uav_state.velocity.linear.x) - 2*(load_pose_position.y-uav_state.pose.position.y)*(load_lin_vel[1]-uav_state.velocity.linear.y)),2.0) 
-                              + (1.0/2.0)*pow(pow(cable_length,2.0)-pow(load_pose_position.x-uav_state.pose.position.x,2)-pow(load_pose_position.y-uav_state.pose.position.y,2.0),-1.0/2.0)
-                              *(-2.0*pow((load_lin_vel[0]-uav_state.velocity.linear.x),2.0) - 2.0*(load_pose_position.x-uav_state.pose.position.x)*(acceleration_load[0]-custom_acceleration.position.x) -2.0*pow((load_lin_vel[1]-uav_state.velocity.linear.y),2.0) - 2.0*(load_pose_position.y-uav_state.pose.position.y)*(acceleration_load[1]-custom_acceleration.position.y))
-                              + custom_acceleration.position.z;  
+      acceleration_load[0] = -sin(theta_load_cable)*cable_length*pow(theta_dot_load_cable,2.0) 
+      + cos(theta_load_cable)*cable_length*theta_dot_dot_load_cable + custom_acceleration.position.x;
+
+      acceleration_load[1] = -sin(phi_load_cable)*cable_length*pow(phi_dot_load_cable,2.0) 
+      + cos(phi_load_cable)*cable_length*phi_dot_dot_load_cable + custom_acceleration.position.y;
+
+      acceleration_load[2] = (-1.0/4.0)*pow(pow(cable_length,2.0)-pow(load_pose_position.x-uav_state.pose.position.x,2.0)
+      -pow(load_pose_position.y-uav_state.pose.position.y,2.0),-3.0/2.0)
+      *pow((-2.0*(load_pose_position.x-uav_state.pose.position.x)*(load_lin_vel[0]-uav_state.velocity.linear.x) 
+      - 2*(load_pose_position.y-uav_state.pose.position.y)*(load_lin_vel[1]-uav_state.velocity.linear.y)),2.0)
+      + (1.0/2.0)*pow(pow(cable_length,2.0)-pow(load_pose_position.x-uav_state.pose.position.x,2)
+      -pow(load_pose_position.y-uav_state.pose.position.y,2.0),-1.0/2.0)
+      *(-2.0*pow((load_lin_vel[0]-uav_state.velocity.linear.x),2.0) 
+      - 2.0*(load_pose_position.x-uav_state.pose.position.x)*(acceleration_load[0]-custom_acceleration.position.x) 
+      -2.0*pow((load_lin_vel[1]-uav_state.velocity.linear.y),2.0) - 2.0*(load_pose_position.y-uav_state.pose.position.y)
+      *(acceleration_load[1]-custom_acceleration.position.y)) + custom_acceleration.position.z;  
                               //1,3 and 5 = 0    
 
       custom_load_acceleration.position.x = acceleration_load[0];
@@ -1785,13 +1811,13 @@
 
     predicted_poses_out.poses.push_back(custom_pose);
     predicted_velocities_out.poses.push_back(custom_vel);
-    ROS_INFO_STREAM("custom_pose \n" << custom_pose);
+    // ROS_INFO_STREAM("custom_pose \n" << custom_pose);
 
     // Thesis B
     predicted_load_poses_out.poses.push_back(custom_load_pose);
     predicted_load_velocities_out.poses.push_back(custom_load_vel);
     predicted_load_accelerations_out.poses.push_back(custom_load_acceleration);
-    ROS_INFO_STREAM("custom_load_pose \n" << custom_load_pose);
+    // ROS_INFO_STREAM("custom_load_pose \n" << custom_load_pose);
     // ROS_INFO_STREAM(" custom_load_vel \n" << custom_load_vel);
     // ROS_INFO_STREAM(" custom_load_acceleration \n" << custom_load_acceleration);
 
@@ -2142,11 +2168,11 @@
     // | --------------- Thesis B --------------- |
     //Thesis B: step 6: calculate f
     Eigen::Vector3d f = position_load_feedback + velocity_load_feedback + position_feedback + velocity_feedback + feed_forward ;
-    ROS_INFO_STREAM("f = \n" << f);
-    ROS_INFO_STREAM("position_load_feedback = \n" << position_load_feedback);
-    ROS_INFO_STREAM("velocity_load_feedback = \n" << velocity_load_feedback);
-    ROS_INFO_STREAM("velocity_feedback = \n" << velocity_feedback);
-    ROS_INFO_STREAM("feed_forward = \n" << feed_forward);
+    // ROS_INFO_STREAM("f = \n" << f);
+    // ROS_INFO_STREAM("position_load_feedback = \n" << position_load_feedback);
+    // ROS_INFO_STREAM("velocity_load_feedback = \n" << velocity_load_feedback);
+    // ROS_INFO_STREAM("velocity_feedback = \n" << velocity_feedback);
+    // ROS_INFO_STREAM("feed_forward = \n" << feed_forward);
     // | ------------------------------ |
     // also check line above uav_mass_difference_ = 0!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
@@ -2411,24 +2437,56 @@
     //-------------based on new EOM with angles----------------//
 
     Eigen::MatrixXd M_matrix = Eigen::MatrixXd(5, 5);
-    M_matrix(0,0) = _uav_mass_ + load_mass_; M_matrix(0,1) = 0; M_matrix(0,2) = 0; M_matrix(0,3) = 0; M_matrix(0,4) = cable_length*load_mass_*cos(theta_load_cable);
-    M_matrix(1,0) = 0; M_matrix(1,1) = _uav_mass_ + load_mass_; M_matrix(1,2) = 0; M_matrix(1,3) = -cable_length*load_mass_*cos(phi_load_cable)*cos(theta_load_cable); M_matrix(1,4) = cable_length*load_mass_*sin(phi_load_cable)*sin(theta_load_cable);
-    M_matrix(2,0) = 0; M_matrix(2,1) = 0; M_matrix(2,2) = _uav_mass_ + load_mass_; M_matrix(2,3) = -cable_length*load_mass_*cos(theta_load_cable)*sin(phi_load_cable); M_matrix(2,4) = -cable_length*load_mass_*cos(phi_load_cable)*sin(theta_load_cable);
-    M_matrix(3,0) = 0; M_matrix(3,1) = -cable_length*load_mass_*cos(phi_load_cable)*cos(theta_load_cable); M_matrix(3,2) = -cable_length*load_mass_*sin(phi_load_cable)*cos(theta_load_cable); M_matrix(3,3) = pow(cable_length,2.0)*load_mass_*(cos(theta_load_cable))*(cos(theta_load_cable)); M_matrix(3,4) = 0;
-    M_matrix(4,0) = cable_length*load_mass_*cos(theta_load_cable); M_matrix(4,1) = cable_length*load_mass_*sin(phi_load_cable)*sin(theta_load_cable); M_matrix(4,2) = -cable_length*load_mass_*cos(phi_load_cable)*sin(theta_load_cable); M_matrix(4,3) = 0; M_matrix(4,4) = pow(cable_length,2.0)*load_mass_;
+    M_matrix(0,0) = _uav_mass_ + load_mass_; M_matrix(0,1) = 0; M_matrix(0,2) = 0; 
+    M_matrix(0,3) = 0; M_matrix(0,4) = cable_length*load_mass_*cos(theta_load_cable);
+    
+    M_matrix(1,0) = 0; M_matrix(1,1) = _uav_mass_ + load_mass_; M_matrix(1,2) = 0; 
+    M_matrix(1,3) = -cable_length*load_mass_*cos(phi_load_cable)*cos(theta_load_cable); 
+    M_matrix(1,4) = cable_length*load_mass_*sin(phi_load_cable)*sin(theta_load_cable);
+    
+    M_matrix(2,0) = 0; M_matrix(2,1) = 0; M_matrix(2,2) = _uav_mass_ + load_mass_; 
+    M_matrix(2,3) = -cable_length*load_mass_*cos(theta_load_cable)*sin(phi_load_cable); 
+    M_matrix(2,4) = -cable_length*load_mass_*cos(phi_load_cable)*sin(theta_load_cable);
+    
+    M_matrix(3,0) = 0; M_matrix(3,1) = -cable_length*load_mass_*cos(phi_load_cable)*cos(theta_load_cable); 
+    M_matrix(3,2) = -cable_length*load_mass_*sin(phi_load_cable)*cos(theta_load_cable); 
+    M_matrix(3,3) = pow(cable_length,2.0)*load_mass_*(cos(theta_load_cable))*(cos(theta_load_cable)); M_matrix(3,4) = 0;
+    
+    M_matrix(4,0) = cable_length*load_mass_*cos(theta_load_cable); 
+    M_matrix(4,1) = cable_length*load_mass_*sin(phi_load_cable)*sin(theta_load_cable); 
+    M_matrix(4,2) = -cable_length*load_mass_*cos(phi_load_cable)*sin(theta_load_cable); 
+    M_matrix(4,3) = 0; M_matrix(4,4) = pow(cable_length,2.0)*load_mass_;
     // ROS_INFO_STREAM("M_inverse = \n" << M_matrix.inverse());
 
     Eigen::MatrixXd V_matrix = Eigen::MatrixXd(5, 5);
-    V_matrix(0,0) = 0; V_matrix(0,1) = 0; V_matrix(0,2) = 0; V_matrix(0,3) = 0; V_matrix(0,4) = -cable_length*theta_dot_load_cable*load_mass_*sin(theta_load_cable);
-    V_matrix(1,0) = 0; V_matrix(1,1) = 0; V_matrix(1,2) = 0; V_matrix(1,3) = cable_length*load_mass_*(phi_dot_load_cable*sin(phi_load_cable)*cos(theta_load_cable) + theta_dot_load_cable*cos(phi_load_cable)*sin(theta_load_cable)); V_matrix(1,4) = cable_length*load_mass_*(phi_dot_load_cable*cos(phi_load_cable)*sin(theta_load_cable) + theta_dot_load_cable*sin(phi_load_cable)*cos(theta_load_cable));
-    V_matrix(2,0) = 0; V_matrix(2,1) = 0; V_matrix(2,2) = 0; V_matrix(2,3) = -cable_length*load_mass_*(phi_dot_load_cable*cos(phi_load_cable)*cos(theta_load_cable) - theta_dot_load_cable*sin(phi_load_cable)*sin(theta_load_cable)); V_matrix(2,4) = -cable_length*load_mass_*(theta_dot_load_cable*cos(phi_load_cable)*cos(theta_load_cable) - phi_dot_load_cable*sin(phi_load_cable)*sin(theta_load_cable));
-    V_matrix(3,0) = 0; V_matrix(3,1) = 0; V_matrix(3,2) = 0; V_matrix(3,3) = (-1.0/2.0)*pow(cable_length,2.0)*theta_dot_load_cable*load_mass_*sin(2.0*theta_load_cable); V_matrix(3,4) = (-1.0/2.0)*pow(cable_length,2.0)*phi_dot_load_cable*load_mass_*sin(2.0*theta_load_cable);
-    V_matrix(4,0) = 0; V_matrix(4,1) = 0; V_matrix(4,2) = 0; V_matrix(4,3) = (1.0/2.0)*pow(cable_length,2.0)*phi_dot_load_cable*load_mass_*sin(2.0*theta_load_cable); V_matrix(4,4) = 0;
+    V_matrix(0,0) = 0; V_matrix(0,1) = 0; V_matrix(0,2) = 0; V_matrix(0,3) = 0; 
+    V_matrix(0,4) = -cable_length*theta_dot_load_cable*load_mass_*sin(theta_load_cable);
+
+    V_matrix(1,0) = 0; V_matrix(1,1) = 0; V_matrix(1,2) = 0; 
+    V_matrix(1,3) = cable_length*load_mass_*(phi_dot_load_cable*sin(phi_load_cable)*cos(theta_load_cable) 
+    + theta_dot_load_cable*cos(phi_load_cable)*sin(theta_load_cable)); 
+    V_matrix(1,4) = cable_length*load_mass_*(phi_dot_load_cable*cos(phi_load_cable)*sin(theta_load_cable) 
+    + theta_dot_load_cable*sin(phi_load_cable)*cos(theta_load_cable));
+
+    V_matrix(2,0) = 0; V_matrix(2,1) = 0; V_matrix(2,2) = 0; 
+    V_matrix(2,3) = -cable_length*load_mass_*(phi_dot_load_cable*cos(phi_load_cable)*cos(theta_load_cable) 
+    - theta_dot_load_cable*sin(phi_load_cable)*sin(theta_load_cable)); 
+    V_matrix(2,4) = -cable_length*load_mass_*(theta_dot_load_cable*cos(phi_load_cable)*cos(theta_load_cable) 
+    - phi_dot_load_cable*sin(phi_load_cable)*sin(theta_load_cable));
+
+    V_matrix(3,0) = 0; V_matrix(3,1) = 0; V_matrix(3,2) = 0; 
+    V_matrix(3,3) = (-1.0/2.0)*pow(cable_length,2.0)*theta_dot_load_cable*load_mass_*sin(2.0*theta_load_cable); 
+    V_matrix(3,4) = (-1.0/2.0)*pow(cable_length,2.0)*phi_dot_load_cable*load_mass_*sin(2.0*theta_load_cable);
+    
+    V_matrix(4,0) = 0; V_matrix(4,1) = 0; V_matrix(4,2) = 0; 
+    V_matrix(4,3) = (1.0/2.0)*pow(cable_length,2.0)*phi_dot_load_cable*load_mass_*sin(2.0*theta_load_cable); V_matrix(4,4) = 0;
 
     // ROS_INFO_STREAM("V = \n" << V_matrix);
 
     Eigen::MatrixXd G_vector = Eigen::MatrixXd(5, 1);
-    G_vector(0,0) = 0; G_vector(1,0) = 0; G_vector(2,0) = -(load_mass_+_uav_mass_)*common_handlers_->g; G_vector(3,0) = cable_length*common_handlers_->g*load_mass_*cos(theta_load_cable)*sin(phi_load_cable); G_vector(4,0) = cable_length*common_handlers_->g*load_mass_*cos(phi_load_cable)*sin(theta_load_cable);
+    G_vector(0,0) = 0; G_vector(1,0) = 0; G_vector(2,0) = -(load_mass_+_uav_mass_)*common_handlers_->g; 
+    G_vector(3,0) = cable_length*common_handlers_->g*load_mass_*cos(theta_load_cable)*sin(phi_load_cable); 
+    G_vector(4,0) = cable_length*common_handlers_->g*load_mass_*cos(phi_load_cable)*sin(theta_load_cable);
 
     // ROS_INFO_STREAM("G = \n" << G_vector);
 
@@ -2442,8 +2500,14 @@
     Eigen::MatrixXd q_state_dot_dot = Eigen::MatrixXd(5, 1);
     // ROS_INFO_STREAM("q_state = \n" << q_state);
     // ROS_INFO_STREAM("q_state_dot = \n" << q_state_dot);
-    q_state(0,0) = uav_state.pose.position.x; q_state(1,0) = uav_state.pose.position.y; q_state(2,0) = uav_state.pose.position.z; q_state(3,0) = theta_load_cable; q_state(4,0) = phi_load_cable;
-    q_state_dot(0,0) = uav_state.velocity.linear.x; q_state_dot(1,0) = uav_state.velocity.linear.y; q_state_dot(2,0) = uav_state.velocity.linear.z; q_state_dot(3,0) = theta_dot_load_cable; q_state_dot(4,0) = phi_dot_load_cable;
+    
+    q_state(0,0) = uav_state.pose.position.x; q_state(1,0) = uav_state.pose.position.y; 
+    q_state(2,0) = uav_state.pose.position.z; q_state(3,0) = theta_load_cable; q_state(4,0) = phi_load_cable;
+
+    q_state_dot(0,0) = uav_state.velocity.linear.x; q_state_dot(1,0) = uav_state.velocity.linear.y; 
+    q_state_dot(2,0) = uav_state.velocity.linear.z; q_state_dot(3,0) = theta_dot_load_cable; 
+    q_state_dot(4,0) = phi_dot_load_cable;
+
     q_state_dot_dot = (M_matrix.inverse())*(u_vector - V_matrix*q_state_dot - G_vector);
 
     Eigen::Vector3d acceleration_uav;
@@ -2457,12 +2521,12 @@
     theta_dot_dot_load_cable = q_state_dot_dot(3,0);
     phi_dot_dot_load_cable = q_state_dot_dot(4,0);
 
-    ROS_INFO_STREAM("M_matrix.inverse()= \n" << M_matrix.inverse() );
-    ROS_INFO_STREAM("u_vector= \n" << u_vector );
-    ROS_INFO_STREAM("V_matrix*q_state_dot= \n" << V_matrix*q_state_dot );
-    ROS_INFO_STREAM("G_vector= \n" << G_vector );
-    ROS_INFO_STREAM("cos= \n" << cos(theta_load_cable) );
-    ROS_INFO_STREAM("cos²= \n" << pow(cos(theta_load_cable),2.0) );
+    // ROS_INFO_STREAM("M_matrix.inverse()= \n" << M_matrix.inverse() );
+    // ROS_INFO_STREAM("u_vector= \n" << u_vector );
+    // ROS_INFO_STREAM("V_matrix*q_state_dot= \n" << V_matrix*q_state_dot );
+    // ROS_INFO_STREAM("G_vector= \n" << G_vector );
+    // ROS_INFO_STREAM("cos= \n" << cos(theta_load_cable) );
+    // ROS_INFO_STREAM("cos²= \n" << pow(cos(theta_load_cable),2.0) );
     // ROS_INFO_STREAM("acceleration_uav[0]= \n" << acceleration_uav[0] );
     // ROS_INFO_STREAM("acceleration_uav[1]= \n" << acceleration_uav[1]);
     // ROS_INFO_STREAM("acceleration_uav[2]= \n" << acceleration_uav[2]);
