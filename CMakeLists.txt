@@ -16,6 +16,8 @@ find_package(catkin REQUIRED COMPONENTS
   mrs_uav_trackers 
   message_generation
   genmsg
+  # additionally added by Titouan and Jonathan
+  eigen_conversions
   )
 
 add_message_files(FILES

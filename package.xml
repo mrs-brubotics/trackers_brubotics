@@ -28,8 +28,11 @@
   <depend>dynamic_reconfigure</depend>
   <!-- added by brubotics: -->
   <depend>std_msgs</depend>
+  <!-- added by Titouan and Jonathan: -->
+  <depend>eigen_conversions</depend>
   <!-- added by brubotics: -->
   <exec_depend>message_runtime</exec_depend>
+
 
   <export>
     <mrs_uav_managers plugin="${prefix}/plugins.xml" />

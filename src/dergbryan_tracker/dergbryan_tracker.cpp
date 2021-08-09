@@ -28,6 +28,8 @@
 
 /*begin includes added by Titouan and Jonathan:*/
 #include <std_msgs/Int32.h>
+#include <eigen_conversions/eigen_msg.h>
+#include <geometry_msgs/Point.h>
 /*end included added by Titouan and Jonathan*/
 
 
@@ -288,6 +290,7 @@ private:
   ros::Publisher derg_strategy_id_publisher_;
   ros::Publisher point_link_star_publisher_;
   std_msgs::Int32 DERG_strategy_id;
+  geometry_msgs::Pose point_link_star_;
   
   void callbackOtherUavAppliedRef(const mrs_msgs::FutureTrajectoryConstPtr& msg);
   void callbackOtherUavPosition(const mrs_msgs::FutureTrajectoryConstPtr& msg);
@@ -643,7 +646,7 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
 
   // added by Titouan and Jonathan
   derg_strategy_id_publisher_ = nh2_.advertise<std_msgs::Int32>("derg_strategy_id", 1);
-  point_link_star_publisher_ = nh2_.advertise<Eigen::Vector3d>("point_link_star", 1);
+  point_link_star_publisher_ = nh2_.advertise<geometry_msgs::Pose>("point_link_star", 1);
 
 
 
@@ -2765,6 +2768,9 @@ void DergbryanTracker::DERG_computation(){
       
     }
 
+  // added by Titouan and Jonathan
+  tf::pointEigenToMsg(point_link_star, point_link_star_.position);  // conversion from Eigen::Vector3d to geometry_msgs::Point
+
   }
 
   if (_DERG_strategy_id_ == 2) {
@@ -3646,7 +3652,7 @@ void DergbryanTracker::DERG_computation(){
   // added by Titouan and Jonathan
   DERG_strategy_id.data = _DERG_strategy_id_;
   derg_strategy_id_publisher_.publish(DERG_strategy_id);
-  point_link_star_publisher_.publish(point_link_star);
+  point_link_star_publisher_.publish(point_link_star_);
 
 }
 
