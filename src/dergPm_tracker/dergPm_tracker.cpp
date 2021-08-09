@@ -218,7 +218,14 @@
     geometry_msgs::PoseArray predicted_load_velocities_out; // array of predicted load velocities
     geometry_msgs::PoseArray predicted_load_accelerations_out; // array of predicted load accelerations
     geometry_msgs::PoseArray predicted_tension_force_out; // array of predicted tension forces
-    
+
+    geometry_msgs::PoseArray predicted_phi; // array of predicted tension forces
+    geometry_msgs::PoseArray predicted_theta; // array of predicted tension forces
+    geometry_msgs::PoseArray predicted_phi_dot; // array of predicted tension forces
+    geometry_msgs::PoseArray predicted_theta_dot; // array of predicted tension forces
+    geometry_msgs::PoseArray predicted_phi_dot_dot; // array of predicted tension forces
+    geometry_msgs::PoseArray predicted_theta_dot_dot; // array of predicted tension forces
+
     double dt_ = 0.010; // ERG sample time = controller sample time
     double custom_dt_ = 0.010;//0.001;//0.020; //0.010; // controller sampling time (in seconds) used in prediction
     double _pred_horizon_;//1.5//0.15;//1.5; //0.15; //1.5; //0.4; // prediction horizon (in seconds)
@@ -246,6 +253,13 @@
     ros::Publisher custom_predicted_load_vel_publisher;
     ros::Publisher custom_predicted_load_acc_publisher; 
     ros::Publisher custom_predicted_tension_force;
+
+    ros::Publisher custom_predicted_phi_publisher;
+    ros::Publisher custom_predicted_theta_publisher;
+    ros::Publisher custom_predicted_phi_dot_publisher;
+    ros::Publisher custom_predicted_theta_dot_publisher;
+    ros::Publisher custom_predicted_phi_dot_dot_publisher;
+    ros::Publisher custom_predicted_theta_dot_dot_publisher;
 
     // | ----------------- Thesis B ---------------- |
     ros::Publisher custom_publisher_tracker_load_pose;
@@ -711,7 +725,14 @@
     custom_predicted_load_vel_publisher = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_load_vels", 10);
     custom_predicted_load_acc_publisher = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_load_accs", 10);
     custom_predicted_tension_force = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_tension_force", 10);
-    
+
+    custom_predicted_phi_publisher = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_phi", 10);
+    custom_predicted_theta_publisher = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_theta", 10);
+    custom_predicted_phi_dot_publisher = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_phi_dot", 10);
+    custom_predicted_theta_dot_publisher = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_theta_dot", 10);
+    custom_predicted_phi_dot_dot_publisher = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_phi_dot_dot", 10);
+    custom_predicted_theta_dot_dot_publisher = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_theta_dot_dot", 10);
+
     future_trajectory_out_.stamp = ros::Time::now();
     future_trajectory_out_.uav_name = _uav_name_;
     future_trajectory_out_.priority = avoidance_this_uav_priority_;
@@ -1240,6 +1261,12 @@
     predicted_load_accelerations_out.poses.clear();
     predicted_tension_force_out.poses.clear();
 
+    predicted_phi.poses.clear();
+    predicted_theta.poses.clear();
+    predicted_phi_dot.poses.clear();
+    predicted_theta_dot.poses.clear();
+    predicted_phi_dot_dot.poses.clear();
+    predicted_theta_dot_dot.poses.clear();
     
   
   load_vel_time = ros::Time::now();;
@@ -1593,6 +1620,13 @@
   //predicted_load_accelerations_out.header.frame_id = uav_state_.header.frame_id;
   predicted_tension_force_out.header.stamp = ros::Time::now();
 
+  predicted_phi.header.stamp = ros::Time::now();
+  predicted_theta.header.stamp = ros::Time::now();
+  predicted_phi_dot.header.stamp = ros::Time::now();
+  predicted_theta_dot.header.stamp = ros::Time::now();
+  predicted_phi_dot_dot.header.stamp = ros::Time::now();
+  predicted_theta_dot_dot.header.stamp = ros::Time::now();
+
   geometry_msgs::Pose custom_pose;
   geometry_msgs::Pose custom_vel;
   geometry_msgs::Pose custom_acceleration;
@@ -1604,12 +1638,12 @@
   geometry_msgs::Pose predicted_attituderate;
   geometry_msgs::Pose custom_tension_force;
 
-  std_msgs::Float32 theta_load_to_publish;
-  std_msgs::Float32 phi_load_to_publish;
-  std_msgs::Float32 theta_dot_load_to_publish;
-  std_msgs::Float32 phi_dot_load_to_publish;
-  std_msgs::Float32 theta_dot_dot_load_to_publish;
-  std_msgs::Float32 phi_dot_dot_load_to_publish;
+  geometry_msgs::Pose theta_load_to_publish;
+  geometry_msgs::Pose phi_load_to_publish;
+  geometry_msgs::Pose theta_dot_load_to_publish;
+  geometry_msgs::Pose phi_dot_load_to_publish;
+  geometry_msgs::Pose theta_dot_dot_load_to_publish;
+  geometry_msgs::Pose phi_dot_dot_load_to_publish;
 
   // Thesis b: Test 06/08
 
@@ -1693,23 +1727,23 @@
       *((acceleration_load[1] - custom_acceleration.position.y)/cable_length); 
 
       // Thesis b: Test 06/08
-      theta_load_to_publish.data = theta_load_cable;
-      phi_load_to_publish.data = phi_load_cable;
-      theta_dot_load_to_publish.data = theta_dot_load_cable;
-      phi_dot_load_to_publish.data = phi_dot_load_cable;
-      theta_dot_dot_load_to_publish.data = theta_dot_dot_load_cable;
-      phi_dot_dot_load_to_publish.data = phi_dot_dot_load_cable;
+      // theta_load_to_publish.data = theta_load_cable;
+      // phi_load_to_publish.data = phi_load_cable;
+      // theta_dot_load_to_publish.data = theta_dot_load_cable;
+      // phi_dot_load_to_publish.data = phi_dot_load_cable;
+      // theta_dot_dot_load_to_publish.data = theta_dot_dot_load_cable;
+      // phi_dot_dot_load_to_publish.data = phi_dot_dot_load_cable;
       
-      publisher_theta_load_cable.publish(theta_load_to_publish);
-      publisher_phi_load_cable.publish(phi_load_to_publish);
-      publisher_theta_dot_load_cable.publish(theta_dot_load_to_publish);
-      publisher_phi_dot_load_cable.publish(phi_dot_load_to_publish);
-      publisher_theta_dot_dot_load_cable.publish(theta_dot_dot_load_to_publish);
-      publisher_phi_dot_dot_load_cable.publish(phi_dot_dot_load_to_publish);
-      publisher_uav_state_init.publish(uav_state);
-      publisher_load_position_init.publish(load_pose_position);
-      publisher_load_velocity_init.publish(custom_load_vel);
-      publisher_load_acceleration_init.publish(custom_load_acceleration);
+      // publisher_theta_load_cable.publish(theta_load_to_publish);
+      // publisher_phi_load_cable.publish(phi_load_to_publish);
+      // publisher_theta_dot_load_cable.publish(theta_dot_load_to_publish);
+      // publisher_phi_dot_load_cable.publish(phi_dot_load_to_publish);
+      // publisher_theta_dot_dot_load_cable.publish(theta_dot_dot_load_to_publish);
+      // publisher_phi_dot_dot_load_cable.publish(phi_dot_dot_load_to_publish);
+      // publisher_uav_state_init.publish(uav_state);
+      // publisher_load_position_init.publish(load_pose_position);
+      // publisher_load_velocity_init.publish(custom_load_vel);
+      // publisher_load_acceleration_init.publish(custom_load_acceleration);
       
     
     } 
@@ -1739,6 +1773,14 @@
 
       theta_load_cable = theta_load_cable + theta_dot_load_cable*custom_dt_;
       phi_load_cable = phi_load_cable + phi_dot_load_cable*custom_dt_;
+
+      theta_load_to_publish.position.x = theta_load_cable;
+      phi_load_to_publish.position.x = phi_load_cable;
+      theta_dot_load_to_publish.position.x = theta_dot_load_cable;
+      phi_dot_load_to_publish.position.x = phi_dot_load_cable;
+      theta_dot_dot_load_to_publish.position.x = theta_dot_dot_load_cable;
+      phi_dot_dot_load_to_publish.position.x = phi_dot_dot_load_cable;
+
       // ROS_INFO_STREAM("theta_dot_load_cable  = \n" << theta_dot_load_cable);
       // ROS_INFO_STREAM("phi_dot_load_cable  = \n" << phi_dot_load_cable);
       // ROS_INFO_STREAM("theta_load_cable  = \n" << theta_load_cable);
@@ -1837,6 +1879,13 @@
     predicted_load_poses_out.poses.push_back(custom_load_pose);
     predicted_load_velocities_out.poses.push_back(custom_load_vel);
     predicted_load_accelerations_out.poses.push_back(custom_load_acceleration);
+
+    predicted_phi.poses.push_back(phi_load_to_publish);
+    predicted_theta.poses.push_back(theta_load_to_publish);
+    predicted_phi_dot.poses.push_back(phi_dot_load_to_publish);
+    predicted_theta_dot.poses.push_back(theta_dot_load_to_publish);
+    predicted_phi_dot_dot.poses.push_back(phi_dot_dot_load_to_publish);
+    predicted_theta_dot_dot.poses.push_back(theta_dot_dot_load_to_publish);
     // ROS_INFO_STREAM("custom_load_pose \n" << custom_load_pose);
     // ROS_INFO_STREAM(" custom_load_vel \n" << custom_load_vel);
     // ROS_INFO_STREAM(" custom_load_acceleration \n" << custom_load_acceleration);
@@ -3099,6 +3148,42 @@
   }
   catch (...) {
     ROS_ERROR("[DergPmTracker]: Exception caught during publishing topic %s.", custom_publisher_tracker_uav_state.getTopic().c_str());
+  }
+  try {
+    custom_predicted_phi_publisher.publish(predicted_phi);
+  }
+  catch (...) {
+    ROS_ERROR("[DergPmTracker]: Exception caught during publishing topic %s.", custom_predicted_phi_publisher.getTopic().c_str());
+  }
+  try {
+    custom_predicted_theta_publisher.publish(predicted_theta);
+  }
+  catch (...) {
+    ROS_ERROR("[DergPmTracker]: Exception caught during publishing topic %s.", custom_predicted_theta_publisher.getTopic().c_str());
+  }
+  try {
+    custom_predicted_phi_dot_publisher.publish(predicted_phi_dot);
+  }
+  catch (...) {
+    ROS_ERROR("[DergPmTracker]: Exception caught during publishing topic %s.", custom_predicted_phi_dot_publisher.getTopic().c_str());
+  }
+  try {
+    custom_predicted_theta_dot_publisher.publish(predicted_theta_dot);
+  }
+  catch (...) {
+    ROS_ERROR("[DergPmTracker]: Exception caught during publishing topic %s.", custom_predicted_theta_dot_publisher.getTopic().c_str());
+  }
+  try {
+    custom_predicted_phi_dot_dot_publisher.publish(predicted_phi_dot_dot);
+  }
+  catch (...) {
+    ROS_ERROR("[DergPmTracker]: Exception caught during publishing topic %s.", custom_predicted_phi_dot_dot_publisher.getTopic().c_str());
+  }
+  try {
+    custom_predicted_theta_dot_dot_publisher.publish(predicted_theta_dot_dot);
+  }
+  catch (...) {
+    ROS_ERROR("[DergPmTracker]: Exception caught during publishing topic %s.", custom_predicted_theta_dot_dot_publisher.getTopic().c_str());
   }
 
   }
