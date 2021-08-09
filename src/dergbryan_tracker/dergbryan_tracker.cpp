@@ -26,6 +26,10 @@
 #include <geometry_msgs/Point.h>
 /*end includes added by bryan:*/
 
+/*begin includes added by Titouan and Jonathan:*/
+#include <std_msgs/Int32.h>
+/*end included added by Titouan and Jonathan*/
+
 
 // #include <mrs_lib/utils.h>
 // #include <mrs_lib/geometry/cyclic.h>
@@ -279,6 +283,12 @@ private:
   ros::Publisher avoidance_trajectory_publisher_;
   ros::Publisher avoidance_applied_ref_publisher_;
   ros::Publisher avoidance_pos_publisher_;
+
+  // added by Titouan and Jonathan
+  ros::Publisher derg_strategy_id_publisher_;
+  ros::Publisher point_link_star_publisher_;
+  std_msgs::Int32 DERG_strategy_id;
+  
   void callbackOtherUavAppliedRef(const mrs_msgs::FutureTrajectoryConstPtr& msg);
   void callbackOtherUavPosition(const mrs_msgs::FutureTrajectoryConstPtr& msg);
   std::map<std::string, mrs_msgs::FutureTrajectory> other_uavs_applied_references_;
@@ -631,6 +641,9 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   // future_trajectory_out_
   avoidance_trajectory_publisher_= nh2_.advertise<mrs_msgs::FutureTrajectory>("predicted_trajectory", 1);
 
+  // added by Titouan and Jonathan
+  derg_strategy_id_publisher_ = nh2_.advertise<std_msgs::Int32>("derg_strategy_id", 1);
+  point_link_star_publisher_ = nh2_.advertise<Eigen::Vector3d>("point_link_star", 1);
 
 
 
@@ -3629,6 +3642,11 @@ void DergbryanTracker::DERG_computation(){
     future_trajectory_out_.points.push_back(new_point);
   }
   avoidance_trajectory_publisher_.publish(future_trajectory_out_);
+
+  // added by Titouan and Jonathan
+  DERG_strategy_id.data = _DERG_strategy_id_;
+  derg_strategy_id_publisher_.publish(DERG_strategy_id);
+  point_link_star_publisher_.publish(point_link_star);
 
 }
 
