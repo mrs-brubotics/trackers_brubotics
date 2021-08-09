@@ -261,12 +261,12 @@
 
     // Thesis b: Test 06/08
 
-    // ros::Publisher publisher_theta_load_cable;
-    // ros::Publisher publisher_phi_load_cable;
-    // ros::Publisher publisher_theta_dot_load_cable;
-    // ros::Publisher publisher_phi_dot_load_cable;
-    // ros::Publisher publisher_theta_dot_dot_load_cable;
-    // ros::Publisher publisher_phi_dot_dot_load_cable;
+    ros::Publisher publisher_theta_load_cable;
+    ros::Publisher publisher_phi_load_cable;
+    ros::Publisher publisher_theta_dot_load_cable;
+    ros::Publisher publisher_phi_dot_load_cable;
+    ros::Publisher publisher_theta_dot_dot_load_cable;
+    ros::Publisher publisher_phi_dot_dot_load_cable;
 
     ros::Subscriber load_state_sub;
     geometry_msgs::Pose load_pose;
@@ -731,12 +731,12 @@
 
     // Thesis b: Test 06/08
 
-    // publisher_theta_load_cable   = nh2_.advertise<std_msgs::Float32>("theta_load_cable",10);
-    // publisher_phi_load_cable   = nh2_.advertise<std_msgs::Float32>("phi_load_cable",10);
-    // publisher_theta_dot_load_cable   = nh2_.advertise<std_msgs::Float32>("theta_dot_load_cable",10);
-    // publisher_phi_dot_load_cable   = nh2_.advertise<std_msgs::Float32>("phi_dot_load_cable",10);
-    // publisher_theta_dot_dot_load_cable   = nh2_.advertise<std_msgs::Float32>("theta_dot_dot_load_cable",10);
-    // publisher_phi_dot_dot_load_cable   = nh2_.advertise<std_msgs::Float32>("phi_dot_dot_load_cable",10);
+    publisher_theta_load_cable   = nh2_.advertise<std_msgs::Float32>("theta_load_cable",10);
+    publisher_phi_load_cable   = nh2_.advertise<std_msgs::Float32>("phi_load_cable",10);
+    publisher_theta_dot_load_cable   = nh2_.advertise<std_msgs::Float32>("theta_dot_load_cable",10);
+    publisher_phi_dot_load_cable   = nh2_.advertise<std_msgs::Float32>("phi_dot_load_cable",10);
+    publisher_theta_dot_dot_load_cable   = nh2_.advertise<std_msgs::Float32>("theta_dot_dot_load_cable",10);
+    publisher_phi_dot_dot_load_cable   = nh2_.advertise<std_msgs::Float32>("phi_dot_dot_load_cable",10);
 
     /*
     if (run_type == "simulation")
@@ -1662,12 +1662,12 @@
 
       theta_dot_dot_load_cable = (-1.0/2.0)*pow(1 - pow((load_pose_position.x - uav_state.pose.position.x)/cable_length,2.0),-3.0/2.0)
       *(-2.0)*((load_pose_position.x - uav_state.pose.position.x)/cable_length)
-      *((load_lin_vel[0] - uav_state.velocity.linear.x)/cable_length) 
+      *pow((load_lin_vel[0] - uav_state.velocity.linear.x)/cable_length,2.0) 
       + pow(1.0 - pow((load_pose_position.x - uav_state.pose.position.x)/cable_length,2.0),-1.0/2.0)
       *((acceleration_load[0] - custom_acceleration.position.x)/cable_length);
       phi_dot_dot_load_cable = (-1.0/2.0)*pow(1 - pow((load_pose_position.y - uav_state.pose.position.y)/cable_length,2.0),-3.0/2.0)
       *(-2.0)*((load_pose_position.y - uav_state.pose.position.y)/cable_length)
-      *((load_lin_vel[1] - uav_state.velocity.linear.y)/cable_length) 
+      *pow((load_lin_vel[1] - uav_state.velocity.linear.y)/cable_length,2.0) 
       + pow(1.0 - pow((load_pose_position.y - uav_state.pose.position.y)/cable_length,2.0),-1.0/2.0)
       *((acceleration_load[1] - custom_acceleration.position.y)/cable_length); 
 
@@ -1802,12 +1802,12 @@
     } 
 
     // Thesis b: Test 06/08
-    // publisher_theta_load_cable.publish(theta_load_cable);
-    // publisher_phi_load_cable.publish(phi_load_cable);
-    // publisher_theta_dot_load_cable.publish(theta_dot_load_cable);
-    // publisher_phi_dot_load_cable.publish(phi_dot_load_cable);
-    // publisher_theta_dot_dot_load_cable.publish(theta_dot_dot_load_cable);
-    // publisher_phi_dot_dot_load_cable.publish(phi_dot_dot_load_cable);
+    publisher_theta_load_cable.publish(theta_load_cable);
+    publisher_phi_load_cable.publish(phi_load_cable);
+    publisher_theta_dot_load_cable.publish(theta_dot_load_cable);
+    publisher_phi_dot_load_cable.publish(phi_dot_load_cable);
+    publisher_theta_dot_dot_load_cable.publish(theta_dot_dot_load_cable);
+    publisher_phi_dot_dot_load_cable.publish(phi_dot_dot_load_cable);
 
     predicted_poses_out.poses.push_back(custom_pose);
     predicted_velocities_out.poses.push_back(custom_vel);
