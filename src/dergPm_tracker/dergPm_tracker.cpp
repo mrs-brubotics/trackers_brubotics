@@ -227,7 +227,7 @@
     geometry_msgs::PoseArray predicted_theta_dot_dot; // array of predicted tension forces
 
     double dt_ = 0.010; // ERG sample time = controller sample time
-    double custom_dt_ = 0.010;//0.001;//0.020; //0.010; // controller sampling time (in seconds) used in prediction
+    double custom_dt_ = 0.01;//0.001;//0.020; //0.010; // controller sampling time (in seconds) used in prediction
     double _pred_horizon_;//1.5//0.15;//1.5; //0.15; //1.5; //0.4; // prediction horizon (in seconds)
     int num_pred_samples_;
     double load_vel_dt; //= 0.004;
@@ -1672,9 +1672,9 @@
       custom_vel.position.y = uav_state.velocity.linear.y;
       custom_vel.position.z = uav_state.velocity.linear.z;
 
-      custom_acceleration.position.x = uav_state.acceleration.linear.x;
-      custom_acceleration.position.y = uav_state.acceleration.linear.y;
-      custom_acceleration.position.z = uav_state.acceleration.linear.z;
+      // custom_acceleration.position.x = uav_state.acceleration.linear.x;
+      // custom_acceleration.position.y = uav_state.acceleration.linear.y;
+      // custom_acceleration.position.z = uav_state.acceleration.linear.z;
 
       // ROS_INFO_STREAM("uav_state.acceleration.l inear.z  = \n" << uav_state.acceleration.linear.z);
 
@@ -1701,9 +1701,34 @@
       custom_load_vel.position.y = load_lin_vel[1];
       custom_load_vel.position.z = load_lin_vel[2];
 
-      custom_load_acceleration.position.x = acceleration_load[0];
-      custom_load_acceleration.position.y = acceleration_load[1];
-      custom_load_acceleration.position.z = acceleration_load[2];
+      // if(abs(custom_vel.position.x) > 10.0){
+      //   custom_vel.position.x = 10.0;
+      // }else if(abs(custom_vel.position.y) > 10.0){
+      //   custom_vel.position.y = 10.0;
+      // }else if(abs(custom_vel.position.z) > 10.0){
+      //   custom_vel.position.z = 10.0;
+      // }
+      
+      // if(abs(custom_load_pose.position.x) > 10.0){
+      //   custom_load_pose.position.x = 10.0;
+      // }else if(abs(custom_load_pose.position.y) > 10.0){
+      //   custom_load_pose.position.y = 10.0;
+      // }else if(abs(custom_load_pose.position.z) > 10.0){
+      //   custom_load_pose.position.z = 10.0;
+      // }
+
+      // if(abs(custom_load_vel.position.x) > 10.0){
+      //   custom_load_vel.position.x = 10.0;
+      // }else if(abs(custom_load_vel.position.y) > 10.0){
+      //   custom_load_vel.position.y = 10.0;
+      // }else if(abs(custom_load_vel.position.z) > 10.0){
+      //   custom_load_vel.position.z = 10.0;
+      // }
+
+      // custom_load_acceleration.position.x = acceleration_load[0];
+      // custom_load_acceleration.position.y = acceleration_load[1];
+      // custom_load_acceleration.position.z = acceleration_load[2];
+
       // ROS_INFO_STREAM("custom_load_vel  = \n" << custom_load_vel);
 
       // Thesis b: Test 06/08
@@ -1715,24 +1740,24 @@
       phi_dot_load_cable = pow(1.0 - pow((load_pose_position.y - uav_state.pose.position.y)/cable_length,2.0),-1.0/2.0) 
       * ((load_lin_vel[1] - uav_state.velocity.linear.y)/cable_length); 
 
-      theta_dot_dot_load_cable = (-1.0/2.0)*pow(1 - pow((load_pose_position.x - uav_state.pose.position.x)/cable_length,2.0),-3.0/2.0)
-      *(-2.0)*((load_pose_position.x - uav_state.pose.position.x)/cable_length)
-      *pow((load_lin_vel[0] - uav_state.velocity.linear.x)/cable_length,2.0) 
-      + pow(1.0 - pow((load_pose_position.x - uav_state.pose.position.x)/cable_length,2.0),-1.0/2.0)
-      *((acceleration_load[0] - custom_acceleration.position.x)/cable_length);
-      phi_dot_dot_load_cable = (-1.0/2.0)*pow(1 - pow((load_pose_position.y - uav_state.pose.position.y)/cable_length,2.0),-3.0/2.0)
-      *(-2.0)*((load_pose_position.y - uav_state.pose.position.y)/cable_length)
-      *pow((load_lin_vel[1] - uav_state.velocity.linear.y)/cable_length,2.0) 
-      + pow(1.0 - pow((load_pose_position.y - uav_state.pose.position.y)/cable_length,2.0),-1.0/2.0)
-      *((acceleration_load[1] - custom_acceleration.position.y)/cable_length); 
+      // theta_dot_dot_load_cable = (-1.0/2.0)*pow(1 - pow((load_pose_position.x - uav_state.pose.position.x)/cable_length,2.0),-3.0/2.0)
+      // *(-2.0)*((load_pose_position.x - uav_state.pose.position.x)/cable_length)
+      // *pow((load_lin_vel[0] - uav_state.velocity.linear.x)/cable_length,2.0) 
+      // + pow(1.0 - pow((load_pose_position.x - uav_state.pose.position.x)/cable_length,2.0),-1.0/2.0)
+      // *((acceleration_load[0] - custom_acceleration.position.x)/cable_length);
+      // phi_dot_dot_load_cable = (-1.0/2.0)*pow(1 - pow((load_pose_position.y - uav_state.pose.position.y)/cable_length,2.0),-3.0/2.0)
+      // *(-2.0)*((load_pose_position.y - uav_state.pose.position.y)/cable_length)
+      // *pow((load_lin_vel[1] - uav_state.velocity.linear.y)/cable_length,2.0) 
+      // + pow(1.0 - pow((load_pose_position.y - uav_state.pose.position.y)/cable_length,2.0),-1.0/2.0)
+      // *((acceleration_load[1] - custom_acceleration.position.y)/cable_length); 
 
       // Thesis b: Test 06/08
-      // theta_load_to_publish.data = theta_load_cable;
-      // phi_load_to_publish.data = phi_load_cable;
-      // theta_dot_load_to_publish.data = theta_dot_load_cable;
-      // phi_dot_load_to_publish.data = phi_dot_load_cable;
-      // theta_dot_dot_load_to_publish.data = theta_dot_dot_load_cable;
-      // phi_dot_dot_load_to_publish.data = phi_dot_dot_load_cable;
+      theta_load_to_publish.position.x = theta_load_cable;
+      phi_load_to_publish.position.x = phi_load_cable;
+      theta_dot_load_to_publish.position.x = theta_dot_load_cable;
+      phi_dot_load_to_publish.position.x = phi_dot_load_cable;
+      theta_dot_dot_load_to_publish.position.x = theta_dot_dot_load_cable;
+      phi_dot_dot_load_to_publish.position.x = phi_dot_dot_load_cable;
       
       // publisher_theta_load_cable.publish(theta_load_to_publish);
       // publisher_phi_load_cable.publish(phi_load_to_publish);
@@ -1766,6 +1791,8 @@
 
       uav_state.pose.position.z = uav_state.pose.position.z + uav_state.velocity.linear.z*custom_dt_;
       custom_pose.position.z = uav_state.pose.position.z;
+
+      // ROS_INFO_STREAM("uav_state.pose.position  = \n" << uav_state.pose.position);
  
       //Thesis B: Step 4: calculate the predicted load state
       theta_dot_load_cable = theta_dot_load_cable + theta_dot_dot_load_cable*custom_dt_;
@@ -1773,6 +1800,13 @@
 
       theta_load_cable = theta_load_cable + theta_dot_load_cable*custom_dt_;
       phi_load_cable = phi_load_cable + phi_dot_load_cable*custom_dt_;
+
+      // ROS_INFO_STREAM("theta_load_cable  = \n" << theta_load_cable);
+      // ROS_INFO_STREAM("phi_load_cable  = \n" << phi_load_cable);
+      // ROS_INFO_STREAM("theta_dot_load_cable  = \n" << theta_dot_load_cable);
+      // ROS_INFO_STREAM("phi_dot_load_cable  = \n" << phi_dot_load_cable);
+      // ROS_INFO_STREAM("theta_dot_dot_load_cable  = \n" << theta_dot_dot_load_cable);
+      // ROS_INFO_STREAM("phi_dot_dot_load_cable  = \n" << phi_dot_dot_load_cable);
 
       theta_load_to_publish.position.x = theta_load_cable;
       phi_load_to_publish.position.x = phi_load_cable;
@@ -1788,8 +1822,9 @@
 
       load_pose_position.x = sin(theta_load_cable)*cable_length + uav_state.pose.position.x; 
       load_pose_position.y = sin(phi_load_cable)*cable_length + uav_state.pose.position.y; 
-      load_pose_position.z = -sqrt(pow(cable_length,2.0)-pow(load_pose_position.x-uav_state.pose.position.x,2.0)
-      -pow(load_pose_position.y-uav_state.pose.position.y,2.0)) + uav_state.pose.position.z; 
+      load_pose_position.z = uav_state.pose.position.z - cable_length*cos(phi_load_cable)*cos(theta_load_cable);
+      // load_pose_position.z = -sqrt(pow(cable_length,2.0)-pow(load_pose_position.x-uav_state.pose.position.x,2.0)
+      // -pow(load_pose_position.y-uav_state.pose.position.y,2.0)) + uav_state.pose.position.z; 
       // ROS_INFO_STREAM("load_pose_position  = \n" << load_pose_position);
 
       custom_load_pose.position.x = load_pose_position.x;
@@ -1800,11 +1835,13 @@
 
       load_lin_vel[1] = cos(phi_load_cable)*cable_length*phi_dot_load_cable + uav_state.velocity.linear.y; 
 
-      load_lin_vel[2] = (1.0/2.0)*pow(pow(cable_length,2.0)-pow(load_pose_position.x-uav_state.pose.position.x,2.0)
-      -pow(load_pose_position.y-uav_state.pose.position.y,2.0),-1.0/2.0)
-      *(-2.0*(load_pose_position.x-uav_state.pose.position.x)*(load_lin_vel[0]-uav_state.velocity.linear.x) 
-      - 2.0*(load_pose_position.y-uav_state.pose.position.y)*(load_lin_vel[1]-uav_state.velocity.linear.y)) 
-      + uav_state.velocity.linear.z; 
+      load_lin_vel[2] = uav_state.velocity.linear.z + cable_length*(sin(phi_load_cable)*phi_dot_load_cable*cos(theta_load_cable) 
+      + cos(phi_load_cable)*sin(theta_load_cable)*theta_dot_load_cable);
+      // load_lin_vel[2] = (1.0/2.0)*pow(pow(cable_length,2.0)-pow(load_pose_position.x-uav_state.pose.position.x,2.0)
+      // -pow(load_pose_position.y-uav_state.pose.position.y,2.0),-1.0/2.0)
+      // *(-2.0*(load_pose_position.x-uav_state.pose.position.x)*(load_lin_vel[0]-uav_state.velocity.linear.x) 
+      // - 2.0*(load_pose_position.y-uav_state.pose.position.y)*(load_lin_vel[1]-uav_state.velocity.linear.y)) 
+      // + uav_state.velocity.linear.z; 
 
       custom_load_vel.position.x = load_lin_vel[0];
       custom_load_vel.position.y = load_lin_vel[1];
@@ -1816,17 +1853,21 @@
       acceleration_load[1] = -sin(phi_load_cable)*cable_length*pow(phi_dot_load_cable,2.0) 
       + cos(phi_load_cable)*cable_length*phi_dot_dot_load_cable + custom_acceleration.position.y;
 
-      acceleration_load[2] = (-1.0/4.0)*pow(pow(cable_length,2.0)-pow(load_pose_position.x-uav_state.pose.position.x,2.0)
-      -pow(load_pose_position.y-uav_state.pose.position.y,2.0),-3.0/2.0)
-      *pow((-2.0*(load_pose_position.x-uav_state.pose.position.x)*(load_lin_vel[0]-uav_state.velocity.linear.x) 
-      - 2*(load_pose_position.y-uav_state.pose.position.y)*(load_lin_vel[1]-uav_state.velocity.linear.y)),2.0)
-      + (1.0/2.0)*pow(pow(cable_length,2.0)-pow(load_pose_position.x-uav_state.pose.position.x,2)
-      -pow(load_pose_position.y-uav_state.pose.position.y,2.0),-1.0/2.0)
-      *(-2.0*pow((load_lin_vel[0]-uav_state.velocity.linear.x),2.0) 
-      - 2.0*(load_pose_position.x-uav_state.pose.position.x)*(acceleration_load[0]-custom_acceleration.position.x) 
-      -2.0*pow((load_lin_vel[1]-uav_state.velocity.linear.y),2.0) - 2.0*(load_pose_position.y-uav_state.pose.position.y)
-      *(acceleration_load[1]-custom_acceleration.position.y)) + custom_acceleration.position.z;  
-                              //1,3 and 5 = 0    
+      acceleration_load[2] = custom_acceleration.position.z + cable_length*((pow(phi_dot_load_cable,2.0) + pow(theta_dot_load_cable,2.0)) * (cos(theta_load_cable)*cos(phi_load_cable))
+      - 2*sin(phi_load_cable)*sin(theta_load_cable)*theta_dot_load_cable*phi_dot_load_cable + cos(theta_load_cable)*sin(phi_load_cable)*phi_dot_dot_load_cable
+      + cos(phi_load_cable)*sin(theta_load_cable)*theta_dot_dot_load_cable);
+
+      // acceleration_load[2] = (-1.0/4.0)*pow(pow(cable_length,2.0)-pow(load_pose_position.x-uav_state.pose.position.x,2.0)
+      // -pow(load_pose_position.y-uav_state.pose.position.y,2.0),-3.0/2.0)
+      // *pow((-2.0*(load_pose_position.x-uav_state.pose.position.x)*(load_lin_vel[0]-uav_state.velocity.linear.x) 
+      // - 2*(load_pose_position.y-uav_state.pose.position.y)*(load_lin_vel[1]-uav_state.velocity.linear.y)),2.0)
+      // + (1.0/2.0)*pow(pow(cable_length,2.0)-pow(load_pose_position.x-uav_state.pose.position.x,2)
+      // -pow(load_pose_position.y-uav_state.pose.position.y,2.0),-1.0/2.0)
+      // *(-2.0*pow((load_lin_vel[0]-uav_state.velocity.linear.x),2.0) 
+      // - 2.0*(load_pose_position.x-uav_state.pose.position.x)*(acceleration_load[0]-custom_acceleration.position.x) 
+      // -2.0*pow((load_lin_vel[1]-uav_state.velocity.linear.y),2.0) - 2.0*(load_pose_position.y-uav_state.pose.position.y)
+      // *(acceleration_load[1]-custom_acceleration.position.y)) + custom_acceleration.position.z;  
+
 
       custom_load_acceleration.position.x = acceleration_load[0];
       custom_load_acceleration.position.y = acceleration_load[1];
@@ -2247,9 +2288,6 @@
 
 
     // predicted_thrust_norm.position.x = sqrt(f[0]*f[0]+f[1]*f[1]+f[2]*f[2]); // change later to a non vec type
-
-
-
 
     // old closed loop predictions
     // custom_acceleration.position.x = kpxy_*(position_cmd.position.x-custom_pose.position.x)-kvxy_*custom_vel.position.x;
