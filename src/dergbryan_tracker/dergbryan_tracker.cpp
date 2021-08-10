@@ -292,7 +292,7 @@ private:
   ros::Publisher sa_max_publisher_;
   ros::Publisher sa_perp_max_publisher_;
   std_msgs::Int32 DERG_strategy_id;
-  std_msgs::Int32 Sa_max;
+  std_msgs::Int32 Sa_max_;
   std_msgs::Int32 Sa_perp_max;
   geometry_msgs::Pose point_link_star_;
   
@@ -3120,7 +3120,7 @@ void DergbryanTracker::DERG_computation(){
 
   // added by Titouan and Jonathan
   tf::pointEigenToMsg(point_link_star, point_link_star_.position);  // conversion from Eigen::Vector3d to geometry_msgs::Point
-  
+
   }
 
     if (_DERG_strategy_id_ == 4) {
@@ -3671,9 +3671,9 @@ void DergbryanTracker::DERG_computation(){
   DERG_strategy_id.data = _DERG_strategy_id_;
   derg_strategy_id_publisher_.publish(DERG_strategy_id);
   point_link_star_publisher_.publish(point_link_star_);
-  Sa_max.data= _Sa_max_;
-  sa_max_publisher_.publish(Sa_max);
-  Sa_perp_max.data= _Sa_perp_max_;
+  Sa_max_.data = _Sa_max_;
+  sa_max_publisher_.publish(Sa_max_);
+  Sa_perp_max.data = _Sa_perp_max_;
   sa_perp_max_publisher_.publish(Sa_perp_max);
 
 }
