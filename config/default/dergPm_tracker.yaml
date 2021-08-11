@@ -10,7 +10,7 @@ constraints:
     # max thrust can be changed via _thrust_saturation_ ratio [0, 1] in the se3_brubotics.yaml
     extra_saturation_ratio: 0.92 #0.90 # ratio [0, 1] allows some overshoot over the hard thrust limit _thrust_saturation_ to reduce the chance of triggering the emergency controller after 1s of saturation
 prediction:
-  horizon: 0.8 #2.0 #3.0 #[s]
+  horizon: 1.5 #2.0 #3.0 #[s]
 
 
   
