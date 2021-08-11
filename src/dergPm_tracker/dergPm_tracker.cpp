@@ -1672,12 +1672,6 @@
       custom_vel.position.y = uav_state.velocity.linear.y;
       custom_vel.position.z = uav_state.velocity.linear.z;
 
-      // custom_acceleration.position.x = uav_state.acceleration.linear.x;
-      // custom_acceleration.position.y = uav_state.acceleration.linear.y;
-      // custom_acceleration.position.z = uav_state.acceleration.linear.z;
-
-      // ROS_INFO_STREAM("uav_state.acceleration.l inear.z  = \n" << uav_state.acceleration.linear.z);
-
       // R - current uav attitude
       R = mrs_lib::AttitudeConverter(uav_state.pose.orientation);
       //R = Eigen::Matrix3d::Identity(3, 3); // fake attitude
@@ -1689,46 +1683,15 @@
       // ROS_INFO_STREAM("Ow (i=0) = \n" << Ow);
 
       // Thesis B: Step 2: initialize the custom load predictions for the first iteration
-      // ROS_INFO_STREAM("load_pose_position  = \n" << load_pose_position);
 
       custom_load_pose.position.x = load_pose_position.x;
       custom_load_pose.position.y = load_pose_position.y;
       custom_load_pose.position.z = load_pose_position.z;
-
       // ROS_INFO_STREAM("load_pose_position.z = \n" << load_pose_position.z);
 
       custom_load_vel.position.x = load_lin_vel[0];
       custom_load_vel.position.y = load_lin_vel[1];
       custom_load_vel.position.z = load_lin_vel[2];
-
-      // if(abs(custom_vel.position.x) > 10.0){
-      //   custom_vel.position.x = 10.0;
-      // }else if(abs(custom_vel.position.y) > 10.0){
-      //   custom_vel.position.y = 10.0;
-      // }else if(abs(custom_vel.position.z) > 10.0){
-      //   custom_vel.position.z = 10.0;
-      // }
-      
-      // if(abs(custom_load_pose.position.x) > 10.0){
-      //   custom_load_pose.position.x = 10.0;
-      // }else if(abs(custom_load_pose.position.y) > 10.0){
-      //   custom_load_pose.position.y = 10.0;
-      // }else if(abs(custom_load_pose.position.z) > 10.0){
-      //   custom_load_pose.position.z = 10.0;
-      // }
-
-      // if(abs(custom_load_vel.position.x) > 10.0){
-      //   custom_load_vel.position.x = 10.0;
-      // }else if(abs(custom_load_vel.position.y) > 10.0){
-      //   custom_load_vel.position.y = 10.0;
-      // }else if(abs(custom_load_vel.position.z) > 10.0){
-      //   custom_load_vel.position.z = 10.0;
-      // }
-
-      // custom_load_acceleration.position.x = acceleration_load[0];
-      // custom_load_acceleration.position.y = acceleration_load[1];
-      // custom_load_acceleration.position.z = acceleration_load[2];
-
       // ROS_INFO_STREAM("custom_load_vel  = \n" << custom_load_vel);
 
       // Thesis b: Test 06/08
@@ -1740,37 +1703,11 @@
       phi_dot_load_cable = pow(1.0 - pow((load_pose_position.y - uav_state.pose.position.y)/cable_length,2.0),-1.0/2.0) 
       * ((load_lin_vel[1] - uav_state.velocity.linear.y)/cable_length); 
 
-      // theta_dot_dot_load_cable = (-1.0/2.0)*pow(1 - pow((load_pose_position.x - uav_state.pose.position.x)/cable_length,2.0),-3.0/2.0)
-      // *(-2.0)*((load_pose_position.x - uav_state.pose.position.x)/cable_length)
-      // *pow((load_lin_vel[0] - uav_state.velocity.linear.x)/cable_length,2.0) 
-      // + pow(1.0 - pow((load_pose_position.x - uav_state.pose.position.x)/cable_length,2.0),-1.0/2.0)
-      // *((acceleration_load[0] - custom_acceleration.position.x)/cable_length);
-      // phi_dot_dot_load_cable = (-1.0/2.0)*pow(1 - pow((load_pose_position.y - uav_state.pose.position.y)/cable_length,2.0),-3.0/2.0)
-      // *(-2.0)*((load_pose_position.y - uav_state.pose.position.y)/cable_length)
-      // *pow((load_lin_vel[1] - uav_state.velocity.linear.y)/cable_length,2.0) 
-      // + pow(1.0 - pow((load_pose_position.y - uav_state.pose.position.y)/cable_length,2.0),-1.0/2.0)
-      // *((acceleration_load[1] - custom_acceleration.position.y)/cable_length); 
-
       // Thesis b: Test 06/08
       theta_load_to_publish.position.x = theta_load_cable;
       phi_load_to_publish.position.x = phi_load_cable;
       theta_dot_load_to_publish.position.x = theta_dot_load_cable;
       phi_dot_load_to_publish.position.x = phi_dot_load_cable;
-      theta_dot_dot_load_to_publish.position.x = theta_dot_dot_load_cable;
-      phi_dot_dot_load_to_publish.position.x = phi_dot_dot_load_cable;
-      
-      // publisher_theta_load_cable.publish(theta_load_to_publish);
-      // publisher_phi_load_cable.publish(phi_load_to_publish);
-      // publisher_theta_dot_load_cable.publish(theta_dot_load_to_publish);
-      // publisher_phi_dot_load_cable.publish(phi_dot_load_to_publish);
-      // publisher_theta_dot_dot_load_cable.publish(theta_dot_dot_load_to_publish);
-      // publisher_phi_dot_dot_load_cable.publish(phi_dot_dot_load_to_publish);
-      // publisher_uav_state_init.publish(uav_state);
-      // publisher_load_position_init.publish(load_pose_position);
-      // publisher_load_velocity_init.publish(custom_load_vel);
-      // publisher_load_acceleration_init.publish(custom_load_acceleration);
-      
-    
     } 
     else{
       // TODO: in control predictions define custom_acceleration also via uav_state
