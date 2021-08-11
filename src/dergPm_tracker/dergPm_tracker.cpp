@@ -272,7 +272,8 @@
     ros::Publisher custom_publisher_load_velocity_error;
     ros::Publisher custom_publisher_tension_force;
     ros::Publisher custom_publisher_tracker_load_acceleration;
-
+    ros::Publisher custom_publisher_pos_difference_x;
+    ros::Publisher custom_publisher_pos_difference_y;
     // Thesis b: Test 06/08
 
     ros::Publisher publisher_theta_load_cable;
@@ -753,6 +754,8 @@
     custom_publisher_tracker_load_old_vel   = nh2_.advertise<geometry_msgs::Vector3>("tracker_load_old_vel",10);
     custom_publisher_tension_force = nh2_.advertise<geometry_msgs::Pose>("tracker_custom_tension_force",10);
     custom_publisher_tracker_load_acceleration = nh2_.advertise<geometry_msgs::Vector3>("tracker_custom_tracker_load_acceleration",10);
+    // custom_publisher_pos_difference_x   = nh2_.advertise<std_msgs::Float32>("pos_difference_x",10);
+    // custom_publisher_pos_difference_y   = nh2_.advertise<std_msgs::Float32>("pos_difference_y",10);
 
     // Thesis b: Test 06/08
 
@@ -1653,6 +1656,9 @@
   double phi_dot_load_cable;  
   double theta_dot_dot_load_cable;
   double phi_dot_dot_load_cable;
+
+  std_msgs::Float32 pos_difference_x;
+  std_msgs::Float32 pos_difference_y;
   
 
   Eigen::Matrix3d R;
@@ -1693,6 +1699,11 @@
       custom_load_vel.position.y = load_lin_vel[1];
       custom_load_vel.position.z = load_lin_vel[2];
       // ROS_INFO_STREAM("custom_load_vel  = \n" << custom_load_vel);
+      
+      //pos_difference_x.data = load_pose_position.x - uav_state.pose.position.x;
+      //pos_difference_y.data = load_pose_position.y - uav_state.pose.position.y;
+      // custom_publisher_pos_difference_x.publish(pos_difference_x);
+      // custom_publisher_pos_difference_y.publish(pos_difference_y);
 
       // Thesis b: Test 06/08
       theta_load_cable = asin((load_pose_position.x - uav_state.pose.position.x)/cable_length); 
