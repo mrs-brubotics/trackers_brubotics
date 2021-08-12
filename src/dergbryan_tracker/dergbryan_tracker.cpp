@@ -7,9 +7,9 @@
 #include <mrs_lib/param_loader.h>
 #include <mrs_lib/subscribe_handler.h>
 #include <mrs_lib/mutex.h>
-#include <stack>
-#include <ctime>
-#include <iostream>
+// #include <stack>
+// #include <ctime>
+// #include <iostream>
 /*begin includes added by bryan:*/
 #include <mrs_lib/attitude_converter.h>
 #include <geometry_msgs/PoseArray.h>
@@ -122,7 +122,7 @@ private:
   std::mutex                    mutex_constraints_;
   bool                          got_constraints_ = false;
 
-  std::stack<clock_t> tictoc_stack;
+  // std::stack<clock_t> tictoc_stack;
 
   // | ---------- thrust generation and mass estimation --------- |
 
@@ -1053,10 +1053,10 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
     position_cmd.position.y     = applied_ref_y_;
     position_cmd.position.z     = applied_ref_z_;
     position_cmd.heading        = goal_heading_;
-    tictoc_stack.push(clock());
+    // tictoc_stack.push(clock());
     trajectory_prediction_general(position_cmd, uav_heading, last_attitude_cmd);
-    ROS_INFO_STREAM("Prediction calculation took = \n "<< (double)(clock()- tictoc_stack.top())/CLOCKS_PER_SEC << "seconds.");
-    tictoc_stack.pop();
+    // ROS_INFO_STREAM("Prediction calculation took = \n "<< (double)(clock()- tictoc_stack.top())/CLOCKS_PER_SEC << "seconds.");
+    // tictoc_stack.pop();
     DERG_computation(); // modifies the applied reference
     position_cmd.position.x     = applied_ref_x_;
     position_cmd.position.y     = applied_ref_y_;
@@ -2405,16 +2405,24 @@ void DergbryanTracker::DERG_computation(){
   //                 | Navigation Field (NF) + Dynamic Safety Margin|
   //                  **********************************************
   // | -------------------------- attraction field -------------------------------|
-
+  MatrixXd NF_att   = MatrixXd::Zero(3, 1); // attraction field
+  MatrixXd ref_dist = MatrixXd::Zero(3, 1); // difference between target reference r and applied reference v
+  ref_dist(0) = goal_x_ - applied_ref_x_;
+  ref_dist(1) = goal_y_ - applied_ref_y_;
+  ref_dist(2) = goal_z_ - applied_ref_z_;
+  double norm_ref_dist = sqrt(pow(ref_dist(0), 2) + pow(ref_dist(1), 2)+ pow(ref_dist(2), 2));
+  NF_att = ref_dist/std::max(norm_ref_dist, _eta_);
   // | ------------------------ control input constraints ----------------------- |
   
-  MatrixXd NF_a_co  = MatrixXd::Zero(3, 1); // conservative part
-  MatrixXd NF_a_nco = MatrixXd::Zero(3, 1); // non-conservative part
-  MatrixXd NF_w = MatrixXd::Zero(3,1);
-  MatrixXd NF_o = MatrixXd::Zero(3,1);
-  MatrixXd NF_o_co = MatrixXd::Zero(3,1);
-  MatrixXd NF_o_nco = MatrixXd::Zero(3,1);
-  tictoc_stack.push(clock());
+  // MatrixXd NF_a_co  = MatrixXd::Zero(3, 1); // conservative part
+  // MatrixXd NF_a_nco = MatrixXd::Zero(3, 1); // non-conservative part
+  // MatrixXd NF_w = MatrixXd::Zero(3,1);
+  // MatrixXd NF_o = MatrixXd::Zero(3,1);
+  // MatrixXd NF_o_co = MatrixXd::Zero(3,1);
+  // MatrixXd NF_o_nco = MatrixXd::Zero(3,1);
+  // tictoc_stack.push(clock());
+
+
   // TODO: predicted_thrust_out.poses is not good programming for a scalar. Maybe try using Class: Std_msgs::Float32MultiArray and test plot still work
   double diff_T = thrust_saturation_physical_; // initialization at the highest possible positive difference value
   // ROS_INFO_STREAM("thrust_saturation_physical_ = \n" << thrust_saturation_physical_);
@@ -2431,10 +2439,38 @@ void DergbryanTracker::DERG_computation(){
   DSM_s_ = _kappa_s_*diff_T/(0.5*(thrust_saturation_physical_ - _T_min_)); // scaled DSM in _kappa_s_*[0, 1] from the average between the lower and upper limit to the respective limits
   //ROS_INFO_STREAM("DSM_s_ = \n" << DSM_s_);
   // | --------------------------- repulsion fields ------------------------------|  
-  
-  MatrixXd NF_att   = MatrixXd::Zero(3, 1); // attraction field
-  
+  MatrixXd NF_a_co  = MatrixXd::Zero(3, 1); // conservative part
+  MatrixXd NF_a_nco = MatrixXd::Zero(3, 1); // non-conservative part
+  MatrixXd NF_w = MatrixXd::Zero(3,1);
+  MatrixXd NF_o = MatrixXd::Zero(3,1);
+  MatrixXd NF_o_co = MatrixXd::Zero(3,1);
+  MatrixXd NF_o_nco = MatrixXd::Zero(3,1);
+  //Frank : Add NF_o_co, NF_o_nco, NF_w AND/Reactivate the lines below
+  //Frank : How to code such that differents obstacles are treated the right way ? Back then it worked pretty well but how boutnow ? Check with 1 first then see
+
+  // | --------------------------- repulsion walls -------------------------------|
+  double max_repulsion_wall1;
+  //float arm_radius=0.325; // radius of the quadrotor
   _d_w_(1,0) = wall_p_x - arm_radius;
+  max_repulsion_wall1= (_zeta_w_-(abs(_d_w_(1,0)-applied_ref_x_)))/(_zeta_w_-_delta_w_);
+  if (0 > max_repulsion_wall1){
+  max_repulsion_wall1=0;
+  }
+  NF_w(0,0)=-max_repulsion_wall1;
+  NF_w(1,0)=0;
+  NF_w(2,0)=0;
+
+
+
+  c_w(0,0)=1;
+  c_w(1,0)=0;
+  c_w(2,0)=0;
+
+
+  
+  // MatrixXd NF_att   = MatrixXd::Zero(3, 1); // attraction field
+  
+  // _d_w_(1,0) = wall_p_x - arm_radius;
   min_wall_distance= abs(_d_w_(1,0) - predicted_poses_out.poses[0].position.x);//custom_trajectory_out.poses[0].position.x);
   for (size_t i = 0; i < num_pred_samples_; i++) {
     if (abs(_d_w_(1,0) - predicted_poses_out.poses[i].position.x) < min_wall_distance){
@@ -2445,7 +2481,36 @@ void DergbryanTracker::DERG_computation(){
   ROS_INFO_STREAM("DSM_w_ = \n" << DSM_w_);
   // | ----------------------- repulsion static obstacles ------------------------|
   // Conservative part
+  MatrixXd dist_ref_obs_ = MatrixXd::Zero(4, 1);
+  MatrixXd dist_obs_ = MatrixXd::Zero(4, 1); //Frank : 3x1 vector of position with  4th element being the norm
+  double max_repulsion_obs1; 
+  double min_obs_distance; 
+  dist_ref_obs_(0)=obs_position(0,0)-applied_ref_x_; // x distance between v and obstacle 1
+  dist_ref_obs_(1)=obs_position(1,0)-applied_ref_y_; // y distance between v and obstacle 1
+  dist_ref_obs_(3)=sqrt(dist_ref_obs_(0)*dist_ref_obs_(0)+dist_ref_obs_(1)*dist_ref_obs_(1));
 
+  max_repulsion_obs1=arm_radius+(_zeta_o_-(dist_ref_obs_(3)-R_o_))/(_zeta_o_-_delta_o_); //Frank : Added the arm radius to add a safety around the cylinder
+  if (0>max_repulsion_obs1) {
+  max_repulsion_obs1=0;
+  }
+
+  NF_o_co(0,0)=-(max_repulsion_obs1*(dist_ref_obs_(0)/dist_ref_obs_(3)));
+  NF_o_co(1,0)=-(max_repulsion_obs1*(dist_ref_obs_(1)/dist_ref_obs_(3)));
+  NF_o_co(2,0)=0;
+
+  // Non-conservative part
+  NF_o_nco(2,0)=0;
+  if (_zeta_o_>=dist_ref_obs_(3)-R_o_) {
+  NF_o_nco(0,0)=_alpha_o_*(dist_ref_obs_(1)/dist_ref_obs_(3));
+  NF_o_nco(1,0)=-_alpha_o_*(dist_ref_obs_(0)/dist_ref_obs_(3));
+  } else {
+  NF_o_nco(0,0)=0;
+  NF_o_nco(1,0)=0;
+  }
+  // Both combined
+  NF_o(0,0)=NF_o_co(0,0)+NF_o_nco(0,0);
+  NF_o(1,0)=NF_o_co(1,0)+NF_o_nco(1,0);
+  NF_o(2,0)=NF_o_co(2,0)+NF_o_nco(2,0);
   
   //DSM_o_ computation
   //// Frank: Implement this and see if it changes the performances or not
@@ -2481,10 +2546,10 @@ void DergbryanTracker::DERG_computation(){
   //      DSM_a_ = DSM_a_temp;
   //    }
 
-  MatrixXd dist_ref_obs_ = MatrixXd::Zero(4, 1);
-  MatrixXd dist_obs_ = MatrixXd::Zero(4, 1); //Frank : 3x1 vector of position with  4th element being the norm
-  double max_repulsion_obs1; 
-  double min_obs_distance;
+  // MatrixXd dist_ref_obs_ = MatrixXd::Zero(4, 1);
+  // MatrixXd dist_obs_ = MatrixXd::Zero(4, 1); //Frank : 3x1 vector of position with  4th element being the norm
+  // double max_repulsion_obs1; 
+  // double min_obs_distance;
 
 
   dist_obs_(0)=predicted_poses_out.poses[0].position.x-obs_position(0,0);
@@ -2508,65 +2573,65 @@ void DergbryanTracker::DERG_computation(){
   if (_DERG_strategy_id_ == 0) {
     /* D-ERG strategy 0
     */
-  ROS_INFO_STREAM("DSM o, s, and w calculation took = \n "<< (double)(clock()- tictoc_stack.top())/CLOCKS_PER_SEC << "seconds.");
-  tictoc_stack.pop();
-  tictoc_stack.push(clock());
-  MatrixXd ref_dist = MatrixXd::Zero(3, 1); // difference between target reference r and applied reference v
-  ref_dist(0) = goal_x_ - applied_ref_x_;
-  ref_dist(1) = goal_y_ - applied_ref_y_;
-  ref_dist(2) = goal_z_ - applied_ref_z_;
-  double norm_ref_dist = sqrt(pow(ref_dist(0), 2) + pow(ref_dist(1), 2)+ pow(ref_dist(2), 2));
-  NF_att = ref_dist/std::max(norm_ref_dist, _eta_);
+  // ROS_INFO_STREAM("DSM o, s, and w calculation took = \n "<< (double)(clock()- tictoc_stack.top())/CLOCKS_PER_SEC << "seconds.");
+  // tictoc_stack.pop();
+  // tictoc_stack.push(clock());
+  // MatrixXd ref_dist = MatrixXd::Zero(3, 1); // difference between target reference r and applied reference v
+  // ref_dist(0) = goal_x_ - applied_ref_x_;
+  // ref_dist(1) = goal_y_ - applied_ref_y_;
+  // ref_dist(2) = goal_z_ - applied_ref_z_;
+  // double norm_ref_dist = sqrt(pow(ref_dist(0), 2) + pow(ref_dist(1), 2)+ pow(ref_dist(2), 2));
+  // NF_att = ref_dist/std::max(norm_ref_dist, _eta_);
 
-  //Frank : Add NF_o_co, NF_o_nco, NF_w AND/Reactivate the lines below
-  //Frank : How to code such that differents obstacles are treated the right way ? Back then it worked pretty well but how boutnow ? Check with 1 first then see
+  // //Frank : Add NF_o_co, NF_o_nco, NF_w AND/Reactivate the lines below
+  // //Frank : How to code such that differents obstacles are treated the right way ? Back then it worked pretty well but how boutnow ? Check with 1 first then see
 
-  // | --------------------------- repulsion walls -------------------------------|
-  double max_repulsion_wall1;
-  //float arm_radius=0.325; // radius of the quadrotor
+  // // | --------------------------- repulsion walls -------------------------------|
+  // double max_repulsion_wall1;
+  // //float arm_radius=0.325; // radius of the quadrotor
   
-  max_repulsion_wall1= (_zeta_w_-(abs(_d_w_(1,0)-applied_ref_x_)))/(_zeta_w_-_delta_w_);
-  if (0 > max_repulsion_wall1){
-  max_repulsion_wall1=0;
-  }
-  NF_w(0,0)=-max_repulsion_wall1;
-  NF_w(1,0)=0;
-  NF_w(2,0)=0;
+  // max_repulsion_wall1= (_zeta_w_-(abs(_d_w_(1,0)-applied_ref_x_)))/(_zeta_w_-_delta_w_);
+  // if (0 > max_repulsion_wall1){
+  // max_repulsion_wall1=0;
+  // }
+  // NF_w(0,0)=-max_repulsion_wall1;
+  // NF_w(1,0)=0;
+  // NF_w(2,0)=0;
  
   
 
-  c_w(0,0)=1;
-  c_w(1,0)=0;
-  c_w(2,0)=0;
+  // c_w(0,0)=1;
+  // c_w(1,0)=0;
+  // c_w(2,0)=0;
 
 
  
-  dist_ref_obs_(0)=obs_position(0,0)-applied_ref_x_; // x distance between v and obstacle 1
-  dist_ref_obs_(1)=obs_position(1,0)-applied_ref_y_; // y distance between v and obstacle 1
-  dist_ref_obs_(3)=sqrt(dist_ref_obs_(0)*dist_ref_obs_(0)+dist_ref_obs_(1)*dist_ref_obs_(1));
+  // dist_ref_obs_(0)=obs_position(0,0)-applied_ref_x_; // x distance between v and obstacle 1
+  // dist_ref_obs_(1)=obs_position(1,0)-applied_ref_y_; // y distance between v and obstacle 1
+  // dist_ref_obs_(3)=sqrt(dist_ref_obs_(0)*dist_ref_obs_(0)+dist_ref_obs_(1)*dist_ref_obs_(1));
 
-  max_repulsion_obs1=arm_radius+(_zeta_o_-(dist_ref_obs_(3)-R_o_))/(_zeta_o_-_delta_o_); //Frank : Added the arm radius to add a safety around the cylinder
-  if (0>max_repulsion_obs1) {
-  max_repulsion_obs1=0;
-  }
+  // max_repulsion_obs1=arm_radius+(_zeta_o_-(dist_ref_obs_(3)-R_o_))/(_zeta_o_-_delta_o_); //Frank : Added the arm radius to add a safety around the cylinder
+  // if (0>max_repulsion_obs1) {
+  // max_repulsion_obs1=0;
+  // }
 
-  NF_o_co(0,0)=-(max_repulsion_obs1*(dist_ref_obs_(0)/dist_ref_obs_(3)));
-  NF_o_co(1,0)=-(max_repulsion_obs1*(dist_ref_obs_(1)/dist_ref_obs_(3)));
-  NF_o_co(2,0)=0;
+  // NF_o_co(0,0)=-(max_repulsion_obs1*(dist_ref_obs_(0)/dist_ref_obs_(3)));
+  // NF_o_co(1,0)=-(max_repulsion_obs1*(dist_ref_obs_(1)/dist_ref_obs_(3)));
+  // NF_o_co(2,0)=0;
 
-  // Non-conservative part
-  NF_o_nco(2,0)=0;
-  if (_zeta_o_>=dist_ref_obs_(3)-R_o_) {
-  NF_o_nco(0,0)=_alpha_o_*(dist_ref_obs_(1)/dist_ref_obs_(3));
-  NF_o_nco(1,0)=-_alpha_o_*(dist_ref_obs_(0)/dist_ref_obs_(3));
-  } else {
-  NF_o_nco(0,0)=0;
-  NF_o_nco(1,0)=0;
-  }
-  // Both combined
-  NF_o(0,0)=NF_o_co(0,0)+NF_o_nco(0,0);
-  NF_o(1,0)=NF_o_co(1,0)+NF_o_nco(1,0);
-  NF_o(2,0)=NF_o_co(2,0)+NF_o_nco(2,0);
+  // // Non-conservative part
+  // NF_o_nco(2,0)=0;
+  // if (_zeta_o_>=dist_ref_obs_(3)-R_o_) {
+  // NF_o_nco(0,0)=_alpha_o_*(dist_ref_obs_(1)/dist_ref_obs_(3));
+  // NF_o_nco(1,0)=-_alpha_o_*(dist_ref_obs_(0)/dist_ref_obs_(3));
+  // } else {
+  // NF_o_nco(0,0)=0;
+  // NF_o_nco(1,0)=0;
+  // }
+  // // Both combined
+  // NF_o(0,0)=NF_o_co(0,0)+NF_o_nco(0,0);
+  // NF_o(1,0)=NF_o_co(1,0)+NF_o_nco(1,0);
+  // NF_o(2,0)=NF_o_co(2,0)+NF_o_nco(2,0);
 
     std::map<std::string, mrs_msgs::FutureTrajectory>::iterator it = other_uavs_applied_references_.begin();
     // ROS_INFO_STREAM("p^v_x = \n" << it->second.points[0].x);
@@ -2600,9 +2665,9 @@ void DergbryanTracker::DERG_computation(){
       }
       it++;
     }
-    ROS_INFO_STREAM("NF calculation took = \n "<< (double)(clock()- tictoc_stack.top())/CLOCKS_PER_SEC << "seconds.");
-    tictoc_stack.pop();
-    tictoc_stack.push(clock());
+    // ROS_INFO_STREAM("NF calculation took = \n "<< (double)(clock()- tictoc_stack.top())/CLOCKS_PER_SEC << "seconds.");
+    // tictoc_stack.pop();
+    // tictoc_stack.push(clock());
     DSM_a_ = 100000; // large value
     for (size_t i = 0; i < num_pred_samples_; i++) {
       double pos_error_x = applied_ref_x_ - predicted_poses_out.poses[i].position.x;
@@ -2617,8 +2682,8 @@ void DergbryanTracker::DERG_computation(){
       DSM_a_ = DSM_a_temp; // choose smallest DSM_a_ over the predicted trajectory //Frank : Ask bryan if he expects a similar reasoning for each DSM
       }
     }
-    ROS_INFO_STREAM("DSM a calculation took = \n "<< (double)(clock()- tictoc_stack.top())/CLOCKS_PER_SEC << "seconds.");
-    tictoc_stack.pop();
+    // ROS_INFO_STREAM("DSM a calculation took = \n "<< (double)(clock()- tictoc_stack.top())/CLOCKS_PER_SEC << "seconds.");
+    // tictoc_stack.pop();
   }
 
   if (_DERG_strategy_id_ == 1) {
