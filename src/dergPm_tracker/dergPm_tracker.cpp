@@ -1793,7 +1793,8 @@
       load_lin_vel[1] = cos(phi_load_cable)*cable_length*phi_dot_load_cable + uav_state.velocity.linear.y; 
       load_lin_vel[2] = uav_state.velocity.linear.z + cable_length*(sin(phi_load_cable)*phi_dot_load_cable*cos(theta_load_cable) 
       + cos(phi_load_cable)*sin(theta_load_cable)*theta_dot_load_cable);
-      // load_lin_vel[2] = (1.0/2.0)*pow(pow(cable_length,2.0)-pow(load_pose_position.x-uav_state.pose.position.x,2.0)
+      
+      // load_lin_vel[2] = -(1.0/2.0)*pow(pow(cable_length,2.0)-pow(load_pose_position.x-uav_state.pose.position.x,2.0)
       // -pow(load_pose_position.y-uav_state.pose.position.y,2.0),-1.0/2.0)
       // *(-2.0*(load_pose_position.x-uav_state.pose.position.x)*(load_lin_vel[0]-uav_state.velocity.linear.x) 
       // - 2.0*(load_pose_position.y-uav_state.pose.position.y)*(load_lin_vel[1]-uav_state.velocity.linear.y)) 
@@ -1813,16 +1814,17 @@
       - 2*sin(phi_load_cable)*sin(theta_load_cable)*theta_dot_load_cable*phi_dot_load_cable + cos(theta_load_cable)*sin(phi_load_cable)*phi_dot_dot_load_cable
       + cos(phi_load_cable)*sin(theta_load_cable)*theta_dot_dot_load_cable);
 
-      // acceleration_load[2] = (-1.0/4.0)*pow(pow(cable_length,2.0)-pow(load_pose_position.x-uav_state.pose.position.x,2.0)
+      // acceleration_load[2] = (1.0/4.0)*pow(pow(cable_length,2.0)-pow(load_pose_position.x-uav_state.pose.position.x,2.0)
       // -pow(load_pose_position.y-uav_state.pose.position.y,2.0),-3.0/2.0)
       // *pow((-2.0*(load_pose_position.x-uav_state.pose.position.x)*(load_lin_vel[0]-uav_state.velocity.linear.x) 
       // - 2*(load_pose_position.y-uav_state.pose.position.y)*(load_lin_vel[1]-uav_state.velocity.linear.y)),2.0)
-      // + (1.0/2.0)*pow(pow(cable_length,2.0)-pow(load_pose_position.x-uav_state.pose.position.x,2)
+      // - (1.0/2.0)*pow(pow(cable_length,2.0)-pow(load_pose_position.x-uav_state.pose.position.x,2)
       // -pow(load_pose_position.y-uav_state.pose.position.y,2.0),-1.0/2.0)
       // *(-2.0*pow((load_lin_vel[0]-uav_state.velocity.linear.x),2.0) 
       // - 2.0*(load_pose_position.x-uav_state.pose.position.x)*(acceleration_load[0]-custom_acceleration.position.x) 
       // -2.0*pow((load_lin_vel[1]-uav_state.velocity.linear.y),2.0) - 2.0*(load_pose_position.y-uav_state.pose.position.y)
       // *(acceleration_load[1]-custom_acceleration.position.y)) + custom_acceleration.position.z;  
+      
       custom_load_acceleration.position.x = acceleration_load[0];
       custom_load_acceleration.position.y = acceleration_load[1];
       custom_load_acceleration.position.z = acceleration_load[2];
@@ -2557,12 +2559,19 @@
     // ROS_INFO_STREAM("q_state = \n" << q_state);
     // ROS_INFO_STREAM("q_state_dot = \n" << q_state_dot);
     
+    // q_state(0,0) = uav_state.pose.position.x; q_state(1,0) = uav_state.pose.position.y; 
+    // q_state(2,0) = uav_state.pose.position.z; q_state(3,0) = theta_load_cable; q_state(4,0) = phi_load_cable;
+
     q_state(0,0) = uav_state.pose.position.x; q_state(1,0) = uav_state.pose.position.y; 
-    q_state(2,0) = uav_state.pose.position.z; q_state(3,0) = theta_load_cable; q_state(4,0) = phi_load_cable;
+    q_state(2,0) = uav_state.pose.position.z; q_state(3,0) = phi_load_cable; q_state(4,0) = theta_load_cable;
+
+    // q_state_dot(0,0) = uav_state.velocity.linear.x; q_state_dot(1,0) = uav_state.velocity.linear.y; 
+    // q_state_dot(2,0) = uav_state.velocity.linear.z; q_state_dot(3,0) = theta_dot_load_cable; 
+    // q_state_dot(4,0) = phi_dot_load_cable;
 
     q_state_dot(0,0) = uav_state.velocity.linear.x; q_state_dot(1,0) = uav_state.velocity.linear.y; 
-    q_state_dot(2,0) = uav_state.velocity.linear.z; q_state_dot(3,0) = theta_dot_load_cable; 
-    q_state_dot(4,0) = phi_dot_load_cable;
+    q_state_dot(2,0) = uav_state.velocity.linear.z; q_state_dot(3,0) = phi_dot_load_cable; 
+    q_state_dot(4,0) = theta_dot_load_cable;
 
     q_state_dot_dot = (M_matrix.inverse())*(u_vector - V_matrix*q_state_dot - G_vector);
 
@@ -2574,14 +2583,19 @@
     custom_acceleration.position.x = acceleration_uav[0];
     custom_acceleration.position.y = acceleration_uav[1];
     custom_acceleration.position.z = acceleration_uav[2];
-    theta_dot_dot_load_cable = q_state_dot_dot(3,0);
-    phi_dot_dot_load_cable = q_state_dot_dot(4,0);
+    // theta_dot_dot_load_cable = q_state_dot_dot(3,0);
+    // phi_dot_dot_load_cable = q_state_dot_dot(4,0);
+    phi_dot_dot_load_cable = q_state_dot_dot(3,0);
+    theta_dot_dot_load_cable= q_state_dot_dot(4,0);
 
     predicted_q_state_dot_dot_uav.position.x = acceleration_uav[0];
     predicted_q_state_dot_dot_uav.position.y = acceleration_uav[1];
     predicted_q_state_dot_dot_uav.position.z = acceleration_uav[2];
-    predicted_q_state_dot_dot_load.position.x = theta_dot_dot_load_cable;
-    predicted_q_state_dot_dot_load.position.y = phi_dot_dot_load_cable;
+    // predicted_q_state_dot_dot_load.position.x = theta_dot_dot_load_cable;
+    // predicted_q_state_dot_dot_load.position.y = phi_dot_dot_load_cable;
+
+    predicted_q_state_dot_dot_load.position.x = phi_dot_dot_load_cable;
+    predicted_q_state_dot_dot_load.position.y = theta_dot_dot_load_cable;
 
     predicted_q_state_dot_dot_uav_out.poses.push_back(predicted_q_state_dot_dot_uav);
     predicted_q_state_dot_dot_load_out.poses.push_back(predicted_q_state_dot_dot_load);
