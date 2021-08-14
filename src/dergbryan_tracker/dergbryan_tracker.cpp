@@ -2478,7 +2478,7 @@ void DergbryanTracker::DERG_computation(){
     }
   }
   DSM_w_=_kappa_w_*min_wall_distance;
-  ROS_INFO_STREAM("DSM_w_ = \n" << DSM_w_);
+  //ROS_INFO_STREAM("DSM_w_ = \n" << DSM_w_);
   // | ----------------------- repulsion static obstacles ------------------------|
   // Conservative part
   MatrixXd dist_ref_obs_ = MatrixXd::Zero(4, 1);
@@ -3661,7 +3661,7 @@ void DergbryanTracker::DERG_computation(){
   }
 
   
-  ROS_INFO_STREAM("DSM_total_ = \n" << DSM_total_);
+  // ROS_INFO_STREAM("DSM_total_ = \n" << DSM_total_);
   // ROS_INFO_STREAM("DSM_s_ = \n" << DSM_s_);
 
   //ROS_INFO_STREAM("DSM_a_ = \n" << DSM_a_);
@@ -3684,7 +3684,7 @@ void DergbryanTracker::DERG_computation(){
   // NF_total(1,0)=NF_att(1,0) + NF_a(1,0) +NF_o(1,0) + NF_w(1,0);
   // NF_total(2,0)=NF_att(2,0) + NF_a(2,0) +NF_o(2,0) + NF_w(2,0);
   NF_total = NF_att + _enable_repulsion_a_*NF_a + _enable_repulsion_w_*NF_w + _enable_repulsion_o_*NF_o; 
-  ROS_INFO_STREAM("NF_total = \n" << NF_total);
+  //ROS_INFO_STREAM("NF_total = \n" << NF_total);
   //ROS_INFO_STREAM("NF_a = \n" << NF_a);
 
   // | -------------------------------------------------------------------------- |
