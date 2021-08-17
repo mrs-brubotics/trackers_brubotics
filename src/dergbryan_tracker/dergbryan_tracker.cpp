@@ -1609,18 +1609,32 @@ for (int i = 0; i < num_pred_samples_; i++) {
   total_mass_= total_mass;
   //OLD Kp = Kp * (_uav_mass_ + uav_mass_difference_);
   //OLD Kv = Kv * (_uav_mass_ + uav_mass_difference_);
+  
+  // a print to test if the gains change so you know where to change:
+  
+  ROS_INFO_THROTTLE(5.0,"[DergbryanTracker]: Ka_x = %f", Ka(0));
+  ROS_INFO_THROTTLE(5.0,"[DergbryanTracker]: Ka_y = %f", Ka(1));
+  ROS_INFO_THROTTLE(5.0,"[DergbryanTracker]: Ka_z = %f", Ka(2));
+  ROS_INFO_THROTTLE(5.0,"[DergbryanTracker]: Kq_x = %f", Kq(0));
+  ROS_INFO_THROTTLE(5.0,"[DergbryanTracker]: Kq_y = %f", Kq(1));
+  ROS_INFO_THROTTLE(5.0,"[DergbryanTracker]: Kq_z = %f", Kq(2));
+  ROS_INFO_THROTTLE(5.0,"[DergbryanTracker]: Kp_x = %f", Kp(0));
+  ROS_INFO_THROTTLE(5.0,"[DergbryanTracker]: Kp_y = %f", Kp(1));
+  ROS_INFO_THROTTLE(5.0,"[DergbryanTracker]: Kp_z = %f", Kp(2));
+  ROS_INFO_THROTTLE(5.0,"[DergbryanTracker]: Kv_x = %f", Kv(0));
+  ROS_INFO_THROTTLE(5.0,"[DergbryanTracker]: Kv_y = %f", Kv(1));
+  ROS_INFO_THROTTLE(5.0,"[DergbryanTracker]: Kv_z = %f", Kv(2));
+
   Kp = Kp * total_mass;
   Kv = Kv * total_mass;
 
+  ROS_INFO_THROTTLE(5.0,"[DergbryanTracker]: Kp_x*m = %f", Kp(0));
+  ROS_INFO_THROTTLE(5.0,"[DergbryanTracker]: Kp_y*m = %f", Kp(1));
+  ROS_INFO_THROTTLE(5.0,"[DergbryanTracker]: Kp_z*m = %f", Kp(2));
+  ROS_INFO_THROTTLE(5.0,"[DergbryanTracker]: Kv_x*m = %f", Kv(0));
+  ROS_INFO_THROTTLE(5.0,"[DergbryanTracker]: Kv_y*m = %f", Kv(1));
+  ROS_INFO_THROTTLE(5.0,"[DergbryanTracker]: Kv_z*m = %f", Kv(2));
 
-  
-
-
-  // a print to test if the gains change so you know where to change:
-  // ROS_INFO_STREAM("DergbryanTracker: Kp = \n" << Kp);
-  // ROS_INFO_STREAM("DergbryanTracker: Kv = \n" << Kv);
-  // ROS_INFO_STREAM("DergbryanTracker: Ka = \n" << Ka);
-  // ROS_INFO_STREAM("DergbryanTracker: Kq = \n" << Kq);
   // QUESTION: some gains printed above do not correspond to the gains set in the yaml file (e.G. Kpz). Why is that?
 
 
