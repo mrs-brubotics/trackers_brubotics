@@ -209,9 +209,9 @@ private:
   geometry_msgs::PoseArray predicted_velocities_out; // array of predicted velocities
   geometry_msgs::PoseArray predicted_accelerations_out; // array of predicted accelerations
   geometry_msgs::PoseArray predicted_attituderate_out; // array of predicted attituderates
-  
+  geometry_msgs::PoseArray predicted_tiltangle_out; // array of predicted tilt angles
   double dt_ = 0.010; // ERG sample time = controller sample time
-  double custom_dt_ = 0.010;//0.001;//0.020; //0.010; // controller sampling time (in seconds) used in prediction
+  double custom_dt_ = 0.010;//0.010;//0.001;//0.020; //0.010; // controller sampling time (in seconds) used in prediction
   double _pred_horizon_;//1.5//0.15;//1.5; //0.15; //1.5; //0.4; // prediction horizon (in seconds)
   int num_pred_samples_;
 
@@ -227,6 +227,7 @@ private:
   ros::Publisher custom_predicted_vel_publisher;
   ros::Publisher custom_predicted_acc_publisher;
   ros::Publisher custom_predicted_attrate_publisher;
+  ros::Publisher custom_predicted_tiltangle_publisher;
   ros::Publisher chatter_publisher_; // just an example
   ros::Publisher tube_min_radius_publisher_; // intermdiate step as example
   ros::Publisher future_tube_publisher_; // inspired from FutureTrajectory.msg of ctu mrs
@@ -497,7 +498,9 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   param_loader.loadParam("enable_profiler", _profiler_enabled_);
   // lateral gains
   param_loader.loadParam("default_gains/horizontal/kp", kpxy_);
+  //kpxy_ = 5.0; //5.0//5.0; //3.0; // To mimic a delay in the predicitons
   param_loader.loadParam("default_gains/horizontal/kv", kvxy_);
+  //kvxy_ = 3.0; //3.0//2.0; //2.0; // To mimic a delay in the predicitons
   param_loader.loadParam("default_gains/horizontal/ka", kaxy_);
 
   param_loader.loadParam("default_gains/horizontal/kiw", kiwxy_);
@@ -505,11 +508,14 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
 
   // height gains
   param_loader.loadParam("default_gains/vertical/kp", kpz_);
+  //kpz_ = 12.0; //15.0; // To mimic a delay in the predicitons
   param_loader.loadParam("default_gains/vertical/kv", kvz_);
+  //kvz_ = 8.0; //8.0; // To mimic a delay in the predicitons
   param_loader.loadParam("default_gains/vertical/ka", kaz_);
 
   // attitude gains
   param_loader.loadParam("default_gains/horizontal/attitude/kq", kqxy_);
+  //kqxy_ = 5.0; //8.0; //1.0; // To mimic a delay in the predicitons
   param_loader.loadParam("default_gains/vertical/attitude/kq", kqz_);
 
   // mass estimator
@@ -630,6 +636,7 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   custom_predicted_vel_publisher = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_vels", 10);
   custom_predicted_acc_publisher = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_accs", 10);
   custom_predicted_attrate_publisher = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_attrate", 10);
+  custom_predicted_tiltangle_publisher = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_tiltangle", 10);
   DSM_publisher_ = nh2_.advertise<trackers_brubotics::DSM>("DSM", 10);
   chatter_publisher_ = nh2_.advertise<std_msgs::String>("chatter", 10);
   tube_min_radius_publisher_ = nh2_.advertise<std_msgs::Float32>("tube_min_radius", 10);
@@ -1088,6 +1095,7 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
   predicted_velocities_out.poses.clear();
   predicted_accelerations_out.poses.clear();
   predicted_attituderate_out.poses.clear();
+  predicted_tiltangle_out.poses.clear();
   uav_applied_ref_out_.points.clear();
   uav_posistion_out_.points.clear();
   future_trajectory_out_.points.clear();
@@ -1403,8 +1411,6 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
 // Discrete trajectory prediction using the forward Euler formula's
 predicted_thrust_out.header.stamp = ros::Time::now();
 predicted_thrust_out.header.frame_id = uav_state_.header.frame_id;
-
-
 predicted_poses_out.header.stamp = ros::Time::now();
 predicted_poses_out.header.frame_id = uav_state_.header.frame_id;
 predicted_velocities_out.header.stamp = ros::Time::now();
@@ -1413,6 +1419,9 @@ predicted_accelerations_out.header.stamp = ros::Time::now();
 predicted_accelerations_out.header.frame_id = uav_state_.header.frame_id;
 predicted_attituderate_out.header.stamp = ros::Time::now();
 predicted_attituderate_out.header.frame_id = uav_state_.header.frame_id;
+predicted_tiltangle_out.header.stamp = ros::Time::now();
+predicted_tiltangle_out.header.frame_id = uav_state_.header.frame_id;
+
 
 geometry_msgs::Pose custom_pose;
 geometry_msgs::Pose custom_vel;
@@ -1420,6 +1429,7 @@ geometry_msgs::Pose custom_acceleration;
 geometry_msgs::Pose predicted_thrust; 
 geometry_msgs::Pose predicted_thrust_norm; 
 geometry_msgs::Pose predicted_attituderate; 
+geometry_msgs::Pose predicted_tilt_angle; 
 
 Eigen::Matrix3d R;
 Eigen::Matrix3d Rdot;
@@ -1471,9 +1481,9 @@ for (int i = 0; i < num_pred_samples_; i++) {
        
 
        //t = q_feedback + other terms
-    skew_Ow << 0     , -attitude_rate_pred(2), attitude_rate_pred(1),
-              attitude_rate_pred(2) , 0,       -attitude_rate_pred(0),
-              -attitude_rate_pred(1), attitude_rate_pred(0),  0;// assume omega is omega desired
+    skew_Ow << 0.0     , -attitude_rate_pred(2), attitude_rate_pred(1),
+              attitude_rate_pred(2) , 0.0,       -attitude_rate_pred(0),
+              -attitude_rate_pred(1), attitude_rate_pred(0),  0.0;// assume omega is omega desired
     // if (i==5){
     //   ROS_INFO_STREAM("skew_Ow (i=5) = \n" << skew_Ow);
     // }
@@ -1488,6 +1498,18 @@ for (int i = 0; i < num_pred_samples_; i++) {
     // R = R^T
     //R = R.transpose();
     R = (I + skew_Ow*custom_dt2 + 1/2*skew_Ow*custom_dt2*skew_Ow*custom_dt2 + 1/6*skew_Ow*custom_dt2*skew_Ow*custom_dt2*skew_Ow*custom_dt2)*R;
+    //ROS_INFO_STREAM("R(2) = \n" << R.col(2));
+    Eigen::Vector3d temp = R.col(2);
+    double normR2 = temp(0)*temp(0) + temp(1)*temp(1) + temp(2)*temp(2);
+    // if ((normR2 >=1.01) || (normR2 <=0.99))
+    // {
+    //   ROS_INFO_STREAM("normR2 = " << normR2);
+    // }
+    if ((normR2 >=1.05) || (normR2 <=0.95))
+    {
+      ROS_INFO_STREAM("normR2 = " << normR2);
+    }
+    
     //R = R^T
     //R = R.transpose();
     // if(i==5){
@@ -1612,30 +1634,35 @@ for (int i = 0; i < num_pred_samples_; i++) {
   
   // a print to test if the gains change so you know where to change:
   
-  ROS_INFO_THROTTLE(5.0,"[DergbryanTracker]: Ka_x = %f", Ka(0));
-  ROS_INFO_THROTTLE(5.0,"[DergbryanTracker]: Ka_y = %f", Ka(1));
-  ROS_INFO_THROTTLE(5.0,"[DergbryanTracker]: Ka_z = %f", Ka(2));
-  ROS_INFO_THROTTLE(5.0,"[DergbryanTracker]: Kq_x = %f", Kq(0));
-  ROS_INFO_THROTTLE(5.0,"[DergbryanTracker]: Kq_y = %f", Kq(1));
-  ROS_INFO_THROTTLE(5.0,"[DergbryanTracker]: Kq_z = %f", Kq(2));
-  ROS_INFO_THROTTLE(5.0,"[DergbryanTracker]: Kp_x = %f", Kp(0));
-  ROS_INFO_THROTTLE(5.0,"[DergbryanTracker]: Kp_y = %f", Kp(1));
-  ROS_INFO_THROTTLE(5.0,"[DergbryanTracker]: Kp_z = %f", Kp(2));
-  ROS_INFO_THROTTLE(5.0,"[DergbryanTracker]: Kv_x = %f", Kv(0));
-  ROS_INFO_THROTTLE(5.0,"[DergbryanTracker]: Kv_y = %f", Kv(1));
-  ROS_INFO_THROTTLE(5.0,"[DergbryanTracker]: Kv_z = %f", Kv(2));
+  ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Ka_x = %f", Ka(0));
+  ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Ka_y = %f", Ka(1));
+  ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Ka_z = %f", Ka(2));
+  ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kq_x = %f", Kq(0));
+  ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kq_y = %f", Kq(1));
+  ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kq_z = %f", Kq(2));
+  ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kp_x = %f", Kp(0));
+  ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kp_y = %f", Kp(1));
+  ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kp_z = %f", Kp(2));
+  ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kv_x = %f", Kv(0));
+  ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kv_y = %f", Kv(1));
+  ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kv_z = %f", Kv(2));
 
   Kp = Kp * total_mass;
   Kv = Kv * total_mass;
 
-  ROS_INFO_THROTTLE(5.0,"[DergbryanTracker]: Kp_x*m = %f", Kp(0));
-  ROS_INFO_THROTTLE(5.0,"[DergbryanTracker]: Kp_y*m = %f", Kp(1));
-  ROS_INFO_THROTTLE(5.0,"[DergbryanTracker]: Kp_z*m = %f", Kp(2));
-  ROS_INFO_THROTTLE(5.0,"[DergbryanTracker]: Kv_x*m = %f", Kv(0));
-  ROS_INFO_THROTTLE(5.0,"[DergbryanTracker]: Kv_y*m = %f", Kv(1));
-  ROS_INFO_THROTTLE(5.0,"[DergbryanTracker]: Kv_z*m = %f", Kv(2));
+  ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kp_x*m = %f", Kp(0));
+  ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kp_y*m = %f", Kp(1));
+  ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kp_z*m = %f", Kp(2));
+  ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kv_x*m = %f", Kv(0));
+  ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kv_y*m = %f", Kv(1));
+  ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kv_z*m = %f", Kv(2));
 
   // QUESTION: some gains printed above do not correspond to the gains set in the yaml file (e.G. Kpz). Why is that?
+
+  ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: _uav_mass_ = %f", common_handlers_->getMass());
+  ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: n_motors = %d", common_handlers_->motor_params.n_motors);
+  ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: motor_params.A = %f", common_handlers_->motor_params.A);
+  ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: motor_params.B = %f", common_handlers_->motor_params.B);
 
 
   // | --------------- desired orientation matrix --------------- |
@@ -1775,13 +1802,17 @@ for (int i = 0; i < num_pred_samples_; i++) {
   // saturate the angle
 
   auto constraints = mrs_lib::get_mutexed(mutex_constraints_, constraints_);
-
+  ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: constraints.tilt = %f", constraints.tilt);
   if (fabs(constraints.tilt) > 1e-3 && theta > constraints.tilt) {
     ROS_WARN_THROTTLE(1.0, "[DergbryanTracker]: tilt is being saturated, desired: %.2f deg, saturated %.2f deg", (theta / M_PI) * 180.0,
                       (constraints.tilt / M_PI) * 180.0);
     theta = constraints.tilt;
   }
 
+  // Publish predicted tilt angle:
+  predicted_tilt_angle.position.x = theta; // change later to a non vec type
+  predicted_tiltangle_out.poses.push_back(predicted_tilt_angle);
+  
   // ROS_INFO_STREAM("theta_sat = \n" << theta*180/3.1415);
   
 
@@ -1892,6 +1923,8 @@ for (int i = 0; i < num_pred_samples_; i++) {
   // OLD double Bparam = -0.148; // value from printen inside Se3BruboticsController
   // OLD thrust_saturation_physical_ = pow((_thrust_saturation_-Bparam)/Aparam, 2);
   thrust_saturation_physical_ = mrs_lib::quadratic_thrust_model::thrustToForce(common_handlers_->motor_params, _thrust_saturation_);
+  ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: thrust_saturation_physical_ (*extra_thrust_saturation) (N) = %f", thrust_saturation_physical_); // value does not change during predicitons and only printed once each 15s
+
   if (!position_cmd.use_thrust) {
     if (thrust_force >= 0) {
       /*SOLVED QUESTION: how to acces in the tracker code: _motor_params_.A + _motor_params_.B??*/
@@ -1933,7 +1966,7 @@ for (int i = 0; i < num_pred_samples_; i++) {
   predicted_thrust_out.poses.push_back(predicted_thrust_norm);
   //Eigen::Vector3d acceleration_uav = 1/_uav_mass_ * (f + _uav_mass_ * (Eigen::Vector3d(0, 0, -common_handlers_->g)));
   // OLD Eigen::Vector3d acceleration_uav = 1/_uav_mass_ * (thrust_force*R.col(2) + _uav_mass_ * (Eigen::Vector3d(0, 0, -common_handlers_->g)));
-  Eigen::Vector3d acceleration_uav = 1/total_mass * (thrust_force*R.col(2) + total_mass * (Eigen::Vector3d(0, 0, -common_handlers_->g)));
+  Eigen::Vector3d acceleration_uav = 1.0/total_mass * (thrust_force*R.col(2) + total_mass * (Eigen::Vector3d(0, 0, -common_handlers_->g)));
   
   custom_acceleration.position.x = acceleration_uav[0];
   custom_acceleration.position.y = acceleration_uav[1];
@@ -1941,7 +1974,7 @@ for (int i = 0; i < num_pred_samples_; i++) {
   predicted_accelerations_out.poses.push_back(custom_acceleration);
 
   // prepare the attitude feedback
-  Eigen::Vector3d q_feedback = -Kq*(1.0) * Eq.array();
+  Eigen::Vector3d q_feedback = -Kq * Eq.array();
 
   if (position_cmd.use_attitude_rate) {
     Rw << position_cmd.attitude_rate.x, position_cmd.attitude_rate.y, position_cmd.attitude_rate.z;
@@ -2244,6 +2277,10 @@ for (int i = 0; i < num_pred_samples_; i++) {
 
     auto constraints = mrs_lib::get_mutexed(mutex_constraints_, constraints_);
 
+    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: constraints.roll_rate = %f", constraints.roll_rate);
+    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: constraints.pitch_rate = %f", constraints.pitch_rate);
+    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: constraints.yaw_rate = %f", constraints.yaw_rate);
+    
     if (t[0] > constraints.roll_rate) {
       t[0] = constraints.roll_rate;
     } else if (t[0] < -constraints.roll_rate) {
@@ -2386,7 +2423,12 @@ try {
 catch (...) {
   ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", custom_predicted_attrate_publisher.getTopic().c_str());
 }
-
+try {
+  custom_predicted_tiltangle_publisher.publish(predicted_tiltangle_out);
+}
+catch (...) {
+  ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", custom_predicted_tiltangle_publisher.getTopic().c_str());
+}
 
 
 
