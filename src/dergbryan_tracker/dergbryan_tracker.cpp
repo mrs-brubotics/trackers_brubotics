@@ -2318,19 +2318,28 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
     if (false) // TODO make user setting to include or not
     {
       //attitude_rate_pred = t; // desired attitude rate / attitude rate command
+      // TODO: make code work again when inertial dynamics are ignored (will give abd thrust predictions).
     }
     else { // if we include the body rate inertial dynamics:
       desired_attitude_rate_pred = t; // desired attitude rate / attitude rate command
       // Compute the predicted torque:
+      // See https://docs.px4.io/master/en/flight_stack/controller_diagrams.html, https://docs.px4.io/master/en/config_mc/pid_tuning_guide_multicopter.html#rate-controller
+      // P-action:
       Eigen::Array3d  Kp_tau = Eigen::Array3d::Zero(3);
-      double kp_tau = 0.15;//0.10; (way too much second peak in predicted thrust)//0.50 (less good); //0.20 (ok)
+      double kp_tau = 0.15;//0.15 (good);//0.10; (way too much second peak in predicted thrust)//0.50 (less good); //0.20 (ok)
       Kp_tau[0] = kp_tau;
       Kp_tau[1] = kp_tau;
       Kp_tau[2] = kp_tau;
-      //torque_pred = Kp_tau*(desired_attitude_rate_pred.array() - attitude_rate_pred.array()); //TODO add derivative action 
-      //torque_pred = Kp_tau*(desired_attitude_rate_pred - attitude_rate_pred).array(); //TODO add derivative action 
-      Eigen::Vector3d attitude_rate_error = desired_attitude_rate_pred - attitude_rate_pred;
-      torque_pred = Kp_tau * attitude_rate_error.array(); //TODO add derivative action
+      Eigen::Vector3d tau_P_error = desired_attitude_rate_pred - attitude_rate_pred;
+      // D-action:
+      Eigen::Array3d  Kd_tau = Eigen::Array3d::Zero(3);
+      double kd_tau = 0.00; //0.05
+      Kd_tau[0] = kd_tau;
+      Kd_tau[1] = kd_tau;
+      Kd_tau[2] = kd_tau;
+      Eigen::Vector3d tau_D_error = - attitude_rate_pred; // see http://brettbeauregard.com/blog/2011/04/improving-the-beginner%E2%80%99s-pid-derivative-kick/
+      // P+D-action:
+      torque_pred = Kp_tau * tau_P_error.array() + Kd_tau * tau_D_error.array(); //TODO add derivative action
       Eigen::Matrix3d J = Eigen::Matrix3d::Zero(3,3);
       // values taken from ~/mrs_workspace/src/simulation/ros_packages/mrs_simulation/models/mrs_robots_description/urdf/f450.xacro
       double inertia_body_radius = 0.20; // [m]
