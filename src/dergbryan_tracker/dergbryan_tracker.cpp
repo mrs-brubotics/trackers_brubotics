@@ -2354,7 +2354,7 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
       skew_attitude_rate_pred << 0.0    , -attitude_rate_pred(2), attitude_rate_pred(1),
                                 attitude_rate_pred(2) , 0.0,     -attitude_rate_pred(0),
                                 -attitude_rate_pred(1),  attitude_rate_pred(0),     0.0;
-      attitude_acceleration_pred = J.inverse()*(skew_attitude_rate_pred*J*attitude_rate_pred + torque_pred);
+      attitude_acceleration_pred = J.inverse()*(-skew_attitude_rate_pred*J*attitude_rate_pred + torque_pred);
     }
     
     
