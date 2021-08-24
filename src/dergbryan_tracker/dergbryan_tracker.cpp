@@ -296,7 +296,7 @@ private:
   std_msgs::Int32 Sa_max_;
   std_msgs::Int32 Sa_perp_max;
   geometry_msgs::Pose point_link_star_;
-  bool enable_visualization;
+  bool _enable_visualization_;
   
   void callbackOtherUavAppliedRef(const mrs_msgs::FutureTrajectoryConstPtr& msg);
   void callbackOtherUavPosition(const mrs_msgs::FutureTrajectoryConstPtr& msg);
@@ -585,7 +585,7 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   }
 
   // added by Titouan and Jonathan
-  param_loader2.loadParam("enable_visualization", enable_visualization);
+  param_loader2.loadParam("enable_visualization", _enable_visualization_);
 
   param_loader2.loadParam("prediction/horizon", _pred_horizon_);
   // convert below to int
@@ -659,7 +659,7 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   avoidance_trajectory_publisher_= nh2_.advertise<mrs_msgs::FutureTrajectory>("predicted_trajectory", 1);
 
   // added by Titouan and Jonathan
-  if(enable_visualization){
+  if(_enable_visualization_){
     derg_strategy_id_publisher_ = nh2_.advertise<std_msgs::Int32>("derg_strategy_id", 1);
     point_link_star_publisher_ = nh2_.advertise<geometry_msgs::Pose>("point_link_star", 1);
     sa_max_publisher_ = nh2_.advertise<std_msgs::Int32>("sa_max", 1);
@@ -2951,7 +2951,7 @@ void DergbryanTracker::DERG_computation(){
     }
 
   // added by Titouan and Jonathan
-  if(enable_visualization){
+  if(_enable_visualization_){
     tf::pointEigenToMsg(point_link_star, point_link_star_.position);  // conversion from Eigen::Vector3d to geometry_msgs::Point
   }
   }
@@ -3085,7 +3085,7 @@ void DergbryanTracker::DERG_computation(){
     }
 
   // added by Titouan and Jonathan
-  if(enable_visualization){
+  if(_enable_visualization_){
     tf::pointEigenToMsg(point_link_star, point_link_star_.position);  // conversion from Eigen::Vector3d to geometry_msgs::Point
   }
   }
@@ -3297,7 +3297,7 @@ void DergbryanTracker::DERG_computation(){
     }
 
   // added by Titouan and Jonathan
-  if(enable_visualization){
+  if(_enable_visualization_){
     tf::pointEigenToMsg(point_link_star, point_link_star_.position);  // conversion from Eigen::Vector3d to geometry_msgs::Point
   }
   }
@@ -3539,7 +3539,7 @@ void DergbryanTracker::DERG_computation(){
       //it3++;
     }
   // added by Titouan and Jonathan
-  if(enable_visualization){
+  if(_enable_visualization_){
     tf::pointEigenToMsg(point_link_star, point_link_star_.position);  // conversion from Eigen::Vector3d to geometry_msgs::Point
   }
   }
@@ -3742,7 +3742,7 @@ void DergbryanTracker::DERG_computation(){
     } 
 
   // added by Titouan and Jonathan
-  if(enable_visualization){
+  if(_enable_visualization_){
     tf::pointEigenToMsg(point_link_star, point_link_star_.position);  // conversion from Eigen::Vector3d to geometry_msgs::Point
   }
   }
@@ -3851,7 +3851,7 @@ void DergbryanTracker::DERG_computation(){
   avoidance_trajectory_publisher_.publish(future_trajectory_out_);
 
   // added by Titouan and Jonathan
-  if(enable_visualization){
+  if(_enable_visualization_){
     DERG_strategy_id.data = _DERG_strategy_id_;
     derg_strategy_id_publisher_.publish(DERG_strategy_id);
     point_link_star_publisher_.publish(point_link_star_);
