@@ -94,6 +94,7 @@ private:
   std::string _uav_name_;
   // // | ------------------------ uav state ----------------------- |
   mrs_msgs::UavState uav_state_;
+  mrs_msgs::UavState uav_state_prev_;
   bool               got_uav_state_ = false; // now added by bryan
   std::mutex         mutex_uav_state_; // now added by bryan
   double uav_heading_; // now added by bryan
@@ -209,6 +210,7 @@ private:
   geometry_msgs::PoseArray predicted_velocities_out; // array of predicted velocities
   geometry_msgs::PoseArray predicted_accelerations_out; // array of predicted accelerations
   geometry_msgs::PoseArray predicted_attituderate_out; // array of predicted attituderates
+  geometry_msgs::PoseArray predicted_des_attituderate_out; // array of predicted desired attituderates
   geometry_msgs::PoseArray predicted_tiltangle_out; // array of predicted tilt angles
   double dt_ = 0.010; // ERG sample time = controller sample time
   double custom_dt_ = 0.010;//0.010;//0.001;//0.020; //0.010; // controller sampling time (in seconds) used in prediction
@@ -227,6 +229,7 @@ private:
   ros::Publisher custom_predicted_vel_publisher;
   ros::Publisher custom_predicted_acc_publisher;
   ros::Publisher custom_predicted_attrate_publisher;
+  ros::Publisher custom_predicted_des_attrate_publisher;
   ros::Publisher custom_predicted_tiltangle_publisher;
   ros::Publisher chatter_publisher_; // just an example
   ros::Publisher tube_min_radius_publisher_; // intermdiate step as example
@@ -462,6 +465,11 @@ private:
   bool _enable_repulsion_w_;
   bool _enable_repulsion_o_;
   bool _use_tube_;
+
+
+
+  bool USE_INERTIAL_ROTATION_ = false; //true; //TODO move as global variable
+
 };
 //}
 
@@ -516,7 +524,7 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
 
   // attitude gains
   param_loader.loadParam("default_gains/horizontal/attitude/kq", kqxy_);
-  //kqxy_ = 5.0; //8.0; //1.0; // To mimic a delay in the predicitons
+  //kqxy_ = 6.0; //8.0; //1.0; // To mimic a delay in the predicitons
   param_loader.loadParam("default_gains/vertical/attitude/kq", kqz_);
 
   // mass estimator
@@ -639,6 +647,7 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   custom_predicted_vel_publisher = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_vels", 10);
   custom_predicted_acc_publisher = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_accs", 10);
   custom_predicted_attrate_publisher = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_attrate", 10);
+  custom_predicted_des_attrate_publisher = nh2_.advertise<geometry_msgs::PoseArray>("custom_des_predicted_attrate", 10);
   custom_predicted_tiltangle_publisher = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_tiltangle", 10);
   DSM_publisher_ = nh2_.advertise<trackers_brubotics::DSM>("DSM", 10);
   chatter_publisher_ = nh2_.advertise<std_msgs::String>("chatter", 10);
@@ -957,7 +966,7 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
     position_cmd.use_heading             = 1;
     position_cmd.use_heading_rate        = 1;
 
-    starting_bool=false;
+    
     time_for_sinus_bryan = 0;
 
     ROS_INFO("[Dergbryan tracker - odom]: [goal_x_=%.2f],[goal_y_=%.2f],[goal_z_=%.2f, goal_heading_=%.2f]",goal_x_,goal_y_,goal_z_,goal_heading_);
@@ -966,6 +975,10 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
     applied_ref_y_ = position_cmd.position.y;
     applied_ref_z_ = position_cmd.position.z;
     //add heading applied ref
+
+    uav_state_prev_ = uav_state_; // required for computing derrivative of angular rate
+
+    starting_bool=false;
   return mrs_msgs::PositionCommand::ConstPtr(new mrs_msgs::PositionCommand(position_cmd));
 }
 /* begin copy of se3controller*/
@@ -1099,6 +1112,7 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
   predicted_velocities_out.poses.clear();
   predicted_accelerations_out.poses.clear();
   predicted_attituderate_out.poses.clear();
+  predicted_des_attituderate_out.poses.clear();
   predicted_tiltangle_out.poses.clear();
   uav_applied_ref_out_.points.clear();
   uav_posistion_out_.points.clear();
@@ -1423,6 +1437,8 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
   predicted_accelerations_out.header.frame_id = uav_state_.header.frame_id;
   predicted_attituderate_out.header.stamp = ros::Time::now();
   predicted_attituderate_out.header.frame_id = uav_state_.header.frame_id;
+  predicted_des_attituderate_out.header.stamp = ros::Time::now();
+  predicted_des_attituderate_out.header.frame_id = uav_state_.header.frame_id;
   predicted_tiltangle_out.header.stamp = ros::Time::now();
   predicted_tiltangle_out.header.frame_id = uav_state_.header.frame_id;
 
@@ -1432,13 +1448,16 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
   geometry_msgs::Pose custom_acceleration;
   geometry_msgs::Pose predicted_thrust; 
   geometry_msgs::Pose predicted_thrust_norm; 
-  geometry_msgs::Pose predicted_attituderate; 
+  geometry_msgs::Pose predicted_attituderate;
+  geometry_msgs::Pose predicted_des_attituderate;
   geometry_msgs::Pose predicted_tilt_angle; 
 
   Eigen::Matrix3d R;
   //Eigen::Matrix3d Rdot;
   Eigen::Matrix3d skew_Ow;
+  Eigen::Matrix3d skew_Ow_des;
   Eigen::Vector3d attitude_rate_pred;
+  Eigen::Vector3d attitude_rate_pred_prev;
   Eigen::Vector3d desired_attitude_rate_pred;
   Eigen::Vector3d torque_pred;
   Eigen::Vector3d attitude_acceleration_pred;
@@ -1461,6 +1480,11 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
       // Ow - UAV angular rate
       Eigen::Vector3d Ow(uav_state.velocity.angular.x, uav_state.velocity.angular.y, uav_state.velocity.angular.z);
       attitude_rate_pred = Ow; // actual predicted attitude rate
+      
+      if (USE_INERTIAL_ROTATION_){
+        Eigen::Vector3d Ow_prev(uav_state_prev_.velocity.angular.x, uav_state_prev_.velocity.angular.y, uav_state_prev_.velocity.angular.z);
+        attitude_rate_pred_prev = Ow_prev;
+      }
       // ROS_INFO_STREAM("R (i=0)  = \n" << R);
       // ROS_INFO_STREAM("attitude_rate_pred (i=0)  = \n" << attitude_rate_pred);
       // ROS_INFO_STREAM("Ow (i=0) = \n" << Ow);
@@ -1486,56 +1510,51 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
       uav_state.pose.position.z = uav_state.pose.position.z + uav_state.velocity.linear.z*custom_dt_;
       custom_pose.position.z = uav_state.pose.position.z;
 
+
+      if (!USE_INERTIAL_ROTATION_){
       // if we ignore the body rate inertial dynamics:
-      // TODO
-
+      // assumption made (inner loop is infinitely fast): desired_attitude_rate_pred = attitude_rate_pred
+        skew_Ow_des << 0.0     , -desired_attitude_rate_pred(2), desired_attitude_rate_pred(1),
+                  desired_attitude_rate_pred(2) , 0.0,       -desired_attitude_rate_pred(0),
+                  -desired_attitude_rate_pred(1), desired_attitude_rate_pred(0),  0.0;
+        
+        Eigen::Matrix3d I = Eigen::Matrix3d::Identity(3, 3);
+        R = (I + skew_Ow_des*custom_dt_ + 1.0/2.0*skew_Ow_des*custom_dt_*skew_Ow_des*custom_dt_ + 1.0/6.0*skew_Ow_des*custom_dt_*skew_Ow_des*custom_dt_*skew_Ow_des*custom_dt_)*R;
+      }
+      else{
       // if we include the body rate inertial dynamics:
-      attitude_rate_pred = attitude_rate_pred + attitude_acceleration_pred*custom_dt_;
-
-      skew_Ow << 0.0     , -attitude_rate_pred(2), attitude_rate_pred(1),
-                attitude_rate_pred(2) , 0.0,       -attitude_rate_pred(0),
-                -attitude_rate_pred(1), attitude_rate_pred(0),  0.0;
-      // if (i==5){
-      //   ROS_INFO_STREAM("skew_Ow (i=5) = \n" << skew_Ow);
-      // }
-      // ensure Ow is updated correctly in predictions....
-      //; // or add - (equivalent to transpose?) UNUSED
-      //skew_Ow = -skew_Ow;
-      // R = R + Rdot*dt; with Rdot = skew_Ow*R THIS IS WRONG 
-      // --> CORRECT to use exponential map like below (= Taylor series)
-      double custom_dt2 = custom_dt_;//
-      Eigen::Matrix3d I = Eigen::Matrix3d::Identity(3, 3);
-      R = (I + skew_Ow*custom_dt2 + 1/2*skew_Ow*custom_dt2*skew_Ow*custom_dt2 + 1/6*skew_Ow*custom_dt2*skew_Ow*custom_dt2*skew_Ow*custom_dt2)*R;
-      
+        attitude_rate_pred = attitude_rate_pred + attitude_acceleration_pred*custom_dt_;
+        skew_Ow << 0.0     , -attitude_rate_pred(2), attitude_rate_pred(1),
+                  attitude_rate_pred(2) , 0.0,       -attitude_rate_pred(0),
+                  -attitude_rate_pred(1), attitude_rate_pred(0),  0.0;
+        // if (i==5){
+        //   ROS_INFO_STREAM("skew_Ow (i=5) = \n" << skew_Ow);
+        // }
+        // ensure Ow is updated correctly in predictions....
+        //; // or add - (equivalent to transpose?) UNUSED
+        //skew_Ow = -skew_Ow;
+        // R = R + Rdot*dt; with Rdot = skew_Ow*R THIS IS WRONG 
+        // --> CORRECT to use exponential map like below (= Taylor series)
+        Eigen::Matrix3d I = Eigen::Matrix3d::Identity(3, 3);
+        R = (I + skew_Ow*custom_dt_ + 1.0/2.0*skew_Ow*custom_dt_*skew_Ow*custom_dt_ + 1.0/6.0*skew_Ow*custom_dt_*skew_Ow*custom_dt_*skew_Ow*custom_dt_)*R;
+        // for publishing:
+        predicted_attituderate.position.x = attitude_rate_pred(0,0);
+        predicted_attituderate.position.y = attitude_rate_pred(1,0);
+        predicted_attituderate.position.z = attitude_rate_pred(2,0);
+        predicted_attituderate_out.poses.push_back(predicted_attituderate);
+      }
       
       
       // debug:
       //ROS_INFO_STREAM("R(2) = \n" << R.col(2));
       Eigen::Vector3d temp = R.col(2);
       double normR2 = temp(0)*temp(0) + temp(1)*temp(1) + temp(2)*temp(2);
-      // if ((normR2 >=1.01) || (normR2 <=0.99))
-      // {
-      //   ROS_INFO_STREAM("normR2 = " << normR2);
-      // }
-      if ((normR2 >=1.05) || (normR2 <=0.95))
+      if ((normR2 >=1.02) || (normR2 <=0.98))
       {
         ROS_INFO_STREAM("normR2 = " << normR2);
       }
       
-      // if(i==5){
-      //   ROS_INFO_STREAM("R (i=5) = \n" << R);
-      //   ROS_INFO_STREAM("attitude_rate_pred (i=5)  = \n" << attitude_rate_pred);
-      // }
-      // else if (i==40){
-      //   ROS_INFO_STREAM("R (i=40) = \n" << R);
-      //   ROS_INFO_STREAM("attitude_rate_pred (i=40)  = \n" << attitude_rate_pred);
-      // }
 
-      // for publishing:
-      predicted_attituderate.position.x = attitude_rate_pred(0,0);
-      predicted_attituderate.position.y = attitude_rate_pred(1,0);
-      predicted_attituderate.position.z = attitude_rate_pred(2,0);
-      predicted_attituderate_out.poses.push_back(predicted_attituderate);
     } 
 
 
@@ -1976,9 +1995,10 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
 
     predicted_thrust_norm.position.x = thrust_force; // change later to a non vec type
     predicted_thrust_out.poses.push_back(predicted_thrust_norm);
-    //Eigen::Vector3d acceleration_uav = 1/_uav_mass_ * (f + _uav_mass_ * (Eigen::Vector3d(0, 0, -common_handlers_->g)));
-    // OLD Eigen::Vector3d acceleration_uav = 1/_uav_mass_ * (thrust_force*R.col(2) + _uav_mass_ * (Eigen::Vector3d(0, 0, -common_handlers_->g)));
+
     Eigen::Vector3d acceleration_uav = 1.0/total_mass * (thrust_force*R.col(2) + total_mass * (Eigen::Vector3d(0, 0, -common_handlers_->g)));
+    // Eigen::Vector3d acceleration_uav = 1.0/total_mass * (thrust_force*Rd.col(2) + total_mass * (Eigen::Vector3d(0, 0, -common_handlers_->g))); --> do not use desired force
+
     custom_acceleration.position.x = acceleration_uav[0];
     custom_acceleration.position.y = acceleration_uav[1];
     custom_acceleration.position.z = acceleration_uav[2];
@@ -2314,32 +2334,45 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
     }
 
 
+    desired_attitude_rate_pred = t; // desired attitude rate / attitude rate command
+    // for publishing:
+    predicted_des_attituderate.position.x = desired_attitude_rate_pred(0,0);
+    predicted_des_attituderate.position.y = desired_attitude_rate_pred(1,0);
+    predicted_des_attituderate.position.z = desired_attitude_rate_pred(2,0);
+    predicted_des_attituderate_out.poses.push_back(predicted_des_attituderate);
     // if we ignore the body rate inertial dynamics:
-    if (false) // TODO make user setting to include or not
-    {
-      //attitude_rate_pred = t; // desired attitude rate / attitude rate command
-      // TODO: make code work again when inertial dynamics are ignored (will give abd thrust predictions).
+    
+    if (!USE_INERTIAL_ROTATION_) // TODO make user setting to include or not
+    { 
+      // do nothing
     }
     else { // if we include the body rate inertial dynamics:
-      desired_attitude_rate_pred = t; // desired attitude rate / attitude rate command
+      
       // Compute the predicted torque:
       // See https://docs.px4.io/master/en/flight_stack/controller_diagrams.html, https://docs.px4.io/master/en/config_mc/pid_tuning_guide_multicopter.html#rate-controller
       // P-action:
       Eigen::Array3d  Kp_tau = Eigen::Array3d::Zero(3);
-      double kp_tau = 0.15;//0.15 (good);//0.10; (way too much second peak in predicted thrust)//0.50 (less good); //0.20 (ok)
+      double kp_tau = 0.15; //0.175; //0.15;//3.50; //1.50;//0.15 (good);//0.10; (way too much second peak in predicted thrust)//0.50 (less good); //0.20 (ok)
       Kp_tau[0] = kp_tau;
       Kp_tau[1] = kp_tau;
-      Kp_tau[2] = kp_tau;
+      Kp_tau[2] = kp_tau/1.0;
       Eigen::Vector3d tau_P_error = desired_attitude_rate_pred - attitude_rate_pred;
       // D-action:
       Eigen::Array3d  Kd_tau = Eigen::Array3d::Zero(3);
-      double kd_tau = 0.00; //0.05
+      double kd_tau = 0.0; //0.01; //0.00001; //0.01;
       Kd_tau[0] = kd_tau;
       Kd_tau[1] = kd_tau;
-      Kd_tau[2] = kd_tau;
-      Eigen::Vector3d tau_D_error = - attitude_rate_pred; // see http://brettbeauregard.com/blog/2011/04/improving-the-beginner%E2%80%99s-pid-derivative-kick/
+      Kd_tau[2] = kd_tau/10.0;
+      Eigen::Vector3d tau_D_error = -(attitude_rate_pred - attitude_rate_pred_prev)/custom_dt_; // see http://brettbeauregard.com/blog/2011/04/improving-the-beginner%E2%80%99s-pid-derivative-kick/
+      attitude_rate_pred_prev = attitude_rate_pred; // update prev for use in next prediction iteration
+    
       // P+D-action:
       torque_pred = Kp_tau * tau_P_error.array() + Kd_tau * tau_D_error.array(); //TODO add derivative action
+      if (i==0 || i==1){
+        //ROS_INFO_STREAM("term = \n" << torque_pred);
+      }
+      
+
       Eigen::Matrix3d J = Eigen::Matrix3d::Zero(3,3);
       // values taken from ~/mrs_workspace/src/simulation/ros_packages/mrs_simulation/models/mrs_robots_description/urdf/f450.xacro
       double inertia_body_radius = 0.20; // [m]
@@ -2347,9 +2380,10 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
       double Jxx = common_handlers_->getMass() * (3.0 * inertia_body_radius * inertia_body_radius + inertia_body_height * inertia_body_height) / 12.0;
       double Jyy = common_handlers_->getMass() * (3.0 * inertia_body_radius * inertia_body_radius + inertia_body_height * inertia_body_height) / 12.0;
       double Jzz = common_handlers_->getMass() * inertia_body_radius * inertia_body_radius / 2.0;
-      J(0,0) = Jxx;
-      J(1,1) = Jyy;
-      J(2,2) = Jzz;
+      double scale_inertia = 1.0; //1.0 for no scaling
+      J(0,0) = Jxx*scale_inertia;
+      J(1,1) = Jyy*scale_inertia;
+      J(2,2) = Jzz*scale_inertia;
       Eigen::Matrix3d skew_attitude_rate_pred; 
       skew_attitude_rate_pred << 0.0    , -attitude_rate_pred(2), attitude_rate_pred(1),
                                 attitude_rate_pred(2) , 0.0,     -attitude_rate_pred(0),
@@ -2477,6 +2511,12 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
   }
   catch (...) {
     ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", custom_predicted_attrate_publisher.getTopic().c_str());
+  }
+  try {
+    custom_predicted_des_attrate_publisher.publish(predicted_des_attituderate_out);
+  }
+  catch (...) {
+    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", custom_predicted_des_attrate_publisher.getTopic().c_str());
   }
   try {
     custom_predicted_tiltangle_publisher.publish(predicted_tiltangle_out);
