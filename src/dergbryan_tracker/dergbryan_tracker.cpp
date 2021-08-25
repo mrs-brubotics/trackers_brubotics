@@ -468,7 +468,7 @@ private:
 
 
 
-  bool USE_INERTIAL_ROTATION_ = false; //true; //TODO move as global variable
+  bool USE_INERTIAL_ROTATION_ = true; //true; //TODO move as global variable
 
 };
 //}
