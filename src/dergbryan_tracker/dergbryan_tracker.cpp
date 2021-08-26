@@ -468,7 +468,7 @@ private:
 
 
 
-  bool USE_INERTIAL_ROTATION_ = true; //true; //TODO move as global variable
+  bool USE_INERTIAL_ROTATION_ = false; //true; //TODO move as global variable
 
 };
 //}
@@ -524,7 +524,7 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
 
   // attitude gains
   param_loader.loadParam("default_gains/horizontal/attitude/kq", kqxy_);
-  //kqxy_ = 6.0; //8.0; //1.0; // To mimic a delay in the predicitons
+  kqxy_ = 7.0; //8.0; //1.0; // To mimic a delay in the predicitons
   param_loader.loadParam("default_gains/vertical/attitude/kq", kqz_);
 
   // mass estimator
