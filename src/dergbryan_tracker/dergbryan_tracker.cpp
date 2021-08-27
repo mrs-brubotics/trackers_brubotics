@@ -295,6 +295,7 @@ private:
   ros::Publisher point_link_star_publisher_;
   ros::Publisher sa_max_publisher_;
   ros::Publisher sa_perp_max_publisher_;
+  ros::Publisher pub_applied_ref_pose_;
   std_msgs::Int32 DERG_strategy_id;
   std_msgs::Int32 Sa_max_;
   std_msgs::Int32 Sa_perp_max;
@@ -641,6 +642,9 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   // Frank: Add same parameters for the navigation field of the wall and obstable - DONE HALF
   // create publishers
   pub_goal_pose_ = nh2_.advertise<mrs_msgs::ReferenceStamped>("goal_pose", 10);
+  // added by Jonathan and Titouan
+  pub_applied_ref_pose_ = nh2_.advertise<mrs_msgs::ReferenceStamped>("applied_ref_pose", 10);
+
   // custom_predicted_traj_publisher = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_traj", 1);
   custom_predicted_thrust_publisher = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_thrust", 10);
   custom_predicted_pose_publisher = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_poses", 10);
@@ -1105,6 +1109,18 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
   applied_ref_z_ = position_cmd.position.z;
   //
 
+  // Added by Jonathan and Titouan
+  // publish the applied ref pose to a custom topic
+  mrs_msgs::ReferenceStamped applied_ref_pose;
+  // applied_ref_pose.header.stamp          = ros::Time::now();
+  // applied_ref_pose.header.frame_id  = "frame_applied_ref";
+  applied_ref_pose.header.stamp    = uav_state->header.stamp;
+  applied_ref_pose.header.frame_id = uav_state->header.frame_id;
+  applied_ref_pose.reference.position.x  = applied_ref_x_;
+  applied_ref_pose.reference.position.y  = applied_ref_y_;
+  applied_ref_pose.reference.position.z  = applied_ref_z_;
+  applied_ref_pose.reference.heading = goal_heading_;
+  pub_applied_ref_pose_.publish(applied_ref_pose);
 
 
   predicted_thrust_out.poses.clear();
