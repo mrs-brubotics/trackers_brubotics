@@ -332,7 +332,7 @@ private:
   bool _use_derg_;
   double _zeta_a_;
   double _delta_a_;
-  double Ra = 0.35; // TODO should be taken from urdf, how to do so??
+  double Ra_ = 0.35; // TODO should be taken from urdf, how to do so??
   int _DERG_strategy_id_;
   // int DERG_strategy_id_ = 3; //0 / 1 / 2 / 3 /4
   // COMPARE AS
@@ -2816,7 +2816,7 @@ void DergbryanTracker::DERG_computation(){
       double dist_between_ref = sqrt(dist_between_ref_x*dist_between_ref_x + dist_between_ref_y*dist_between_ref_y + dist_between_ref_z*dist_between_ref_z);
       //ROS_INFO_STREAM("dist_between_ref = \n" << dist_between_ref);
       // Conservative part:
-      double max_repulsion_other_uav = (_zeta_a_ - (dist_between_ref - 2*Ra - 2*_Sa_max_))/(_zeta_a_ - _delta_a_);
+      double max_repulsion_other_uav = (_zeta_a_ - (dist_between_ref - 2*Ra_ - 2*_Sa_max_))/(_zeta_a_ - _delta_a_);
       if (0 > max_repulsion_other_uav) {
         max_repulsion_other_uav = 0;
       }
@@ -2826,7 +2826,7 @@ void DergbryanTracker::DERG_computation(){
 
       // Non-conservative part:
       if (_alpha_a_ >= 0.0001){
-        if (_zeta_a_ >= dist_between_ref - 2*Ra - 2*_Sa_max_) {
+        if (_zeta_a_ >= dist_between_ref - 2*Ra_ - 2*_Sa_max_) {
           NF_a_nco = NF_a_nco + calcCirculationField(_circ_type_, dist_between_ref_x, dist_between_ref_y, dist_between_ref_z, dist_between_ref);
         }
       }
@@ -2932,7 +2932,7 @@ void DergbryanTracker::DERG_computation(){
       if (!use_min_tube_radius){
         // DSM: 2 tubes of radius _Sa_perp_max_ may not overlap
         // DSM scaled over the influence margin
-        DSM_a_temp = _kappa_a_*(dist - 2*Ra - 2*_Sa_perp_max_) / _zeta_a_; // in _kappa_a_*[0 , 1]
+        DSM_a_temp = _kappa_a_*(dist - 2*Ra_ - 2*_Sa_perp_max_) / _zeta_a_; // in _kappa_a_*[0 , 1]
         // OR (see below)
         // TODO other option!!! Own predicted trajectory (= own orange tube) may not overlap blue tube of other agent
         // --> should give less conservative performance
@@ -2948,7 +2948,7 @@ void DergbryanTracker::DERG_computation(){
         double dist = (point_link_applied_ref_other_uav - point_link_applied_ref).norm();
       }
       
-      double max_repulsion_other_uav = (_zeta_a_ - (dist - 2*Ra - 2*_Sa_perp_max_))/(_zeta_a_ - _delta_a_);
+      double max_repulsion_other_uav = (_zeta_a_ - (dist - 2*Ra_ - 2*_Sa_perp_max_))/(_zeta_a_ - _delta_a_);
       if (0 > max_repulsion_other_uav) {
         max_repulsion_other_uav = 0;
       }
@@ -2962,7 +2962,7 @@ void DergbryanTracker::DERG_computation(){
 
       // Non-conservative part
       if (_alpha_a_ >= 0.0001){
-        if (_zeta_a_ >= dist - 2*Ra - 2*_Sa_perp_max_) {
+        if (_zeta_a_ >= dist - 2*Ra_ - 2*_Sa_perp_max_) {
           NF_a_nco = NF_a_nco + calcCirculationField(_circ_type_, dist_x, dist_y, dist_z, dist);
         }
       }
@@ -2996,7 +2996,7 @@ void DergbryanTracker::DERG_computation(){
       //   // TODO other option!!! Own predicted trajectory (= own orange tube) may not overlap blue tube of other agent
       //   // --> should give less conservative performance
       //   // DSM scaled over the influence margin
-      //   DSM_a_temp = _kappa_a_*(dist - 2*Ra - 2*_Sa_perp_max_) / _zeta_a_; // in _kappa_a_*[0 , 1]
+      //   DSM_a_temp = _kappa_a_*(dist - 2*Ra_ - 2*_Sa_perp_max_) / _zeta_a_; // in _kappa_a_*[0 , 1]
 
       //   if (DSM_a_temp < DSM_a_){  // choose smallest DSM_a_ over the agents
       //     DSM_a_ = DSM_a_temp;
@@ -3087,7 +3087,7 @@ void DergbryanTracker::DERG_computation(){
       if (!use_min_tube_radius){
         // DSM: 2 tubes of radius _Sa_perp_max_ may not overlap
         // DSM scaled over the influence margin
-        DSM_a_temp = _kappa_a_*(dist - 2*Ra - 2*_Sa_perp_max_) / _zeta_a_; // in _kappa_a_*[0 , 1]
+        DSM_a_temp = _kappa_a_*(dist - 2*Ra_ - 2*_Sa_perp_max_) / _zeta_a_; // in _kappa_a_*[0 , 1]
         // OR (see below)
         // TODO other option!!! Own predicted trajectory (= own orange tube) may not overlap blue tube of other agent
         // --> should give less conservative performance
@@ -3098,7 +3098,7 @@ void DergbryanTracker::DERG_computation(){
 
 
       // Conservative part
-      double max_repulsion_other_uav = (_zeta_a_ - (dist - 2*Ra - 2*_Sa_perp_max_))/(_zeta_a_ - _delta_a_);
+      double max_repulsion_other_uav = (_zeta_a_ - (dist - 2*Ra_ - 2*_Sa_perp_max_))/(_zeta_a_ - _delta_a_);
       if (0 > max_repulsion_other_uav) {
         max_repulsion_other_uav = 0;
       }
@@ -3109,7 +3109,7 @@ void DergbryanTracker::DERG_computation(){
 
       // Non-conservative part
       if (_alpha_a_ >= 0.0001){
-        if (_zeta_a_ >= dist - 2*Ra - 2*_Sa_perp_max_) {
+        if (_zeta_a_ >= dist - 2*Ra_ - 2*_Sa_perp_max_) {
           NF_a_nco = NF_a_nco + calcCirculationField(_circ_type_, dist_x, dist_y, dist_z, dist);
         }
       }
@@ -3321,7 +3321,7 @@ void DergbryanTracker::DERG_computation(){
         
         //ROS_INFO_STREAM("Sa_perp_other_uav = \n" << Sa_perp_other_uav);
          
-        DSM_a_temp = _kappa_a_*(dist - 2*Ra - (Sa_perp_.data + Sa_perp_other_uav)) / _zeta_a_; // in _kappa_a_*[0 , 1]
+        DSM_a_temp = _kappa_a_*(dist - 2*Ra_ - (Sa_perp_.data + Sa_perp_other_uav)) / _zeta_a_; // in _kappa_a_*[0 , 1]
         
      
         if (DSM_a_temp < DSM_a_){  // choose smallest DSM_a_ over the agents
@@ -3332,7 +3332,7 @@ void DergbryanTracker::DERG_computation(){
 
       // Conservative part
       // same comment as before!!!
-      double max_repulsion_other_uav = (_zeta_a_ - (dist - 2*Ra - (Sa_perp_.data + Sa_perp_other_uav)))/(_zeta_a_ - _delta_a_);
+      double max_repulsion_other_uav = (_zeta_a_ - (dist - 2*Ra_ - (Sa_perp_.data + Sa_perp_other_uav)))/(_zeta_a_ - _delta_a_);
       if (0 > max_repulsion_other_uav) {
         max_repulsion_other_uav = 0;
       }
@@ -3343,7 +3343,7 @@ void DergbryanTracker::DERG_computation(){
 
       // Non-conservative part
       if (_alpha_a_ >= 0.0001){
-        if (_zeta_a_ >= dist - 2*Ra - (Sa_perp_.data + Sa_perp_other_uav)) {
+        if (_zeta_a_ >= dist - 2*Ra_ - (Sa_perp_.data + Sa_perp_other_uav)) {
           NF_a_nco = NF_a_nco + calcCirculationField(_circ_type_, dist_x, dist_y, dist_z, dist);
         }
       }
@@ -3564,7 +3564,7 @@ void DergbryanTracker::DERG_computation(){
         
         //ROS_INFO_STREAM("Sa_perp_other_uav = \n" << Sa_perp_other_uav);
          
-        DSM_a_temp = _kappa_a_*(dist - 2*Ra - (Sa_perp_.data + Sa_perp_other_uav)) / _zeta_a_; // in _kappa_a_*[0 , 1]
+        DSM_a_temp = _kappa_a_*(dist - 2*Ra_ - (Sa_perp_.data + Sa_perp_other_uav)) / _zeta_a_; // in _kappa_a_*[0 , 1]
         
      
         if (DSM_a_temp < DSM_a_){  // choose smallest DSM_a_ over the agents
@@ -3575,7 +3575,7 @@ void DergbryanTracker::DERG_computation(){
 
       // Conservative part
       // same comment as before!!!
-      double max_repulsion_other_uav = (_zeta_a_ - (dist - 2*Ra - (Sa_perp_.data + Sa_perp_other_uav)))/(_zeta_a_ - _delta_a_);
+      double max_repulsion_other_uav = (_zeta_a_ - (dist - 2*Ra_ - (Sa_perp_.data + Sa_perp_other_uav)))/(_zeta_a_ - _delta_a_);
       if (0 > max_repulsion_other_uav) {
         max_repulsion_other_uav = 0;
       }
@@ -3586,7 +3586,7 @@ void DergbryanTracker::DERG_computation(){
 
       // Non-conservative part
       if (_alpha_a_ >= 0.0001){
-        if (_zeta_a_ >= dist - 2*Ra - (Sa_perp_.data + Sa_perp_other_uav)) {
+        if (_zeta_a_ >= dist - 2*Ra_ - (Sa_perp_.data + Sa_perp_other_uav)) {
           NF_a_nco = NF_a_nco + calcCirculationField(_circ_type_, dist_x, dist_y, dist_z, dist);
         }
       }
@@ -3701,7 +3701,7 @@ void DergbryanTracker::DERG_computation(){
         double other_uav_pos_z = it->second.points[i].z;
         Eigen::Vector3d point_other_uav_traj(other_uav_pos_x, other_uav_pos_y, other_uav_pos_z);
         //ROS_INFO_STREAM("Other UAV position = \n" << point_other_uav_traj);
-        double norm = (point_traj - point_other_uav_traj).norm()-2*Ra; 
+        double norm = (point_traj - point_other_uav_traj).norm()-2*Ra_; 
         DSM_a_temp = _kappa_a_*(norm)/ _zeta_a_; // in _kappa_a_*[0 , 1]
         if (DSM_a_temp < DSM_a_){  // choose smallest DSM_a_ over the predicted trajectory
           DSM_a_ = DSM_a_temp;
@@ -3779,7 +3779,7 @@ void DergbryanTracker::DERG_computation(){
 
 
       // Conservative part
-      double max_repulsion_other_uav = (_zeta_a_ - (dist - 2*Ra - (Sa_perp_.data + Sa_perp_other_uav)))/(_zeta_a_ - _delta_a_);
+      double max_repulsion_other_uav = (_zeta_a_ - (dist - 2*Ra_ - (Sa_perp_.data + Sa_perp_other_uav)))/(_zeta_a_ - _delta_a_);
       if (0 > max_repulsion_other_uav) {
         max_repulsion_other_uav = 0;
       }
@@ -3790,7 +3790,7 @@ void DergbryanTracker::DERG_computation(){
 
       // Non-conservative part
       if (_alpha_a_ >= 0.0001){
-        if (_zeta_a_ >= dist - 2*Ra - (Sa_perp_.data + Sa_perp_other_uav)) {
+        if (_zeta_a_ >= dist - 2*Ra_ - (Sa_perp_.data + Sa_perp_other_uav)) {
           NF_a_nco = NF_a_nco + calcCirculationField(_circ_type_, dist_x, dist_y, dist_z, dist);
         }
       }
