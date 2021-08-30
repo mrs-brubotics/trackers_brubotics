@@ -23,6 +23,7 @@
 #include <std_msgs/String.h>
 #include <std_msgs/Float32.h>
 #include <trackers_brubotics/FutureTrajectoryTube.h> // custom ROS message
+#include <trackers_brubotics/DistanceBetweenUavs.h> // custom ROS message
 #include <geometry_msgs/Point.h>
 /*end includes added by bryan:*/
 
@@ -301,6 +302,8 @@ private:
   std_msgs::Int32 Sa_perp_max;
   geometry_msgs::Pose point_link_star_;
   bool _enable_visualization_;
+
+  bool _enable_diagnostics_pub_;
   
   void callbackOtherUavAppliedRef(const mrs_msgs::FutureTrajectoryConstPtr& msg);
   void callbackOtherUavPosition(const mrs_msgs::FutureTrajectoryConstPtr& msg);
@@ -387,9 +390,9 @@ private:
 
 
   ros::Publisher DSM_publisher_;
-  // dergbryan_tracker::DSM DSM_msg_;
   trackers_brubotics::DSM DSM_msg_;
-  //Frank : Add new parameters inside this msg -> trackers_brubotics/msg/ DONE
+  ros::Publisher DistanceBetweenUavs_publisher_;
+  trackers_brubotics::DistanceBetweenUavs DistanceBetweenUavs_msg_;
 
   // // trajectory loader (mpc_tracker):
   std::tuple<bool, std::string, bool> loadTrajectory(const mrs_msgs::TrajectoryReference msg);
@@ -595,6 +598,7 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
 
   // added by Titouan and Jonathan
   param_loader2.loadParam("enable_visualization", _enable_visualization_);
+  param_loader2.loadParam("enable_diagnostics_pub", _enable_diagnostics_pub_);
 
   param_loader2.loadParam("prediction/horizon", _pred_horizon_);
   // convert below to int
@@ -654,6 +658,7 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   custom_predicted_des_attrate_publisher = nh2_.advertise<geometry_msgs::PoseArray>("custom_des_predicted_attrate", 10);
   custom_predicted_tiltangle_publisher = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_tiltangle", 10);
   DSM_publisher_ = nh2_.advertise<trackers_brubotics::DSM>("DSM", 10);
+  DistanceBetweenUavs_publisher_ = nh2_.advertise<trackers_brubotics::DistanceBetweenUavs>("DistanceBetweenUavs", 10);
   chatter_publisher_ = nh2_.advertise<std_msgs::String>("chatter", 10);
   tube_min_radius_publisher_ = nh2_.advertise<std_msgs::Float32>("tube_min_radius", 10);
   future_tube_publisher_ = nh2_.advertise<trackers_brubotics::FutureTrajectoryTube>("future_trajectory_tube", 10);
@@ -3906,7 +3911,54 @@ void DergbryanTracker::DERG_computation(){
   }
   avoidance_trajectory_publisher_.publish(future_trajectory_out_);
 
-  // added by Titouan and Jonathan
+
+  // Diagnostics Publisher:
+  if(_enable_diagnostics_pub_){
+    /*
+    - compute relevant info for: collision avoidance.
+    - this method avoids post-processing timesynchronization problems in matlab
+    */
+    // Colision avoidance:
+    double min_distance_this_uav2other_uav = 100000; // initialized with very high value
+    // this uav:
+    Eigen::Vector3d pos_this_uav(predicted_poses_out.poses[0].position.x, predicted_poses_out.poses[0].position.y, predicted_poses_out.poses[0].position.z);
+    // other uavs:
+    std::map<std::string, mrs_msgs::FutureTrajectory>::iterator it = other_uavs_positions_.begin();
+    while ((it != other_uavs_positions_.end()) ) {
+      // make sure we use the same uavid for both iterators. It must be robust to possible difference in lenths of the iterators (if some communication got lost) or a different order (e.g. if not auto alphabetical).
+      std::string other_uav_name = it->first;
+      try
+      {
+        mrs_msgs::FutureTrajectory temp_pos = other_uavs_positions_[other_uav_name];
+      }
+      catch(...)
+      {
+        // other_uavs_positions_[other_uav_name] does not exist. Skip this iteration directly.
+        ROS_WARN_THROTTLE(1.0, "[DergbryanTracker]: Lost communicated position corresponding to the position of %s \n", other_uav_name.c_str());
+        it++;
+        continue;
+      }     
+      double other_uav_pos_x = other_uavs_positions_[other_uav_name].points[0].x;
+      double other_uav_pos_y = other_uavs_positions_[other_uav_name].points[0].y;
+      double other_uav_pos_z = other_uavs_positions_[other_uav_name].points[0].z;
+      Eigen::Vector3d pos_other_uav(other_uav_pos_x, other_uav_pos_y, other_uav_pos_z);
+      // compute minimum distance from this_uav to all other_uav:
+      double min_distance_this_uav2other_uav_temp = (pos_this_uav - pos_other_uav).norm()-2*Ra_; 
+      min_distance_this_uav2other_uav = std::min(min_distance_this_uav2other_uav, min_distance_this_uav2other_uav_temp);
+      DistanceBetweenUavs_msg_.stamp = uav_state_.header.stamp;
+      DistanceBetweenUavs_msg_.other_uav_name = other_uav_name;
+      DistanceBetweenUavs_msg_.min_distance_this_uav2other_uav = min_distance_this_uav2other_uav;
+      try {
+        DistanceBetweenUavs_publisher_.publish(DistanceBetweenUavs_msg_);
+      }
+      catch (...) {
+        ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", DistanceBetweenUavs_publisher_.getTopic().c_str());
+      }
+      it++;
+    }
+  }
+  
+  // RVIZ:
   if(_enable_visualization_){
     DERG_strategy_id.data = _DERG_strategy_id_;
     derg_strategy_id_publisher_.publish(DERG_strategy_id);

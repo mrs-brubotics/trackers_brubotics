@@ -71,4 +71,5 @@ navigation_field:
 
 #mpc_rate: 100.0 # rate of MPC calculation, >= 10 Hz
 
-enable_visualization: false
+enable_visualization: false   # RVIZ
+enable_diagnostics_pub: false # Publish diagnostics: distance between agents over time

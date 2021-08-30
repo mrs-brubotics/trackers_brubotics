@@ -23,6 +23,7 @@ find_package(catkin REQUIRED COMPONENTS
 add_message_files(FILES
   DSM.msg
   FutureTrajectoryTube.msg
+  DistanceBetweenUavs.msg
   )
 generate_messages(DEPENDENCIES geometry_msgs std_msgs)
 

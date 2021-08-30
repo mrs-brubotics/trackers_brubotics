@@ -1,0 +1,3 @@
+time stamp
+float64 min_distance_this_uav2other_uav
+string other_uav_name
