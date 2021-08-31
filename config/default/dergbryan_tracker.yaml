@@ -73,3 +73,4 @@ navigation_field:
 
 enable_visualization: false   # RVIZ
 enable_diagnostics_pub: false # Publish diagnostics: distance between agents over time
+enable_trajectory_pub: false # Publish trajectory (state + input) predictions. Topics required for collision avoidance will still be published.

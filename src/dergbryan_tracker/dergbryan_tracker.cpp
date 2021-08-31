@@ -26,6 +26,9 @@
 #include <trackers_brubotics/DistanceBetweenUavs.h> // custom ROS message
 #include <trackers_brubotics/TrajectoryTracking.h> // custom ROS message
 #include <geometry_msgs/Point.h>
+#include <chrono> // computational time calculations
+#include <ctime>  // computational time calculations
+#include <trackers_brubotics/ComputationalTime.h> // custom ROS message
 /*end includes added by bryan:*/
 
 /*begin includes added by Titouan and Jonathan:*/
@@ -125,7 +128,7 @@ private:
   std::mutex                    mutex_constraints_;
   bool                          got_constraints_ = false;
 
-  // std::stack<clock_t> tictoc_stack;
+ 
 
   // | ---------- thrust generation and mass estimation --------- |
 
@@ -206,14 +209,14 @@ private:
   double time_for_sinus_bryan = 0;
   ros::Publisher pub_goal_pose_;
 
-  geometry_msgs::PoseArray predicted_thrust_out;  // array of thrust predictions
+  geometry_msgs::PoseArray predicted_thrust_out_;  // array of thrust predictions
   // geometry_msgs::PoseArray custom_trajectory_out; // array of pose traj predictions
-  geometry_msgs::PoseArray predicted_poses_out; // array of predicted poses
-  geometry_msgs::PoseArray predicted_velocities_out; // array of predicted velocities
-  geometry_msgs::PoseArray predicted_accelerations_out; // array of predicted accelerations
-  geometry_msgs::PoseArray predicted_attituderate_out; // array of predicted attituderates
-  geometry_msgs::PoseArray predicted_des_attituderate_out; // array of predicted desired attituderates
-  geometry_msgs::PoseArray predicted_tiltangle_out; // array of predicted tilt angles
+  geometry_msgs::PoseArray predicted_poses_out_; // array of predicted poses
+  geometry_msgs::PoseArray predicted_velocities_out_; // array of predicted velocities
+  geometry_msgs::PoseArray predicted_accelerations_out_; // array of predicted accelerations
+  geometry_msgs::PoseArray predicted_attituderate_out_; // array of predicted attituderates
+  geometry_msgs::PoseArray predicted_des_attituderate_out_; // array of predicted desired attituderates
+  geometry_msgs::PoseArray predicted_tiltangle_out_; // array of predicted tilt angles
   double dt_ = 0.010; // ERG sample time = controller sample time
   double custom_dt_ = 0.010;//0.010;//0.001;//0.020; //0.010; // controller sampling time (in seconds) used in prediction
   double _pred_horizon_;//1.5//0.15;//1.5; //0.15; //1.5; //0.4; // prediction horizon (in seconds)
@@ -305,6 +308,7 @@ private:
   bool _enable_visualization_;
 
   bool _enable_diagnostics_pub_;
+  bool _enable_trajectory_pub_;
   
   void callbackOtherUavAppliedRef(const mrs_msgs::FutureTrajectoryConstPtr& msg);
   void callbackOtherUavPosition(const mrs_msgs::FutureTrajectoryConstPtr& msg);
@@ -486,6 +490,18 @@ private:
 
   bool USE_INERTIAL_ROTATION_ = false; //true; //TODO move as global variable
 
+  // method Kelly:
+  /* chrono */  
+  std::chrono::time_point<std::chrono::system_clock> start_ERG_, end_ERG_;
+  std::chrono::time_point<std::chrono::system_clock> start_NF_, end_NF_;
+  std::chrono::time_point<std::chrono::system_clock> start_DSM_, end_DSM_;
+  std::chrono::time_point<std::chrono::system_clock> start_pred_, end_pred_;
+  std::chrono::duration<double> ComputationalTime_ERG_, ComputationalTime_NF_, ComputationalTime_DSM_, ComputationalTime_pred_;
+  trackers_brubotics::ComputationalTime ComputationalTime_msg_;
+  ros::Publisher ComputationalTime_publisher_;
+  
+  // method Zakaria & Frank
+  std::stack<clock_t> tictoc_stack; 
 };
 //}
 
@@ -611,6 +627,7 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   // added by Titouan and Jonathan
   param_loader2.loadParam("enable_visualization", _enable_visualization_);
   param_loader2.loadParam("enable_diagnostics_pub", _enable_diagnostics_pub_);
+  param_loader2.loadParam("enable_trajectory_pub", _enable_trajectory_pub_);
 
   param_loader2.loadParam("prediction/horizon", _pred_horizon_);
   // convert below to int
@@ -672,6 +689,7 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   DSM_publisher_ = nh2_.advertise<trackers_brubotics::DSM>("DSM", 10);
   DistanceBetweenUavs_publisher_ = nh2_.advertise<trackers_brubotics::DistanceBetweenUavs>("DistanceBetweenUavs", 10);
   TrajectoryTracking_publisher_ = nh2_.advertise<trackers_brubotics::TrajectoryTracking>("TrajectoryTracking", 10);
+  ComputationalTime_publisher_ = nh2_.advertise<trackers_brubotics::ComputationalTime>("ComputationalTime", 10);
   chatter_publisher_ = nh2_.advertise<std_msgs::String>("chatter", 10);
   tube_min_radius_publisher_ = nh2_.advertise<std_msgs::Float32>("tube_min_radius", 10);
   future_tube_publisher_ = nh2_.advertise<trackers_brubotics::FutureTrajectoryTube>("future_trajectory_tube", 10);
@@ -1099,10 +1117,10 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
     position_cmd.position.y     = applied_ref_y_;
     position_cmd.position.z     = applied_ref_z_;
     position_cmd.heading        = goal_heading_;
-    // tictoc_stack.push(clock());
+    //tictoc_stack.push(clock());
     trajectory_prediction_general(position_cmd, uav_heading, last_attitude_cmd);
-    // ROS_INFO_STREAM("Prediction calculation took = \n "<< (double)(clock()- tictoc_stack.top())/CLOCKS_PER_SEC << "seconds.");
-    // tictoc_stack.pop();
+    //ROS_INFO_STREAM("Prediction calculation took = \n "<< (double)(clock()- tictoc_stack.top())/CLOCKS_PER_SEC << "seconds.");
+    //tictoc_stack.pop();
     DERG_computation(); // modifies the applied reference
     position_cmd.position.x     = applied_ref_x_;
     position_cmd.position.y     = applied_ref_y_;
@@ -1141,23 +1159,30 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
   pub_applied_ref_pose_.publish(applied_ref_pose);
 
 
-  predicted_thrust_out.poses.clear();
-  predicted_poses_out.poses.clear();
-  predicted_velocities_out.poses.clear();
-  predicted_accelerations_out.poses.clear();
-  predicted_attituderate_out.poses.clear();
-  predicted_des_attituderate_out.poses.clear();
-  predicted_tiltangle_out.poses.clear();
+  predicted_thrust_out_.poses.clear();
+  predicted_poses_out_.poses.clear();
+  predicted_velocities_out_.poses.clear();
+  predicted_accelerations_out_.poses.clear();
+  predicted_attituderate_out_.poses.clear();
+  predicted_des_attituderate_out_.poses.clear();
+  predicted_tiltangle_out_.poses.clear();
   uav_applied_ref_out_.points.clear();
   uav_posistion_out_.points.clear();
   future_trajectory_out_.points.clear();
 
 
-      
+  // Publishers:
+  ComputationalTime_msg_.stamp = uav_state_.header.stamp;
+  try {
+    ComputationalTime_publisher_.publish(ComputationalTime_msg_);
+  }
+  catch (...) {
+    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", ComputationalTime_publisher_.getTopic().c_str());
+  }
   
   
 
-//   // return a position command
+  // return a position command:
   return mrs_msgs::PositionCommand::ConstPtr(new mrs_msgs::PositionCommand(position_cmd));
 }
 //}
@@ -1380,6 +1405,12 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
 
 
 void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand position_cmd, double uav_heading, const mrs_msgs::AttitudeCommand::ConstPtr &last_attitude_cmd){
+  
+  // Computational time:
+  start_pred_ = std::chrono::system_clock::now(); 
+  
+  tictoc_stack.push(clock());
+
   // --------------------------------------------------------------
   // |          load the control reference and estimates          | --> the reference is assumed constant over the prediction
   // --------------------------------------------------------------
@@ -1461,20 +1492,20 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
 
 
   // Discrete trajectory prediction using the forward Euler formula's
-  predicted_thrust_out.header.stamp = ros::Time::now();
-  predicted_thrust_out.header.frame_id = uav_state_.header.frame_id;
-  predicted_poses_out.header.stamp = ros::Time::now();
-  predicted_poses_out.header.frame_id = uav_state_.header.frame_id;
-  predicted_velocities_out.header.stamp = ros::Time::now();
-  predicted_velocities_out.header.frame_id = uav_state_.header.frame_id;
-  predicted_accelerations_out.header.stamp = ros::Time::now();
-  predicted_accelerations_out.header.frame_id = uav_state_.header.frame_id;
-  predicted_attituderate_out.header.stamp = ros::Time::now();
-  predicted_attituderate_out.header.frame_id = uav_state_.header.frame_id;
-  predicted_des_attituderate_out.header.stamp = ros::Time::now();
-  predicted_des_attituderate_out.header.frame_id = uav_state_.header.frame_id;
-  predicted_tiltangle_out.header.stamp = ros::Time::now();
-  predicted_tiltangle_out.header.frame_id = uav_state_.header.frame_id;
+  predicted_thrust_out_.header.stamp = ros::Time::now();
+  predicted_thrust_out_.header.frame_id = uav_state_.header.frame_id;
+  predicted_poses_out_.header.stamp = ros::Time::now();
+  predicted_poses_out_.header.frame_id = uav_state_.header.frame_id;
+  predicted_velocities_out_.header.stamp = ros::Time::now();
+  predicted_velocities_out_.header.frame_id = uav_state_.header.frame_id;
+  predicted_accelerations_out_.header.stamp = ros::Time::now();
+  predicted_accelerations_out_.header.frame_id = uav_state_.header.frame_id;
+  predicted_attituderate_out_.header.stamp = ros::Time::now();
+  predicted_attituderate_out_.header.frame_id = uav_state_.header.frame_id;
+  predicted_des_attituderate_out_.header.stamp = ros::Time::now();
+  predicted_des_attituderate_out_.header.frame_id = uav_state_.header.frame_id;
+  predicted_tiltangle_out_.header.stamp = ros::Time::now();
+  predicted_tiltangle_out_.header.frame_id = uav_state_.header.frame_id;
 
 
   geometry_msgs::Pose custom_pose;
@@ -1575,7 +1606,7 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
         predicted_attituderate.position.x = attitude_rate_pred(0,0);
         predicted_attituderate.position.y = attitude_rate_pred(1,0);
         predicted_attituderate.position.z = attitude_rate_pred(2,0);
-        predicted_attituderate_out.poses.push_back(predicted_attituderate);
+        predicted_attituderate_out_.poses.push_back(predicted_attituderate);
       }
       
       
@@ -1592,8 +1623,8 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
     } 
 
 
-    predicted_poses_out.poses.push_back(custom_pose);
-    predicted_velocities_out.poses.push_back(custom_vel);
+    predicted_poses_out_.poses.push_back(custom_pose);
+    predicted_velocities_out_.poses.push_back(custom_vel);
     
     
 
@@ -1876,7 +1907,7 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
 
     // Publish predicted tilt angle:
     predicted_tilt_angle.position.x = theta; // change later to a non vec type
-    predicted_tiltangle_out.poses.push_back(predicted_tilt_angle);
+    predicted_tiltangle_out_.poses.push_back(predicted_tilt_angle);
     
     // ROS_INFO_STREAM("theta_sat = \n" << theta*180/3.1415);
     
@@ -2028,7 +2059,7 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
     thrust_force = mrs_lib::quadratic_thrust_model::thrustToForce(common_handlers_->motor_params, thrust);
 
     predicted_thrust_norm.position.x = thrust_force; // change later to a non vec type
-    predicted_thrust_out.poses.push_back(predicted_thrust_norm);
+    predicted_thrust_out_.poses.push_back(predicted_thrust_norm);
 
     Eigen::Vector3d acceleration_uav = 1.0/total_mass * (thrust_force*R.col(2) + total_mass * (Eigen::Vector3d(0, 0, -common_handlers_->g)));
     // Eigen::Vector3d acceleration_uav = 1.0/total_mass * (thrust_force*Rd.col(2) + total_mass * (Eigen::Vector3d(0, 0, -common_handlers_->g))); --> do not use desired force
@@ -2036,7 +2067,7 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
     custom_acceleration.position.x = acceleration_uav[0];
     custom_acceleration.position.y = acceleration_uav[1];
     custom_acceleration.position.z = acceleration_uav[2];
-    predicted_accelerations_out.poses.push_back(custom_acceleration);
+    predicted_accelerations_out_.poses.push_back(custom_acceleration);
 
     // prepare the attitude feedback
     Eigen::Vector3d q_feedback = -Kq * Eq.array();
@@ -2373,7 +2404,7 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
     predicted_des_attituderate.position.x = desired_attitude_rate_pred(0,0);
     predicted_des_attituderate.position.y = desired_attitude_rate_pred(1,0);
     predicted_des_attituderate.position.z = desired_attitude_rate_pred(2,0);
-    predicted_des_attituderate_out.poses.push_back(predicted_des_attituderate);
+    predicted_des_attituderate_out_.poses.push_back(predicted_des_attituderate);
     // if we ignore the body rate inertial dynamics:
     
     if (!USE_INERTIAL_ROTATION_) // TODO make user setting to include or not
@@ -2514,54 +2545,61 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
 
   } // end for loop prediction
 
+  // Computational time:
+  end_pred_ = std::chrono::system_clock::now();
+  ComputationalTime_pred_ = end_pred_ - start_pred_;
+  ComputationalTime_msg_.trajectory_predictions = ComputationalTime_pred_.count(); //(double)(clock()- tictoc_stack.top())/CLOCKS_PER_SEC;//
+  //ROS_INFO_STREAM("Prediction calculation took = \n "<< (double)(clock()- tictoc_stack.top())/CLOCKS_PER_SEC << "seconds.");
+  tictoc_stack.pop();
 
-
+  // Publishers:
+  // TODO: change code so nowhere is using predicted_poses_out_ for calculations of own uav DSM
   try {
-    custom_predicted_thrust_publisher.publish(predicted_thrust_out);
-  }
-  catch (...) {
-    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", custom_predicted_thrust_publisher.getTopic().c_str());
-  }
-  try {
-    custom_predicted_pose_publisher.publish(predicted_poses_out);
+    custom_predicted_pose_publisher.publish(predicted_poses_out_);
   }
   catch (...) {
     ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", custom_predicted_pose_publisher.getTopic().c_str());
   }
-  try {
-    custom_predicted_vel_publisher.publish(predicted_velocities_out);
+  // avoid publishing all trajectory predictions since not required for control, only useful for post-analysis:
+  if (_enable_trajectory_pub_) {
+    try {
+      custom_predicted_vel_publisher.publish(predicted_velocities_out_);
+    }
+    catch (...) {
+      ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", custom_predicted_vel_publisher.getTopic().c_str());
+    }
+    try {
+      custom_predicted_acc_publisher.publish(predicted_accelerations_out_);
+    }
+    catch (...) {
+      ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", custom_predicted_acc_publisher.getTopic().c_str());
+    }
+    try {
+      custom_predicted_thrust_publisher.publish(predicted_thrust_out_);
+    }
+    catch (...) {
+      ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", custom_predicted_thrust_publisher.getTopic().c_str());
+    }
+    try {
+      custom_predicted_attrate_publisher.publish(predicted_attituderate_out_);
+    }
+    catch (...) {
+      ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", custom_predicted_attrate_publisher.getTopic().c_str());
+    }
+    try {
+      custom_predicted_des_attrate_publisher.publish(predicted_des_attituderate_out_);
+    }
+    catch (...) {
+      ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", custom_predicted_des_attrate_publisher.getTopic().c_str());
+    }
+    try {
+      custom_predicted_tiltangle_publisher.publish(predicted_tiltangle_out_);
+    }
+    catch (...) {
+      ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", custom_predicted_tiltangle_publisher.getTopic().c_str());
+    }
   }
-  catch (...) {
-    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", custom_predicted_vel_publisher.getTopic().c_str());
-  }
-  try {
-    custom_predicted_acc_publisher.publish(predicted_accelerations_out);
-  }
-  catch (...) {
-    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", custom_predicted_acc_publisher.getTopic().c_str());
-  }
-  try {
-    custom_predicted_attrate_publisher.publish(predicted_attituderate_out);
-  }
-  catch (...) {
-    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", custom_predicted_attrate_publisher.getTopic().c_str());
-  }
-  try {
-    custom_predicted_des_attrate_publisher.publish(predicted_des_attituderate_out);
-  }
-  catch (...) {
-    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", custom_predicted_des_attrate_publisher.getTopic().c_str());
-  }
-  try {
-    custom_predicted_tiltangle_publisher.publish(predicted_tiltangle_out);
-  }
-  catch (...) {
-    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", custom_predicted_tiltangle_publisher.getTopic().c_str());
-  }
-
-
-
-}
+} // end 
 
 Eigen::Vector3d DergbryanTracker::calcCirculationField(std::string type, double dist_x, double dist_y, double dist_z, double dist ){
   Eigen::Vector3d cirulation_field = Eigen::Vector3d::Zero(3);
@@ -2585,6 +2623,12 @@ Eigen::Vector3d DergbryanTracker::calcCirculationField(std::string type, double 
   return cirulation_field;
 }
 void DergbryanTracker::DERG_computation(){
+
+
+
+  // Computational time:
+  start_ERG_ = std::chrono::system_clock::now();
+
   // | -------------------------------------------------------------------------- |
   //                  ______________________________________________
   //                 | Navigation Field (NF) + Dynamic Safety Margin|
@@ -2608,12 +2652,12 @@ void DergbryanTracker::DERG_computation(){
   // tictoc_stack.push(clock());
 
 
-  // TODO: predicted_thrust_out.poses is not good programming for a scalar. Maybe try using Class: Std_msgs::Float32MultiArray and test plot still work
+  // TODO: predicted_thrust_out_.poses is not good programming for a scalar. Maybe try using Class: Std_msgs::Float32MultiArray and test plot still work
   double diff_T = thrust_saturation_physical_; // initialization at the highest possible positive difference value
   // ROS_INFO_STREAM("thrust_saturation_physical_ = \n" << thrust_saturation_physical_);
   for (size_t i = 0; i < num_pred_samples_; i++) {
-    double diff_Tmax = thrust_saturation_physical_ - predicted_thrust_out.poses[i].position.x;
-    double diff_Tmin = predicted_thrust_out.poses[i].position.x - _T_min_;
+    double diff_Tmax = thrust_saturation_physical_ - predicted_thrust_out_.poses[i].position.x;
+    double diff_Tmin = predicted_thrust_out_.poses[i].position.x - _T_min_;
     if (diff_Tmax < diff_T) {
     diff_T = diff_Tmax;
     }
@@ -2656,10 +2700,10 @@ void DergbryanTracker::DERG_computation(){
   // MatrixXd NF_att   = MatrixXd::Zero(3, 1); // attraction field
   
   // _d_w_(1,0) = wall_p_x - arm_radius;
-  min_wall_distance= abs(_d_w_(1,0) - predicted_poses_out.poses[0].position.x);//custom_trajectory_out.poses[0].position.x);
+  min_wall_distance= abs(_d_w_(1,0) - predicted_poses_out_.poses[0].position.x);//custom_trajectory_out.poses[0].position.x);
   for (size_t i = 0; i < num_pred_samples_; i++) {
-    if (abs(_d_w_(1,0) - predicted_poses_out.poses[i].position.x) < min_wall_distance){
-      min_wall_distance=abs(_d_w_(1,0) - predicted_poses_out.poses[i].position.x);
+    if (abs(_d_w_(1,0) - predicted_poses_out_.poses[i].position.x) < min_wall_distance){
+      min_wall_distance=abs(_d_w_(1,0) - predicted_poses_out_.poses[i].position.x);
     }
   }
   DSM_w_=_kappa_w_*min_wall_distance;
@@ -2712,7 +2756,7 @@ void DergbryanTracker::DERG_computation(){
   ///// Prediction part  with lambda 
   // for (size_t i = 0; i < num_pred_samples_; i++) {
   //    // shortest distance from predicted pos to tube link
-  //    Eigen::Vector3d point_predicted_pos(predicted_poses_out.poses[i].position.x, predicted_poses_out.poses[i].position.y, predicted_poses_out.poses[i].position.z);
+  //    Eigen::Vector3d point_predicted_pos(predicted_poses_out_.poses[i].position.x, predicted_poses_out_.poses[i].position.y, predicted_poses_out_.poses[i].position.z);
   //    double lambda = getLambda(point_link_applied_ref, point_link_star, point_predicted_pos); 
   //    double norm;
   //    if ((lambda <= 1) && (lambda > 0)) {
@@ -2737,14 +2781,14 @@ void DergbryanTracker::DERG_computation(){
   // double min_obs_distance;
 
 
-  dist_obs_(0)=predicted_poses_out.poses[0].position.x-obs_position(0,0);
-  dist_obs_(1)=predicted_poses_out.poses[0].position.y-obs_position(1,0);
+  dist_obs_(0)=predicted_poses_out_.poses[0].position.x-obs_position(0,0);
+  dist_obs_(1)=predicted_poses_out_.poses[0].position.y-obs_position(1,0);
   dist_obs_(3)=sqrt(dist_obs_(0)*dist_obs_(0)+dist_obs_(1)*dist_obs_(1));
 
   min_obs_distance=dist_obs_(3)-R_o_;
   for (size_t i = 1; i < num_pred_samples_; i++) {
-    dist_obs_(0)=predicted_poses_out.poses[i].position.x-obs_position(0,0);
-    dist_obs_(1)=predicted_poses_out.poses[i].position.y-obs_position(1,0);
+    dist_obs_(0)=predicted_poses_out_.poses[i].position.x-obs_position(0,0);
+    dist_obs_(1)=predicted_poses_out_.poses[i].position.y-obs_position(1,0);
 
     dist_obs_(3)=sqrt(dist_obs_(0)*dist_obs_(0)+dist_obs_(1)*dist_obs_(1));
     if (dist_obs_(3)-R_o_<min_obs_distance) {
@@ -2855,9 +2899,9 @@ void DergbryanTracker::DERG_computation(){
     // tictoc_stack.push(clock());
     DSM_a_ = 100000; // large value
     for (size_t i = 0; i < num_pred_samples_; i++) {
-      double pos_error_x = applied_ref_x_ - predicted_poses_out.poses[i].position.x;
-      double pos_error_y = applied_ref_y_ - predicted_poses_out.poses[i].position.y;
-      double pos_error_z = applied_ref_z_ - predicted_poses_out.poses[i].position.z;
+      double pos_error_x = applied_ref_x_ - predicted_poses_out_.poses[i].position.x;
+      double pos_error_y = applied_ref_y_ - predicted_poses_out_.poses[i].position.y;
+      double pos_error_z = applied_ref_z_ - predicted_poses_out_.poses[i].position.z;
 
       double pos_error = sqrt(pos_error_x*pos_error_x + pos_error_y*pos_error_y + pos_error_z*pos_error_z);
       
@@ -2878,7 +2922,7 @@ void DergbryanTracker::DERG_computation(){
     // this uav:
     DSM_a_ = 100000; // large value //Frank : Explanation of the lambda function
     double DSM_a_temp;
-    Eigen::Vector3d point_link_pos(predicted_poses_out.poses[0].position.x, predicted_poses_out.poses[0].position.y, predicted_poses_out.poses[0].position.z);
+    Eigen::Vector3d point_link_pos(predicted_poses_out_.poses[0].position.x, predicted_poses_out_.poses[0].position.y, predicted_poses_out_.poses[0].position.z);
     Eigen::Vector3d point_link_applied_ref(applied_ref_x_, applied_ref_y_, applied_ref_z_);
     Eigen::Vector3d point_link_star; // lambda = 1
     if ((point_link_pos - point_link_applied_ref).norm() > 0.001){
@@ -2991,7 +3035,7 @@ void DergbryanTracker::DERG_computation(){
     
     for (size_t i = 0; i < num_pred_samples_; i++) {
       // shortest distance from predicted pos to tube link
-      Eigen::Vector3d point_predicted_pos(predicted_poses_out.poses[i].position.x, predicted_poses_out.poses[i].position.y, predicted_poses_out.poses[i].position.z);
+      Eigen::Vector3d point_predicted_pos(predicted_poses_out_.poses[i].position.x, predicted_poses_out_.poses[i].position.y, predicted_poses_out_.poses[i].position.z);
       double lambda = getLambda(point_link_applied_ref, point_link_star, point_predicted_pos); 
       double norm;
       if ((lambda <= 1) && (lambda > 0)) {
@@ -3039,7 +3083,7 @@ void DergbryanTracker::DERG_computation(){
     // this uav:
     DSM_a_ = 100000; // large value
     double DSM_a_temp;
-    Eigen::Vector3d point_link_pos(predicted_poses_out.poses[0].position.x, predicted_poses_out.poses[0].position.y, predicted_poses_out.poses[0].position.z);
+    Eigen::Vector3d point_link_pos(predicted_poses_out_.poses[0].position.x, predicted_poses_out_.poses[0].position.y, predicted_poses_out_.poses[0].position.z);
     Eigen::Vector3d point_link_applied_ref(applied_ref_x_, applied_ref_y_, applied_ref_z_);
     Eigen::Vector3d point_link_star; // lambda = 1
     if ((point_link_pos - point_link_applied_ref).norm() > 0.001){
@@ -3136,7 +3180,7 @@ void DergbryanTracker::DERG_computation(){
     }
 
     for (size_t i = 0; i < num_pred_samples_; i++) {
-      Eigen::Vector3d point_predicted_pos(predicted_poses_out.poses[i].position.x, predicted_poses_out.poses[i].position.y, predicted_poses_out.poses[i].position.z);
+      Eigen::Vector3d point_predicted_pos(predicted_poses_out_.poses[i].position.x, predicted_poses_out_.poses[i].position.y, predicted_poses_out_.poses[i].position.z);
       double lambda = getLambda(point_link_applied_ref, point_link_star, point_predicted_pos);
       double norm;
       if ((lambda <= 1) && (lambda >0)) {
@@ -3172,7 +3216,7 @@ void DergbryanTracker::DERG_computation(){
     // this uav:
     DSM_a_ = 100000; // large value
     double DSM_a_temp;
-    Eigen::Vector3d point_link_pos(predicted_poses_out.poses[0].position.x, predicted_poses_out.poses[0].position.y, predicted_poses_out.poses[0].position.z);
+    Eigen::Vector3d point_link_pos(predicted_poses_out_.poses[0].position.x, predicted_poses_out_.poses[0].position.y, predicted_poses_out_.poses[0].position.z);
     Eigen::Vector3d point_link_applied_ref(applied_ref_x_, applied_ref_y_, applied_ref_z_);
     Eigen::Vector3d point_link_star; // lambda = 1
     if ((point_link_pos - point_link_applied_ref).norm() > 0.001){
@@ -3183,7 +3227,7 @@ void DergbryanTracker::DERG_computation(){
     }
     // tube p, pstar
     for (size_t i = 0; i < num_pred_samples_; i++) {
-      Eigen::Vector3d point_predicted_pos(predicted_poses_out.poses[i].position.x, predicted_poses_out.poses[i].position.y, predicted_poses_out.poses[i].position.z);
+      Eigen::Vector3d point_predicted_pos(predicted_poses_out_.poses[i].position.x, predicted_poses_out_.poses[i].position.y, predicted_poses_out_.poses[i].position.z);
       double lambda = getLambda(point_link_applied_ref, point_link_star, point_predicted_pos);
       double norm;
       if ((lambda <= 1) && (lambda >0)) {
@@ -3207,7 +3251,7 @@ void DergbryanTracker::DERG_computation(){
     // tube p , pv
     // TODO !!!we loop over large number of same point resulting in same distance, as in prev loop. Skip these ehre to reduce compute load.
     for (size_t i = 0; i < num_pred_samples_; i++) {
-      Eigen::Vector3d point_predicted_pos(predicted_poses_out.poses[i].position.x, predicted_poses_out.poses[i].position.y, predicted_poses_out.poses[i].position.z);
+      Eigen::Vector3d point_predicted_pos(predicted_poses_out_.poses[i].position.x, predicted_poses_out_.poses[i].position.y, predicted_poses_out_.poses[i].position.z);
       double lambda = getLambda(point_link_applied_ref, point_link_pos, point_predicted_pos);
       double norm;
       if ((lambda <= 1) && (lambda >0)) {
@@ -3382,7 +3426,7 @@ void DergbryanTracker::DERG_computation(){
     // this uav:
     DSM_a_ = 100000; // large value
     double DSM_a_temp;
-    Eigen::Vector3d point_link_pos(predicted_poses_out.poses[0].position.x, predicted_poses_out.poses[0].position.y, predicted_poses_out.poses[0].position.z);
+    Eigen::Vector3d point_link_pos(predicted_poses_out_.poses[0].position.x, predicted_poses_out_.poses[0].position.y, predicted_poses_out_.poses[0].position.z);
     Eigen::Vector3d point_link_applied_ref(applied_ref_x_, applied_ref_y_, applied_ref_z_);
     Eigen::Vector3d point_link_star; // lambda = 1
     if ((point_link_pos - point_link_applied_ref).norm() > 0.001){
@@ -3393,7 +3437,7 @@ void DergbryanTracker::DERG_computation(){
     }
     // tube p, pstar
     for (size_t i = 0; i < num_pred_samples_; i++) {
-      Eigen::Vector3d point_predicted_pos(predicted_poses_out.poses[i].position.x, predicted_poses_out.poses[i].position.y, predicted_poses_out.poses[i].position.z);
+      Eigen::Vector3d point_predicted_pos(predicted_poses_out_.poses[i].position.x, predicted_poses_out_.poses[i].position.y, predicted_poses_out_.poses[i].position.z);
       double lambda = getLambda(point_link_applied_ref, point_link_star, point_predicted_pos);
       double norm;
       if ((lambda <= 1) && (lambda >0)) {
@@ -3421,7 +3465,7 @@ void DergbryanTracker::DERG_computation(){
     // tube p , pv
     // TODO !!!we loop over large number of same point resulting in same distance, as in prev loop. Skip these ehre to reduce compute load.
     for (size_t i = 0; i < num_pred_samples_; i++) {
-      Eigen::Vector3d point_predicted_pos(predicted_poses_out.poses[i].position.x, predicted_poses_out.poses[i].position.y, predicted_poses_out.poses[i].position.z);
+      Eigen::Vector3d point_predicted_pos(predicted_poses_out_.poses[i].position.x, predicted_poses_out_.poses[i].position.y, predicted_poses_out_.poses[i].position.z);
       double lambda = getLambda(point_link_applied_ref, point_link_pos, point_predicted_pos);
       double norm_perp;
 
@@ -3625,7 +3669,7 @@ void DergbryanTracker::DERG_computation(){
     // this uav:
     DSM_a_ = 100000; // large value
     double DSM_a_temp;
-    Eigen::Vector3d point_link_pos(predicted_poses_out.poses[0].position.x, predicted_poses_out.poses[0].position.y, predicted_poses_out.poses[0].position.z);
+    Eigen::Vector3d point_link_pos(predicted_poses_out_.poses[0].position.x, predicted_poses_out_.poses[0].position.y, predicted_poses_out_.poses[0].position.z);
     Eigen::Vector3d point_link_applied_ref(applied_ref_x_, applied_ref_y_, applied_ref_z_);
     Eigen::Vector3d point_link_star; // lambda = 1
     if ((point_link_pos - point_link_applied_ref).norm() > 0.001){
@@ -3636,7 +3680,7 @@ void DergbryanTracker::DERG_computation(){
     }
     // tube p, pstar
     for (size_t i = 0; i < num_pred_samples_; i++) {
-      Eigen::Vector3d point_predicted_pos(predicted_poses_out.poses[i].position.x, predicted_poses_out.poses[i].position.y, predicted_poses_out.poses[i].position.z);
+      Eigen::Vector3d point_predicted_pos(predicted_poses_out_.poses[i].position.x, predicted_poses_out_.poses[i].position.y, predicted_poses_out_.poses[i].position.z);
       double lambda = getLambda(point_link_applied_ref, point_link_star, point_predicted_pos);
       double norm;
       if ((lambda <= 1) && (lambda >0)) {
@@ -3663,7 +3707,7 @@ void DergbryanTracker::DERG_computation(){
     // tube p , pv
     // TODO !!!we loop over large number of same point resulting in same distance, as in prev loop. Skip these ehre to reduce compute load.
     for (size_t i = 0; i < num_pred_samples_; i++) {
-      Eigen::Vector3d point_predicted_pos(predicted_poses_out.poses[i].position.x, predicted_poses_out.poses[i].position.y, predicted_poses_out.poses[i].position.z);
+      Eigen::Vector3d point_predicted_pos(predicted_poses_out_.poses[i].position.x, predicted_poses_out_.poses[i].position.y, predicted_poses_out_.poses[i].position.z);
       double lambda = getLambda(point_link_applied_ref, point_link_pos, point_predicted_pos);
       double norm;
       if ((lambda <= 1) && (lambda >0)) {
@@ -3712,7 +3756,7 @@ void DergbryanTracker::DERG_computation(){
     while (it != other_uav_avoidance_trajectories_.end()) {
       // ROS_INFO_STREAM("INSIDE WHILE = \n");
       for (size_t i = 0; i < num_pred_samples_; i++) {
-        Eigen::Vector3d point_traj(predicted_poses_out.poses[i].position.x, predicted_poses_out.poses[i].position.y, predicted_poses_out.poses[i].position.z);
+        Eigen::Vector3d point_traj(predicted_poses_out_.poses[i].position.x, predicted_poses_out_.poses[i].position.y, predicted_poses_out_.poses[i].position.z);
         // ROS_INFO_STREAM("UAV position = \n" << point_traj);
         double other_uav_pos_x = it->second.points[i].x;//Second means accessing the second part of the iterator. Here it is FutureTrajectory
         double other_uav_pos_y = it->second.points[i].y;
@@ -3891,6 +3935,15 @@ void DergbryanTracker::DERG_computation(){
   applied_ref_y_ = applied_ref_y_ + applied_ref_dot(1)*dt_;
   applied_ref_z_ = applied_ref_z_ + applied_ref_dot(2)*dt_;
 
+
+  // Computational time:
+  end_ERG_ = std::chrono::system_clock::now();
+  ComputationalTime_ERG_ = end_ERG_ - start_ERG_;
+  ComputationalTime_msg_.ERG = ComputationalTime_ERG_.count();
+
+  
+  // Publishers:
+
   mrs_msgs::FuturePoint new_point;
   // publish applied reference
   new_point.x = applied_ref_x_;
@@ -3910,16 +3963,16 @@ void DergbryanTracker::DERG_computation(){
   // TODO  maybe move to prediction function or only publish when required by that derg strategy??!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
   // TODO= check mpc_tracker to "check" if communicated info it outdated too much
   // mrs_msgs::FuturePoint new_point;
-  new_point.x = predicted_poses_out.poses[0].position.x;
-  new_point.y = predicted_poses_out.poses[0].position.y;
-  new_point.z = predicted_poses_out.poses[0].position.z;
+  new_point.x = predicted_poses_out_.poses[0].position.x;
+  new_point.y = predicted_poses_out_.poses[0].position.y;
+  new_point.z = predicted_poses_out_.poses[0].position.z;
   uav_posistion_out_.points.push_back(new_point);
   avoidance_pos_publisher_.publish(uav_posistion_out_);
   //mrs_msgs::FuturePoint new_point;
   for (size_t i = 0; i < num_pred_samples_; i++) {
-    new_point.x = predicted_poses_out.poses[i].position.x;
-    new_point.y = predicted_poses_out.poses[i].position.y;
-    new_point.z = predicted_poses_out.poses[i].position.z;
+    new_point.x = predicted_poses_out_.poses[i].position.x;
+    new_point.y = predicted_poses_out_.poses[i].position.y;
+    new_point.z = predicted_poses_out_.poses[i].position.z;
     future_trajectory_out_.points.push_back(new_point);
   }
   avoidance_trajectory_publisher_.publish(future_trajectory_out_);
@@ -3934,7 +3987,7 @@ void DergbryanTracker::DERG_computation(){
     // Colision avoidance:
     double min_distance_this_uav2other_uav = 100000; // initialized with very high value
     // this uav:
-    Eigen::Vector3d pos_this_uav(predicted_poses_out.poses[0].position.x, predicted_poses_out.poses[0].position.y, predicted_poses_out.poses[0].position.z);
+    Eigen::Vector3d pos_this_uav(predicted_poses_out_.poses[0].position.x, predicted_poses_out_.poses[0].position.y, predicted_poses_out_.poses[0].position.z);
     // other uavs:
     std::map<std::string, mrs_msgs::FutureTrajectory>::iterator it = other_uavs_positions_.begin();
     while ((it != other_uavs_positions_.end()) ) {
