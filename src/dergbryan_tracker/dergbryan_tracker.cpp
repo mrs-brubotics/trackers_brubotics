@@ -207,16 +207,9 @@ private:
 
   // added by Bryan
   double time_for_sinus_bryan = 0;
-  ros::Publisher pub_goal_pose_;
+  
 
-  geometry_msgs::PoseArray predicted_thrust_out_;  // array of thrust predictions
-  // geometry_msgs::PoseArray custom_trajectory_out; // array of pose traj predictions
-  geometry_msgs::PoseArray predicted_poses_out_; // array of predicted poses
-  geometry_msgs::PoseArray predicted_velocities_out_; // array of predicted velocities
-  geometry_msgs::PoseArray predicted_accelerations_out_; // array of predicted accelerations
-  geometry_msgs::PoseArray predicted_attituderate_out_; // array of predicted attituderates
-  geometry_msgs::PoseArray predicted_des_attituderate_out_; // array of predicted desired attituderates
-  geometry_msgs::PoseArray predicted_tiltangle_out_; // array of predicted tilt angles
+
   double dt_ = 0.010; // ERG sample time = controller sample time
   double custom_dt_ = 0.010;//0.010;//0.001;//0.020; //0.010; // controller sampling time (in seconds) used in prediction
   double _pred_horizon_;//1.5//0.15;//1.5; //0.15; //1.5; //0.4; // prediction horizon (in seconds)
@@ -227,18 +220,53 @@ private:
   MatrixXd init_vel = MatrixXd::Zero(3, 1);
   MatrixXd init_accel = MatrixXd::Zero(3, 1);
 
-  // ros::Publisher custom_predicted_traj_publisher;
-  // delete 'custom everywhere is not useful
-  ros::Publisher custom_predicted_thrust_publisher;
-  ros::Publisher custom_predicted_pose_publisher;
-  ros::Publisher custom_predicted_vel_publisher;
-  ros::Publisher custom_predicted_acc_publisher;
-  ros::Publisher custom_predicted_attrate_publisher;
-  ros::Publisher custom_predicted_des_attrate_publisher;
-  ros::Publisher custom_predicted_tiltangle_publisher;
-  ros::Publisher chatter_publisher_; // just an example
+  // ---------------
+  // ROS Publishers:
+  // ---------------
+  ros::Publisher chatter_publisher_; // just an example to follow
+  //  - Reference input to tracker, reference output of tracker, uav pose
+  ros::Publisher goal_pose_publisher_;
+  // TODO add also pv and p here
+  //  - Trajectory predictions:
+  ros::Publisher predicted_pose_publisher_;
+  ros::Publisher predicted_vel_publisher_;
+  ros::Publisher predicted_acc_publisher_;
+  ros::Publisher predicted_thrust_publisher_;
+  ros::Publisher predicted_attrate_publisher_;
+  ros::Publisher predicted_des_attrate_publisher_;
+  ros::Publisher predicted_tiltangle_publisher_;
+
+  //  - D-ERG specific:
+  ros::Publisher avoidance_trajectory_publisher_;
+  ros::Publisher avoidance_applied_ref_publisher_;
+  ros::Publisher avoidance_pos_publisher_;
   ros::Publisher tube_min_radius_publisher_; // intermdiate step as example
   ros::Publisher future_tube_publisher_; // inspired from FutureTrajectory.msg of ctu mrs
+  ros::Publisher DSM_publisher_;
+  ros::Publisher DistanceBetweenUavs_publisher_;
+  //  - Data analysis:
+  ros::Publisher TrajectoryTracking_publisher_; // for trajectory diagnostics
+  ros::Publisher ComputationalTime_publisher_; // ComputationalTime
+  //  - RVIZ only:
+  ros::Publisher derg_strategy_id_publisher_;
+  ros::Publisher point_link_star_publisher_;
+  ros::Publisher sa_max_publisher_;
+  ros::Publisher sa_perp_max_publisher_;
+  ros::Publisher pub_applied_ref_pose_;
+
+  // -------------
+  // ROS Messages:
+  // -------------
+  //  - Trajectory predictions:
+  // geometry_msgs::PoseArray custom_trajectory_out; // ctu example, array of pose traj predictions
+  geometry_msgs::PoseArray predicted_poses_out_; // array of predicted poses
+  geometry_msgs::PoseArray predicted_velocities_out_; // array of predicted velocities
+  geometry_msgs::PoseArray predicted_accelerations_out_; // array of predicted accelerations
+  geometry_msgs::PoseArray predicted_thrust_out_;  // array of thrust predictions
+  geometry_msgs::PoseArray predicted_attituderate_out_; // array of predicted attituderates
+  geometry_msgs::PoseArray predicted_des_attituderate_out_; // array of predicted desired attituderates
+  geometry_msgs::PoseArray predicted_tiltangle_out_; // array of predicted tilt angles
+
 
   double total_mass_;
   float arm_radius=0.5; //Frank
@@ -291,16 +319,10 @@ private:
   std::vector<mrs_lib::SubscribeHandler<std_msgs::Float32>> other_uav_subscribers3_;
   std::vector<mrs_lib::SubscribeHandler<trackers_brubotics::FutureTrajectoryTube>> other_uav_subscribers4_;
 
-  ros::Publisher avoidance_trajectory_publisher_;
-  ros::Publisher avoidance_applied_ref_publisher_;
-  ros::Publisher avoidance_pos_publisher_;
+
 
   // added by Titouan and Jonathan
-  ros::Publisher derg_strategy_id_publisher_;
-  ros::Publisher point_link_star_publisher_;
-  ros::Publisher sa_max_publisher_;
-  ros::Publisher sa_perp_max_publisher_;
-  ros::Publisher pub_applied_ref_pose_;
+
   std_msgs::Int32 DERG_strategy_id;
   std_msgs::Int32 Sa_max_;
   std_msgs::Int32 Sa_perp_max;
@@ -394,9 +416,9 @@ private:
 
 
 
-  ros::Publisher DSM_publisher_;
+
   trackers_brubotics::DSM DSM_msg_;
-  ros::Publisher DistanceBetweenUavs_publisher_;
+ 
   trackers_brubotics::DistanceBetweenUavs DistanceBetweenUavs_msg_;
 
   // // trajectory loader (mpc_tracker):
@@ -454,7 +476,6 @@ private:
   bool arrived_at_traj_end_point_ = false; // false by default
   geometry_msgs::Point traj_start_point_;
   geometry_msgs::Point traj_end_point_;
-  ros::Publisher TrajectoryTracking_publisher_;
   trackers_brubotics::TrajectoryTracking TrajectoryTracking_msg_;
   bool flag_running_timer_at_traj_end_point_ = false;
   ros::Time time_started_timer_at_traj_end_point_;
@@ -498,7 +519,7 @@ private:
   std::chrono::time_point<std::chrono::system_clock> start_pred_, end_pred_;
   std::chrono::duration<double> ComputationalTime_ERG_, ComputationalTime_NF_, ComputationalTime_DSM_, ComputationalTime_pred_;
   trackers_brubotics::ComputationalTime ComputationalTime_msg_;
-  ros::Publisher ComputationalTime_publisher_;
+
   
   // method Zakaria & Frank
   std::stack<clock_t> tictoc_stack; 
@@ -674,23 +695,27 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   param_loader2.loadParam("navigation_field/repulsion/static_obstacle/radius", R_o_);
   // Frank: Add same parameters for the navigation field of the wall and obstable - DONE HALF
   // create publishers
-  pub_goal_pose_ = nh2_.advertise<mrs_msgs::ReferenceStamped>("goal_pose", 10);
+
+
+  chatter_publisher_ = nh2_.advertise<std_msgs::String>("chatter", 1);
+  goal_pose_publisher_ = nh2_.advertise<mrs_msgs::ReferenceStamped>("goal_pose", 10);
   // added by Jonathan and Titouan
   pub_applied_ref_pose_ = nh2_.advertise<mrs_msgs::ReferenceStamped>("applied_ref_pose", 10);
 
   // custom_predicted_traj_publisher = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_traj", 1);
-  custom_predicted_thrust_publisher = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_thrust", 10);
-  custom_predicted_pose_publisher = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_poses", 10);
-  custom_predicted_vel_publisher = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_vels", 10);
-  custom_predicted_acc_publisher = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_accs", 10);
-  custom_predicted_attrate_publisher = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_attrate", 10);
-  custom_predicted_des_attrate_publisher = nh2_.advertise<geometry_msgs::PoseArray>("custom_des_predicted_attrate", 10);
-  custom_predicted_tiltangle_publisher = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_tiltangle", 10);
+  
+  predicted_pose_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_poses", 10);
+  predicted_vel_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_vels", 10);
+  predicted_acc_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_accs", 10);
+  predicted_thrust_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_thrust", 10);
+  predicted_attrate_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_attrate", 10);
+  predicted_des_attrate_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_des_predicted_attrate", 10);
+  predicted_tiltangle_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_tiltangle", 10);
   DSM_publisher_ = nh2_.advertise<trackers_brubotics::DSM>("DSM", 10);
   DistanceBetweenUavs_publisher_ = nh2_.advertise<trackers_brubotics::DistanceBetweenUavs>("DistanceBetweenUavs", 10);
   TrajectoryTracking_publisher_ = nh2_.advertise<trackers_brubotics::TrajectoryTracking>("TrajectoryTracking", 10);
   ComputationalTime_publisher_ = nh2_.advertise<trackers_brubotics::ComputationalTime>("ComputationalTime", 10);
-  chatter_publisher_ = nh2_.advertise<std_msgs::String>("chatter", 10);
+
   tube_min_radius_publisher_ = nh2_.advertise<std_msgs::Float32>("tube_min_radius", 10);
   future_tube_publisher_ = nh2_.advertise<trackers_brubotics::FutureTrajectoryTube>("future_trajectory_tube", 10);
   // !!!!!  from here on compare with  mpc_tracker implemntation !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -925,14 +950,16 @@ bool DergbryanTracker::resetStatic(void) {
 const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msgs::UavState::ConstPtr &                        uav_state,
                                                               [[maybe_unused]] const mrs_msgs::AttitudeCommand::ConstPtr &last_attitude_cmd) {
 
-  // debug:
-  std_msgs::String msg;
-  msg.data = "Some chatter in the update routine";
-  try {
-    chatter_publisher_.publish(msg);
-  }
-  catch (...) {
-    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", chatter_publisher_.getTopic().c_str());
+  // chatter_publisher_ example (disabled by default):
+  if (false) {
+    std_msgs::String msg;
+    msg.data = "Some chatter in the update routine";
+    try {
+      chatter_publisher_.publish(msg);
+    }
+    catch (...) {
+      ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", chatter_publisher_.getTopic().c_str());
+    }
   }
   
   // end debug
@@ -1095,17 +1122,17 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
 
 
 
-  // publish the goal pose to a custom topic
+  // publish the goal pose
   mrs_msgs::ReferenceStamped goal_pose;
   // goal_pose.header.stamp          = ros::Time::now();
   // goal_pose.header.frame_id  = "fcu_untilted";
-  goal_pose.header.stamp    = uav_state->header.stamp;
-  goal_pose.header.frame_id = uav_state->header.frame_id;
+  goal_pose.header.stamp    = uav_state_.header.stamp;
+  goal_pose.header.frame_id = uav_state_.header.frame_id;
   goal_pose.reference.position.x  = goal_x_;
   goal_pose.reference.position.y  = goal_y_;
   goal_pose.reference.position.z  = goal_z_;
   goal_pose.reference.heading = goal_heading_;
-  pub_goal_pose_.publish(goal_pose);
+  goal_pose_publisher_.publish(goal_pose);
 
 
   
@@ -1159,16 +1186,7 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
   pub_applied_ref_pose_.publish(applied_ref_pose);
 
 
-  predicted_thrust_out_.poses.clear();
-  predicted_poses_out_.poses.clear();
-  predicted_velocities_out_.poses.clear();
-  predicted_accelerations_out_.poses.clear();
-  predicted_attituderate_out_.poses.clear();
-  predicted_des_attituderate_out_.poses.clear();
-  predicted_tiltangle_out_.poses.clear();
-  uav_applied_ref_out_.points.clear();
-  uav_posistion_out_.points.clear();
-  future_trajectory_out_.points.clear();
+
 
 
   // Publishers:
@@ -1179,7 +1197,21 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
   catch (...) {
     ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", ComputationalTime_publisher_.getTopic().c_str());
   }
-  
+
+
+  // Clear (i.e. empty) the arrays of:
+  //  - Predictions computed in trajectory_prediction_general() and used in DERG_computation():
+  predicted_poses_out_.poses.clear();
+  predicted_velocities_out_.poses.clear();
+  predicted_accelerations_out_.poses.clear();
+  predicted_thrust_out_.poses.clear();
+  predicted_attituderate_out_.poses.clear();
+  predicted_des_attituderate_out_.poses.clear();
+  predicted_tiltangle_out_.poses.clear();
+
+  uav_applied_ref_out_.points.clear();
+  uav_posistion_out_.points.clear();
+  future_trajectory_out_.points.clear();
   
 
   // return a position command:
@@ -1491,15 +1523,15 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
 
 
 
-  // Discrete trajectory prediction using the forward Euler formula's
-  predicted_thrust_out_.header.stamp = ros::Time::now();
-  predicted_thrust_out_.header.frame_id = uav_state_.header.frame_id;
+
   predicted_poses_out_.header.stamp = ros::Time::now();
   predicted_poses_out_.header.frame_id = uav_state_.header.frame_id;
   predicted_velocities_out_.header.stamp = ros::Time::now();
   predicted_velocities_out_.header.frame_id = uav_state_.header.frame_id;
   predicted_accelerations_out_.header.stamp = ros::Time::now();
   predicted_accelerations_out_.header.frame_id = uav_state_.header.frame_id;
+  predicted_thrust_out_.header.stamp = ros::Time::now();
+  predicted_thrust_out_.header.frame_id = uav_state_.header.frame_id;
   predicted_attituderate_out_.header.stamp = ros::Time::now();
   predicted_attituderate_out_.header.frame_id = uav_state_.header.frame_id;
   predicted_des_attituderate_out_.header.stamp = ros::Time::now();
@@ -1556,6 +1588,7 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
       
     } 
     else{
+      // Discrete trajectory prediction using the Euler formula's
       // TODO: in control predictions define custom_acceleration also via uav_state
       uav_state.velocity.linear.x = uav_state.velocity.linear.x + custom_acceleration.position.x*custom_dt_;
       custom_vel.position.x = uav_state.velocity.linear.x;
@@ -2553,50 +2586,49 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
   tictoc_stack.pop();
 
   // Publishers:
-  // TODO: change code so nowhere is using predicted_poses_out_ for calculations of own uav DSM
-  try {
-    custom_predicted_pose_publisher.publish(predicted_poses_out_);
-  }
-  catch (...) {
-    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", custom_predicted_pose_publisher.getTopic().c_str());
-  }
   // avoid publishing all trajectory predictions since not required for control, only useful for post-analysis:
   if (_enable_trajectory_pub_) {
     try {
-      custom_predicted_vel_publisher.publish(predicted_velocities_out_);
+      predicted_pose_publisher_.publish(predicted_poses_out_);
     }
     catch (...) {
-      ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", custom_predicted_vel_publisher.getTopic().c_str());
+      ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_pose_publisher_.getTopic().c_str());
     }
     try {
-      custom_predicted_acc_publisher.publish(predicted_accelerations_out_);
+      predicted_vel_publisher_.publish(predicted_velocities_out_);
     }
     catch (...) {
-      ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", custom_predicted_acc_publisher.getTopic().c_str());
+      ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_vel_publisher_.getTopic().c_str());
     }
     try {
-      custom_predicted_thrust_publisher.publish(predicted_thrust_out_);
+      predicted_acc_publisher_.publish(predicted_accelerations_out_);
     }
     catch (...) {
-      ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", custom_predicted_thrust_publisher.getTopic().c_str());
+      ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_acc_publisher_.getTopic().c_str());
     }
     try {
-      custom_predicted_attrate_publisher.publish(predicted_attituderate_out_);
+      predicted_thrust_publisher_.publish(predicted_thrust_out_);
     }
     catch (...) {
-      ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", custom_predicted_attrate_publisher.getTopic().c_str());
+      ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_thrust_publisher_.getTopic().c_str());
     }
     try {
-      custom_predicted_des_attrate_publisher.publish(predicted_des_attituderate_out_);
+      predicted_attrate_publisher_.publish(predicted_attituderate_out_);
     }
     catch (...) {
-      ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", custom_predicted_des_attrate_publisher.getTopic().c_str());
+      ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_attrate_publisher_.getTopic().c_str());
     }
     try {
-      custom_predicted_tiltangle_publisher.publish(predicted_tiltangle_out_);
+      predicted_des_attrate_publisher_.publish(predicted_des_attituderate_out_);
     }
     catch (...) {
-      ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", custom_predicted_tiltangle_publisher.getTopic().c_str());
+      ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_des_attrate_publisher_.getTopic().c_str());
+    }
+    try {
+      predicted_tiltangle_publisher_.publish(predicted_tiltangle_out_);
+    }
+    catch (...) {
+      ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_tiltangle_publisher_.getTopic().c_str());
     }
   }
 } // end 
