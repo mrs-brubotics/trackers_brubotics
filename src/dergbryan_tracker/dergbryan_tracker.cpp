@@ -1448,6 +1448,9 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
   auto start = std::chrono::high_resolution_clock::now(); 
   // unsync the I/O of C and C++.
   std::ios_base::sync_with_stdio(false);
+  // method https://answers.ros.org/question/166286/measure-codenode-running-time/: 
+  ros::WallTime WallTime_start, WallTime_end;
+  WallTime_start = ros::WallTime::now();
 
 
   // --------------------------------------------------------------
@@ -2598,9 +2601,10 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
   auto end = std::chrono::high_resolution_clock::now();
   double time_taken = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count();
   time_taken *= 1e-9;
-  ComputationalTime_msg_.trajectory_predictions = time_taken;
-
-
+  //ComputationalTime_msg_.trajectory_predictions = time_taken;
+  // method: https://answers.ros.org/question/166286/measure-codenode-running-time/
+  WallTime_end = ros::WallTime::now();
+  ComputationalTime_msg_.trajectory_predictions = (WallTime_end - WallTime_start).toNSec() * 1e-9;
 
   // Publishers:
   // avoid publishing all trajectory predictions since not required for control, only useful for post-analysis:
