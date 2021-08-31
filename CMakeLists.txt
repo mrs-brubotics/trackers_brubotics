@@ -24,6 +24,7 @@ add_message_files(FILES
   DSM.msg
   FutureTrajectoryTube.msg
   DistanceBetweenUavs.msg
+  TrajectoryTracking.msg
   )
 generate_messages(DEPENDENCIES geometry_msgs std_msgs)
 

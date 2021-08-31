@@ -24,6 +24,7 @@
 #include <std_msgs/Float32.h>
 #include <trackers_brubotics/FutureTrajectoryTube.h> // custom ROS message
 #include <trackers_brubotics/DistanceBetweenUavs.h> // custom ROS message
+#include <trackers_brubotics/TrajectoryTracking.h> // custom ROS message
 #include <geometry_msgs/Point.h>
 /*end includes added by bryan:*/
 
@@ -443,7 +444,18 @@ private:
   bool   trajectory_set_           = false;
   int    trajectory_count_         = 0;  // counts how many trajectories we have received
 
-
+  // trajectory diagnostic parameters:
+  double arrival_norm_pos_error_treshold_ = 0.30; // [m]
+  double arrival_period_treshold_ = 5.0; // [s]
+  bool arrived_at_traj_end_point_ = false; // false by default
+  geometry_msgs::Point traj_start_point_;
+  geometry_msgs::Point traj_end_point_;
+  ros::Publisher TrajectoryTracking_publisher_;
+  trackers_brubotics::TrajectoryTracking TrajectoryTracking_msg_;
+  bool flag_running_timer_at_traj_end_point_ = false;
+  ros::Time time_started_timer_at_traj_end_point_;
+  double time_at_start_point_ = 0.0; //default = 0.0
+  double time_at_end_point_ = 0.0; //default = 0.0
   // | ------------------- trajectory tracking ------------------ |
 
   ros::Timer timer_trajectory_tracking_;
@@ -659,6 +671,7 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   custom_predicted_tiltangle_publisher = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_tiltangle", 10);
   DSM_publisher_ = nh2_.advertise<trackers_brubotics::DSM>("DSM", 10);
   DistanceBetweenUavs_publisher_ = nh2_.advertise<trackers_brubotics::DistanceBetweenUavs>("DistanceBetweenUavs", 10);
+  TrajectoryTracking_publisher_ = nh2_.advertise<trackers_brubotics::TrajectoryTracking>("TrajectoryTracking", 10);
   chatter_publisher_ = nh2_.advertise<std_msgs::String>("chatter", 10);
   tube_min_radius_publisher_ = nh2_.advertise<std_msgs::Float32>("tube_min_radius", 10);
   future_tube_publisher_ = nh2_.advertise<trackers_brubotics::FutureTrajectoryTube>("future_trajectory_tube", 10);
@@ -3958,7 +3971,7 @@ void DergbryanTracker::DERG_computation(){
     }
   }
   
-  // RVIZ:
+  // RVIZ Publisher:
   if(_enable_visualization_){
     DERG_strategy_id.data = _DERG_strategy_id_;
     derg_strategy_id_publisher_.publish(DERG_strategy_id);
@@ -4780,8 +4793,6 @@ std::tuple<bool, std::string> DergbryanTracker::startTrajectoryTrackingImpl(void
     timer_trajectory_tracking_.setPeriod(ros::Duration(trajectory_dt_));
     timer_trajectory_tracking_.start();
 
-    //publishDiagnostics();
-
     ss << "trajectory tracking started";
     ROS_INFO_STREAM_THROTTLE(1.0, "[DergbryanTracker]: " << ss.str());
 
@@ -4893,10 +4904,16 @@ void DergbryanTracker::timerTrajectoryTracking(const ros::TimerEvent& event) {
 
     // reset the subsampling counter
     //trajectory_tracking_sub_idx_ = 0;
-
+    if(trajectory_tracking_idx_ == 0){
+      //ROS_INFO_STREAM("[DergbryanTracker]: trajectory_tracking_idx_ = \n" << trajectory_tracking_idx_);
+      // set the global variable to keep track of the time when the trajectory was started
+      time_at_start_point_ = (ros::Time::now()).toSec();
+      // publish it below (add to msg) 
+    }
     // INCREMENT THE TRACKING IDX
     trajectory_tracking_idx_++;
-    // !!!!! bryan, inspured by original timerMpc
+    ROS_INFO_STREAM_THROTTLE(1.0, "[DergbryanTracker]: trajectory_tracking_idx_" << trajectory_tracking_idx_);
+    // !!!!! bryan, inspired by original timerMpc
     // looping  
     if (trajectory_tracking_loop_) {
       if (trajectory_tracking_idx_ >= trajectory_size) {
@@ -4909,11 +4926,55 @@ void DergbryanTracker::timerTrajectoryTracking(const ros::TimerEvent& event) {
     }
     {
       std::scoped_lock lock(mutex_des_whole_trajectory_, mutex_goal_);
-
       goal_x_ = (*des_x_whole_trajectory_)[trajectory_tracking_idx_];
       goal_y_ = (*des_y_whole_trajectory_)[trajectory_tracking_idx_];
       goal_z_ = (*des_z_whole_trajectory_)[trajectory_tracking_idx_];
       goal_heading_ = (*des_heading_whole_trajectory_)[trajectory_tracking_idx_];
+
+      // Diagnostics of the TrajectoryTracking:
+      if(_enable_diagnostics_pub_){
+        // ROS_INFO("[DergbryanTracker]: Diagnostics of the TrajectoryTracking");
+        TrajectoryTracking_msg_.stamp = uav_state_.header.stamp;
+        traj_start_point_.x = (*des_x_whole_trajectory_)[0];
+        traj_start_point_.y = (*des_y_whole_trajectory_)[0];
+        traj_start_point_.z = (*des_z_whole_trajectory_)[0];
+        TrajectoryTracking_msg_.traj_start_point = traj_start_point_;
+        traj_end_point_.x = (*des_x_whole_trajectory_)[trajectory_size_-1];
+        traj_end_point_.y = (*des_y_whole_trajectory_)[trajectory_size_-1];
+        traj_end_point_.z = (*des_z_whole_trajectory_)[trajectory_size_-1];
+        TrajectoryTracking_msg_.traj_end_point = traj_end_point_;
+        TrajectoryTracking_msg_.arrival_norm_pos_error_treshold = arrival_norm_pos_error_treshold_; // static
+        TrajectoryTracking_msg_.arrival_period_treshold = arrival_period_treshold_; // static
+        TrajectoryTracking_msg_.time_at_start_point = time_at_start_point_; // initialized higher up
+        // Check if we arrived at the traj_end_point:
+        Eigen::Vector3d pos_error2goal;
+        pos_error2goal[0] = traj_end_point_.x - uav_state_.pose.position.x;
+        pos_error2goal[1] = traj_end_point_.y - uav_state_.pose.position.y;
+        pos_error2goal[2] = traj_end_point_.z - uav_state_.pose.position.z;
+        if(pos_error2goal.norm() <= arrival_norm_pos_error_treshold_){ // within position treshold
+          if (flag_running_timer_at_traj_end_point_ == false)  { // if timer not started
+            flag_running_timer_at_traj_end_point_ = true; // set the flag to ...
+            time_started_timer_at_traj_end_point_ = ros::Time::now(); // ... start the timer
+          }
+          double elapsed_time = (ros::Time::now() - time_started_timer_at_traj_end_point_).toSec();
+          if(elapsed_time >= arrival_period_treshold_){
+            arrived_at_traj_end_point_ = true;
+            time_at_end_point_ = (ros::Time::now()).toSec();
+          } 
+        } else {
+          flag_running_timer_at_traj_end_point_ = false; // if the uav would escape the pos error treshold this will we reset the timer if uav goes back withing treshold later
+          arrived_at_traj_end_point_ = false;
+          time_at_end_point_ = 0.0; //reset
+        }
+        TrajectoryTracking_msg_.time_at_end_point = time_at_end_point_;
+        TrajectoryTracking_msg_.arrived_at_traj_end_point = arrived_at_traj_end_point_;
+        try {
+          TrajectoryTracking_publisher_.publish(TrajectoryTracking_msg_);
+        }
+        catch (...) {
+          ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", TrajectoryTracking_publisher_.getTopic().c_str());
+        }
+      }
     }
 
 
