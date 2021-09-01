@@ -224,15 +224,16 @@ private:
   ros::Publisher predicted_attrate_publisher_;
   ros::Publisher predicted_des_attrate_publisher_;
   ros::Publisher predicted_tiltangle_publisher_;
-
-  //  - D-ERG specific:
-  ros::Publisher avoidance_trajectory_publisher_;
-  ros::Publisher avoidance_applied_ref_publisher_;
-  ros::Publisher avoidance_pos_publisher_;
-  ros::Publisher tube_min_radius_publisher_; // intermdiate step as example
-  ros::Publisher future_tube_publisher_; // inspired from FutureTrajectory.msg of ctu mrs
+  //  - D-ERG 
+  //    - Multi-uav collision avoidance:
   ros::Publisher DSM_publisher_;
   ros::Publisher DistanceBetweenUavs_publisher_;
+  ros::Publisher avoidance_trajectory_publisher_;   
+  ros::Publisher avoidance_applied_ref_publisher_;   
+  ros::Publisher avoidance_pos_publisher_;    
+  ros::Publisher tube_min_radius_publisher_; // intermdiate step as example
+  ros::Publisher future_tube_publisher_; // inspired from FutureTrajectory.msg of ctu mrs
+
   //  - Data analysis:
   ros::Publisher TrajectoryTracking_publisher_; // for trajectory diagnostics
   ros::Publisher ComputationalTime_publisher_; // ComputationalTime
@@ -258,7 +259,40 @@ private:
   geometry_msgs::PoseArray predicted_attituderate_out_; // array of predicted attituderates
   geometry_msgs::PoseArray predicted_des_attituderate_out_; // array of predicted desired attituderates
   geometry_msgs::PoseArray predicted_tiltangle_out_; // array of predicted tilt angles
+  //  - D-ERG 
+  //    - Multi-uav collision avoidance:
+  mrs_msgs::FutureTrajectory future_trajectory_out_;
+  mrs_msgs::FutureTrajectory uav_applied_ref_out_;
+  mrs_msgs::FutureTrajectory uav_posistion_out_;
 
+  // ----------------
+  // ROS subscribers:
+  // ----------------
+  std::vector<ros::Subscriber>  other_uav_subscribers_; // used for collision avoidance
+  std::vector<mrs_lib::SubscribeHandler<std_msgs::String>> other_uav_subscribers2_;
+  std::vector<mrs_lib::SubscribeHandler<std_msgs::Float32>> other_uav_subscribers3_;
+  std::vector<mrs_lib::SubscribeHandler<trackers_brubotics::FutureTrajectoryTube>> other_uav_subscribers4_;
+
+  // -----------------------
+  // ROS callback functions:
+  // -----------------------
+  void callbackOtherUavAppliedRef(const mrs_msgs::FutureTrajectoryConstPtr& msg);
+  std::map<std::string, mrs_msgs::FutureTrajectory> other_uavs_applied_references_;
+  void callbackOtherUavPosition(const mrs_msgs::FutureTrajectoryConstPtr& msg);
+  std::map<std::string, mrs_msgs::FutureTrajectory> other_uavs_positions_;
+  void callbackOtherUavTrajectory(const mrs_msgs::FutureTrajectoryConstPtr& msg);
+  std::map<std::string, mrs_msgs::FutureTrajectory> other_uav_avoidance_trajectories_;
+  // void callbackOtherMavTrajectory(mrs_lib::SubscribeHandler<mrs_msgs::FutureTrajectory>& sh_ptr);
+  // std::vector<mrs_lib::SubscribeHandler<mrs_msgs::FutureTrajectory>> other_uav_trajectory_subscribers_;
+  // std::map<std::string, mrs_msgs::FutureTrajectory> other_uav_avoidance_trajectories_;
+  // std::mutex mutex_other_uav_avoidance_trajectories_;
+  // void chatterCallback(mrs_lib::SubscribeHandler<std_msgs::String::ConstPtr>& sh_ptr);
+  void chatterCallback(mrs_lib::SubscribeHandler<std_msgs::String>& sh_ptr);
+  // void callbackOtherUavTubeMinRadius(mrs_lib::SubscribeHandler<double>& sh_ptr);
+  void callbackOtherUavTubeMinRadius(mrs_lib::SubscribeHandler<std_msgs::Float32>& sh_ptr);
+  void callbackOtherUavFutureTrajectoryTube(mrs_lib::SubscribeHandler<trackers_brubotics::FutureTrajectoryTube>& sh_ptr);
+  std::map<std::string, trackers_brubotics::FutureTrajectoryTube> other_uav_tube_;
+  // std::map<std::string, double> other_uav_tube_min_radius_;
 
   // | ------------------------ uav state ----------------------- |
 
@@ -314,13 +348,13 @@ private:
   int avoidance_this_uav_priority_;
   std::vector<std::string> _avoidance_other_uav_names_;
 
-  mrs_msgs::FutureTrajectory future_trajectory_out_;
-  mrs_msgs::FutureTrajectory uav_applied_ref_out_;
-  mrs_msgs::FutureTrajectory uav_posistion_out_;
-  std::vector<ros::Subscriber>  other_uav_subscribers_;
-  std::vector<mrs_lib::SubscribeHandler<std_msgs::String>> other_uav_subscribers2_;
-  std::vector<mrs_lib::SubscribeHandler<std_msgs::Float32>> other_uav_subscribers3_;
-  std::vector<mrs_lib::SubscribeHandler<trackers_brubotics::FutureTrajectoryTube>> other_uav_subscribers4_;
+  
+
+
+  
+
+
+
 
 
 
@@ -335,30 +369,7 @@ private:
   bool _enable_diagnostics_pub_;
   bool _enable_trajectory_pub_;
   
-  void callbackOtherUavAppliedRef(const mrs_msgs::FutureTrajectoryConstPtr& msg);
-  void callbackOtherUavPosition(const mrs_msgs::FutureTrajectoryConstPtr& msg);
-  std::map<std::string, mrs_msgs::FutureTrajectory> other_uavs_applied_references_;
-  std::map<std::string, mrs_msgs::FutureTrajectory> other_uavs_positions_;
-  std::string applied_ref_topic_name_globalbryan;
-  std::string applied_pos_topic_name_globalbryan;
-  // subscribing to the other UAV future trajectories
-  void callbackOtherUavTrajectory(const mrs_msgs::FutureTrajectoryConstPtr& msg);
-  std::map<std::string, mrs_msgs::FutureTrajectory> other_uav_avoidance_trajectories_;
-  // void callbackOtherMavTrajectory(mrs_lib::SubscribeHandler<mrs_msgs::FutureTrajectory>& sh_ptr);
-  // std::vector<mrs_lib::SubscribeHandler<mrs_msgs::FutureTrajectory>> other_uav_trajectory_subscribers_;
-  // std::map<std::string, mrs_msgs::FutureTrajectory> other_uav_avoidance_trajectories_;
-  // std::mutex mutex_other_uav_avoidance_trajectories_;
-  
-  //ros::Subscriber sub;
-  // void chatterCallback(mrs_lib::SubscribeHandler<std_msgs::String::ConstPtr>& sh_ptr);
-  void chatterCallback(mrs_lib::SubscribeHandler<std_msgs::String>& sh_ptr);
-  
-  // void callbackOtherUavTubeMinRadius(mrs_lib::SubscribeHandler<double>& sh_ptr);
-  void callbackOtherUavTubeMinRadius(mrs_lib::SubscribeHandler<std_msgs::Float32>& sh_ptr);
-  void callbackOtherUavFutureTrajectoryTube(mrs_lib::SubscribeHandler<trackers_brubotics::FutureTrajectoryTube>& sh_ptr);
 
-  std::map<std::string, trackers_brubotics::FutureTrajectoryTube> other_uav_tube_;
-  // std::map<std::string, double> other_uav_tube_min_radius_;
 
 
 
@@ -717,21 +728,20 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   TrajectoryTracking_publisher_ = nh2_.advertise<trackers_brubotics::TrajectoryTracking>("TrajectoryTracking", 10);
   ComputationalTime_publisher_ = nh2_.advertise<trackers_brubotics::ComputationalTime>("ComputationalTime", 10);
 
+  
+
+
+  // DERG - multi-uav collision avoidance:
   tube_min_radius_publisher_ = nh2_.advertise<std_msgs::Float32>("tube_min_radius", 10);
   future_tube_publisher_ = nh2_.advertise<trackers_brubotics::FutureTrajectoryTube>("future_trajectory_tube", 10);
-  // !!!!!  from here on compare with  mpc_tracker implemntation !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-  // create publishers for predicted trajectory 
-  
-  future_trajectory_out_.stamp = ros::Time::now();
-  future_trajectory_out_.uav_name = _uav_name_;
-  future_trajectory_out_.priority = avoidance_this_uav_priority_;
+  avoidance_applied_ref_publisher_ = nh2_.advertise<mrs_msgs::FutureTrajectory>("uav_applied_ref", 10);
+  avoidance_pos_publisher_ = nh2_.advertise<mrs_msgs::FutureTrajectory>("uav_position", 10);
+  avoidance_trajectory_publisher_= nh2_.advertise<mrs_msgs::FutureTrajectory>("predicted_trajectory", 10);
+  // TODO  from here on compare with  mpc_tracker implementation 
 
-  uav_applied_ref_out_ = future_trajectory_out_; // initialize the message
-  avoidance_applied_ref_publisher_ = nh2_.advertise<mrs_msgs::FutureTrajectory>("uav_applied_ref", 1);
-  uav_posistion_out_ = future_trajectory_out_; // initialize the message
-  avoidance_pos_publisher_ = nh2_.advertise<mrs_msgs::FutureTrajectory>("uav_position", 1); //**
-  // future_trajectory_out_
-  avoidance_trajectory_publisher_= nh2_.advertise<mrs_msgs::FutureTrajectory>("predicted_trajectory", 1);
+  
+  
+  
 
   // added by Titouan and Jonathan
   if(_enable_visualization_){
@@ -785,25 +795,24 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
 
   for (int i = 0; i < int(_avoidance_other_uav_names_.size()); i++) {
 
-    // std::string applied_ref_topic_name = std::string("/") + _avoidance_other_uav_names_[i] + std::string("/") + std::string("control_manager/dergbryan_tracker/uav_applied_ref");
-    std::string applied_ref_topic_name = std::string("/") + _avoidance_other_uav_names_[i] + std::string("/") + std::string("control_manager/dergbryan_tracker/uav_applied_ref");  
-    applied_ref_topic_name_globalbryan = applied_ref_topic_name; 
-    ROS_INFO("[DergbryanTracker]: subscribing to %s", applied_ref_topic_name.c_str());
-    other_uav_subscribers_.push_back(nh_.subscribe(applied_ref_topic_name, 1, &DergbryanTracker::callbackOtherUavAppliedRef, this, ros::TransportHints().tcpNoDelay()));
-
-    std::string position_topic_name = std::string("/") + _avoidance_other_uav_names_[i] + std::string("/") + std::string("control_manager/dergbryan_tracker/uav_position");
-    applied_pos_topic_name_globalbryan = position_topic_name; 
-    ROS_INFO("[DergbryanTracker]: subscribing to %s", position_topic_name.c_str());
-    other_uav_subscribers_.push_back(nh_.subscribe(position_topic_name, 1, &DergbryanTracker::callbackOtherUavPosition, this, ros::TransportHints().tcpNoDelay()));
-
-    std::string trajectory_topic_name = std::string("/") + _avoidance_other_uav_names_[i] + std::string("/") + std::string("control_manager/dergbryan_tracker/predicted_trajectory"); //CHANGED to future traj type topic!!!!!!!!!
-    ROS_INFO("[DergbryanTracker]: subscribing to %s", trajectory_topic_name.c_str());
-    other_uav_subscribers_.push_back(nh_.subscribe(trajectory_topic_name, 1, &DergbryanTracker::callbackOtherUavTrajectory, this, ros::TransportHints().tcpNoDelay()));
-
+    // example:
     std::string chatter_topic_name = std::string("/") + _avoidance_other_uav_names_[i] + std::string("/") + std::string("control_manager/dergbryan_tracker/chatter");
     ROS_INFO("[DergbryanTracker]: subscribing to %s", chatter_topic_name.c_str());
     other_uav_subscribers2_.push_back(mrs_lib::SubscribeHandler<std_msgs::String>(shopts, chatter_topic_name, &DergbryanTracker::chatterCallback, this));
-    
+
+    // subscribe to other uav topics for collision avoidance:
+    std::string applied_ref_topic_name = std::string("/") + _avoidance_other_uav_names_[i] + std::string("/") + std::string("control_manager/dergbryan_tracker/uav_applied_ref");  
+    ROS_INFO("[DergbryanTracker]: subscribing to %s", applied_ref_topic_name.c_str());
+    other_uav_subscribers_.push_back(nh_.subscribe(applied_ref_topic_name, 1, &DergbryanTracker::callbackOtherUavAppliedRef, this, ros::TransportHints().tcpNoDelay()));
+
+    std::string position_topic_name = std::string("/") + _avoidance_other_uav_names_[i] + std::string("/") + std::string("control_manager/dergbryan_tracker/uav_position"); 
+    ROS_INFO("[DergbryanTracker]: subscribing to %s", position_topic_name.c_str());
+    other_uav_subscribers_.push_back(nh_.subscribe(position_topic_name, 1, &DergbryanTracker::callbackOtherUavPosition, this, ros::TransportHints().tcpNoDelay()));
+
+    std::string trajectory_topic_name = std::string("/") + _avoidance_other_uav_names_[i] + std::string("/") + std::string("control_manager/dergbryan_tracker/predicted_trajectory");
+    ROS_INFO("[DergbryanTracker]: subscribing to %s", trajectory_topic_name.c_str());
+    other_uav_subscribers_.push_back(nh_.subscribe(trajectory_topic_name, 1, &DergbryanTracker::callbackOtherUavTrajectory, this, ros::TransportHints().tcpNoDelay()));
+
     std::string tube_min_radius_topic_name = std::string("/") + _avoidance_other_uav_names_[i] + std::string("/") + std::string("control_manager/dergbryan_tracker/tube_min_radius");
     ROS_INFO("[DergbryanTracker]: subscribing to %s", tube_min_radius_topic_name.c_str());
     other_uav_subscribers3_.push_back(mrs_lib::SubscribeHandler<std_msgs::Float32>(shopts, tube_min_radius_topic_name, &DergbryanTracker::callbackOtherUavTubeMinRadius, this));
@@ -811,8 +820,6 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
     std::string future_trajectory_tube_topic_name = std::string("/") + _avoidance_other_uav_names_[i] + std::string("/") + std::string("control_manager/dergbryan_tracker/future_trajectory_tube");
     ROS_INFO("[DergbryanTracker]: subscribing to %s", future_trajectory_tube_topic_name.c_str());
     other_uav_subscribers4_.push_back(mrs_lib::SubscribeHandler<trackers_brubotics::FutureTrajectoryTube>(shopts, future_trajectory_tube_topic_name, &DergbryanTracker::callbackOtherUavFutureTrajectoryTube, this));
-
-
 
 
     // std::string tube_min_radius_topic_name = std::string("/") + _avoidance_other_uav_names_[i] + std::string("/") + std::string("control_manager/dergbryan_tracker/tube_min_radius");
@@ -965,10 +972,6 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
   
   // end debug
   mrs_lib::Routine profiler_routine = profiler.createRoutine("update");
-
-  //ROS_INFO_STREAM("_avoidance_other_uav_names_ = \n" << _avoidance_other_uav_names_);
-  //ROS_INFO_STREAM("applied_ref_topic_name_globalbryan = \n" << applied_ref_topic_name_globalbryan);
-  
   {
     std::scoped_lock lock(mutex_uav_state_);
 
@@ -1190,6 +1193,8 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
   }
 
   // Clear (i.e. empty) the arrays of:
+  // Note: under communication delay the arrays will be empty and not equal to the last know uav position!
+  // TODO maybe then better to place these in the try catch statement right after they are published.
   //  - Predictions computed in trajectory_prediction_general() and used in DERG_computation():
   predicted_poses_out_.poses.clear();
   predicted_velocities_out_.poses.clear();
@@ -1198,7 +1203,7 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
   predicted_attituderate_out_.poses.clear();
   predicted_des_attituderate_out_.poses.clear();
   predicted_tiltangle_out_.poses.clear();
-
+  //  - DERG - collision avoidance:
   uav_applied_ref_out_.points.clear();
   uav_posistion_out_.points.clear();
   future_trajectory_out_.points.clear();
@@ -2671,10 +2676,10 @@ Eigen::Vector3d DergbryanTracker::calcCirculationField(std::string type, double 
 }
 void DergbryanTracker::DERG_computation(){
 
-
-
   // Computational time:
+  // method Kelly
   start_ERG_ = std::chrono::system_clock::now();
+  // TODO: implement computational time calc also via other methods as done for traj predictions
 
   // | -------------------------------------------------------------------------- |
   //                  ______________________________________________
@@ -2686,19 +2691,11 @@ void DergbryanTracker::DERG_computation(){
   ref_dist(0) = goal_x_ - applied_ref_x_;
   ref_dist(1) = goal_y_ - applied_ref_y_;
   ref_dist(2) = goal_z_ - applied_ref_z_;
-  double norm_ref_dist = sqrt(pow(ref_dist(0), 2) + pow(ref_dist(1), 2)+ pow(ref_dist(2), 2));
+  double norm_ref_dist = sqrt(pow(ref_dist(0), 2) + pow(ref_dist(1), 2)+ pow(ref_dist(2), 2)); // TODO use Eigen's .norm()
   NF_att = ref_dist/std::max(norm_ref_dist, _eta_);
-  // | ------------------------ control input constraints ----------------------- |
   
-  // MatrixXd NF_a_co  = MatrixXd::Zero(3, 1); // conservative part
-  // MatrixXd NF_a_nco = MatrixXd::Zero(3, 1); // non-conservative part
-  // MatrixXd NF_w = MatrixXd::Zero(3,1);
-  // MatrixXd NF_o = MatrixXd::Zero(3,1);
-  // MatrixXd NF_o_co = MatrixXd::Zero(3,1);
-  // MatrixXd NF_o_nco = MatrixXd::Zero(3,1);
-  // tictoc_stack.push(clock());
-
-
+  
+  // | ------------------------ control input constraints ----------------------- |
   // TODO: predicted_thrust_out_.poses is not good programming for a scalar. Maybe try using Class: Std_msgs::Float32MultiArray and test plot still work
   double diff_T = thrust_saturation_physical_; // initialization at the highest possible positive difference value
   // ROS_INFO_STREAM("thrust_saturation_physical_ = \n" << thrust_saturation_physical_);
@@ -2715,78 +2712,81 @@ void DergbryanTracker::DERG_computation(){
   DSM_s_ = _kappa_s_*diff_T/(0.5*(thrust_saturation_physical_ - _T_min_)); // scaled DSM in _kappa_s_*[0, 1] from the average between the lower and upper limit to the respective limits
   //ROS_INFO_STREAM("DSM_s_ = \n" << DSM_s_);
   // | --------------------------- repulsion fields ------------------------------|  
+  //  - agent: uav collision avoidance
   MatrixXd NF_a_co  = MatrixXd::Zero(3, 1); // conservative part
   MatrixXd NF_a_nco = MatrixXd::Zero(3, 1); // non-conservative part
-  MatrixXd NF_w = MatrixXd::Zero(3,1);
-  MatrixXd NF_o = MatrixXd::Zero(3,1);
-  MatrixXd NF_o_co = MatrixXd::Zero(3,1);
-  MatrixXd NF_o_nco = MatrixXd::Zero(3,1);
+
+
+  // TODO: for wall and obstacle constraints (group A's code)
+  // MatrixXd NF_a_co  = MatrixXd::Zero(3, 1); // conservative part
+  // MatrixXd NF_a_nco = MatrixXd::Zero(3, 1); // non-conservative part
+  // MatrixXd NF_w = MatrixXd::Zero(3,1);
+  // MatrixXd NF_o = MatrixXd::Zero(3,1);
+  // MatrixXd NF_o_co = MatrixXd::Zero(3,1);
+  // MatrixXd NF_o_nco = MatrixXd::Zero(3,1);
+  // tictoc_stack.push(clock());
+  // MatrixXd NF_w = MatrixXd::Zero(3,1);
+  // MatrixXd NF_o = MatrixXd::Zero(3,1);
+  // MatrixXd NF_o_co = MatrixXd::Zero(3,1);
+  // MatrixXd NF_o_nco = MatrixXd::Zero(3,1);
   //Frank : Add NF_o_co, NF_o_nco, NF_w AND/Reactivate the lines below
   //Frank : How to code such that differents obstacles are treated the right way ? Back then it worked pretty well but how boutnow ? Check with 1 first then see
 
   // | --------------------------- repulsion walls -------------------------------|
-  double max_repulsion_wall1;
-  //float arm_radius=0.325; // radius of the quadrotor
-  _d_w_(1,0) = wall_p_x - arm_radius;
-  max_repulsion_wall1= (_zeta_w_-(abs(_d_w_(1,0)-applied_ref_x_)))/(_zeta_w_-_delta_w_);
-  if (0 > max_repulsion_wall1){
-  max_repulsion_wall1=0;
-  }
-  NF_w(0,0)=-max_repulsion_wall1;
-  NF_w(1,0)=0;
-  NF_w(2,0)=0;
-
-
-
-  c_w(0,0)=1;
-  c_w(1,0)=0;
-  c_w(2,0)=0;
-
-
-  
-  // MatrixXd NF_att   = MatrixXd::Zero(3, 1); // attraction field
-  
+  // double max_repulsion_wall1;
+  // //float arm_radius=0.325; // radius of the quadrotor
   // _d_w_(1,0) = wall_p_x - arm_radius;
-  min_wall_distance= abs(_d_w_(1,0) - predicted_poses_out_.poses[0].position.x);//custom_trajectory_out.poses[0].position.x);
-  for (size_t i = 0; i < num_pred_samples_; i++) {
-    if (abs(_d_w_(1,0) - predicted_poses_out_.poses[i].position.x) < min_wall_distance){
-      min_wall_distance=abs(_d_w_(1,0) - predicted_poses_out_.poses[i].position.x);
-    }
-  }
-  DSM_w_=_kappa_w_*min_wall_distance;
+  // max_repulsion_wall1= (_zeta_w_-(abs(_d_w_(1,0)-applied_ref_x_)))/(_zeta_w_-_delta_w_);
+  // if (0 > max_repulsion_wall1){
+  // max_repulsion_wall1=0;
+  // }
+  // NF_w(0,0)=-max_repulsion_wall1;
+  // NF_w(1,0)=0;
+  // NF_w(2,0)=0;
+  // c_w(0,0)=1;
+  // c_w(1,0)=0;
+  // c_w(2,0)=0;
+  // // _d_w_(1,0) = wall_p_x - arm_radius;
+  // min_wall_distance= abs(_d_w_(1,0) - predicted_poses_out_.poses[0].position.x);//custom_trajectory_out.poses[0].position.x);
+  // for (size_t i = 0; i < num_pred_samples_; i++) {
+  //   if (abs(_d_w_(1,0) - predicted_poses_out_.poses[i].position.x) < min_wall_distance){
+  //     min_wall_distance=abs(_d_w_(1,0) - predicted_poses_out_.poses[i].position.x);
+  //   }
+  // }
+  // DSM_w_=_kappa_w_*min_wall_distance;
   //ROS_INFO_STREAM("DSM_w_ = \n" << DSM_w_);
   // | ----------------------- repulsion static obstacles ------------------------|
   // Conservative part
-  MatrixXd dist_ref_obs_ = MatrixXd::Zero(4, 1);
-  MatrixXd dist_obs_ = MatrixXd::Zero(4, 1); //Frank : 3x1 vector of position with  4th element being the norm
-  double max_repulsion_obs1; 
-  double min_obs_distance; 
-  dist_ref_obs_(0)=obs_position(0,0)-applied_ref_x_; // x distance between v and obstacle 1
-  dist_ref_obs_(1)=obs_position(1,0)-applied_ref_y_; // y distance between v and obstacle 1
-  dist_ref_obs_(3)=sqrt(dist_ref_obs_(0)*dist_ref_obs_(0)+dist_ref_obs_(1)*dist_ref_obs_(1));
+  // MatrixXd dist_ref_obs_ = MatrixXd::Zero(4, 1);
+  // MatrixXd dist_obs_ = MatrixXd::Zero(4, 1); //Frank : 3x1 vector of position with  4th element being the norm
+  // double max_repulsion_obs1; 
+  // double min_obs_distance; 
+  // dist_ref_obs_(0)=obs_position(0,0)-applied_ref_x_; // x distance between v and obstacle 1
+  // dist_ref_obs_(1)=obs_position(1,0)-applied_ref_y_; // y distance between v and obstacle 1
+  // dist_ref_obs_(3)=sqrt(dist_ref_obs_(0)*dist_ref_obs_(0)+dist_ref_obs_(1)*dist_ref_obs_(1));
 
-  max_repulsion_obs1=arm_radius+(_zeta_o_-(dist_ref_obs_(3)-R_o_))/(_zeta_o_-_delta_o_); //Frank : Added the arm radius to add a safety around the cylinder
-  if (0>max_repulsion_obs1) {
-  max_repulsion_obs1=0;
-  }
+  // max_repulsion_obs1=arm_radius+(_zeta_o_-(dist_ref_obs_(3)-R_o_))/(_zeta_o_-_delta_o_); //Frank : Added the arm radius to add a safety around the cylinder
+  // if (0>max_repulsion_obs1) {
+  // max_repulsion_obs1=0;
+  // }
 
-  NF_o_co(0,0)=-(max_repulsion_obs1*(dist_ref_obs_(0)/dist_ref_obs_(3)));
-  NF_o_co(1,0)=-(max_repulsion_obs1*(dist_ref_obs_(1)/dist_ref_obs_(3)));
-  NF_o_co(2,0)=0;
+  // NF_o_co(0,0)=-(max_repulsion_obs1*(dist_ref_obs_(0)/dist_ref_obs_(3)));
+  // NF_o_co(1,0)=-(max_repulsion_obs1*(dist_ref_obs_(1)/dist_ref_obs_(3)));
+  // NF_o_co(2,0)=0;
 
-  // Non-conservative part
-  NF_o_nco(2,0)=0;
-  if (_zeta_o_>=dist_ref_obs_(3)-R_o_) {
-  NF_o_nco(0,0)=_alpha_o_*(dist_ref_obs_(1)/dist_ref_obs_(3));
-  NF_o_nco(1,0)=-_alpha_o_*(dist_ref_obs_(0)/dist_ref_obs_(3));
-  } else {
-  NF_o_nco(0,0)=0;
-  NF_o_nco(1,0)=0;
-  }
-  // Both combined
-  NF_o(0,0)=NF_o_co(0,0)+NF_o_nco(0,0);
-  NF_o(1,0)=NF_o_co(1,0)+NF_o_nco(1,0);
-  NF_o(2,0)=NF_o_co(2,0)+NF_o_nco(2,0);
+  // // Non-conservative part
+  // NF_o_nco(2,0)=0;
+  // if (_zeta_o_>=dist_ref_obs_(3)-R_o_) {
+  // NF_o_nco(0,0)=_alpha_o_*(dist_ref_obs_(1)/dist_ref_obs_(3));
+  // NF_o_nco(1,0)=-_alpha_o_*(dist_ref_obs_(0)/dist_ref_obs_(3));
+  // } else {
+  // NF_o_nco(0,0)=0;
+  // NF_o_nco(1,0)=0;
+  // }
+  // // Both combined
+  // NF_o(0,0)=NF_o_co(0,0)+NF_o_nco(0,0);
+  // NF_o(1,0)=NF_o_co(1,0)+NF_o_nco(1,0);
+  // NF_o(2,0)=NF_o_co(2,0)+NF_o_nco(2,0);
   
   //DSM_o_ computation
   //// Frank: Implement this and see if it changes the performances or not
@@ -2828,87 +2828,31 @@ void DergbryanTracker::DERG_computation(){
   // double min_obs_distance;
 
 
-  dist_obs_(0)=predicted_poses_out_.poses[0].position.x-obs_position(0,0);
-  dist_obs_(1)=predicted_poses_out_.poses[0].position.y-obs_position(1,0);
-  dist_obs_(3)=sqrt(dist_obs_(0)*dist_obs_(0)+dist_obs_(1)*dist_obs_(1));
+  // dist_obs_(0)=predicted_poses_out_.poses[0].position.x-obs_position(0,0);
+  // dist_obs_(1)=predicted_poses_out_.poses[0].position.y-obs_position(1,0);
+  // dist_obs_(3)=sqrt(dist_obs_(0)*dist_obs_(0)+dist_obs_(1)*dist_obs_(1));
 
-  min_obs_distance=dist_obs_(3)-R_o_;
-  for (size_t i = 1; i < num_pred_samples_; i++) {
-    dist_obs_(0)=predicted_poses_out_.poses[i].position.x-obs_position(0,0);
-    dist_obs_(1)=predicted_poses_out_.poses[i].position.y-obs_position(1,0);
+  // min_obs_distance=dist_obs_(3)-R_o_;
+  // for (size_t i = 1; i < num_pred_samples_; i++) {
+  //   dist_obs_(0)=predicted_poses_out_.poses[i].position.x-obs_position(0,0);
+  //   dist_obs_(1)=predicted_poses_out_.poses[i].position.y-obs_position(1,0);
 
-    dist_obs_(3)=sqrt(dist_obs_(0)*dist_obs_(0)+dist_obs_(1)*dist_obs_(1));
-    if (dist_obs_(3)-R_o_<min_obs_distance) {
-      min_obs_distance=dist_obs_(3)-R_o_;
-    }
-  }
+  //   dist_obs_(3)=sqrt(dist_obs_(0)*dist_obs_(0)+dist_obs_(1)*dist_obs_(1));
+  //   if (dist_obs_(3)-R_o_<min_obs_distance) {
+  //     min_obs_distance=dist_obs_(3)-R_o_;
+  //   }
+  // }
 
-  DSM_o_=_kappa_o_*min_obs_distance;
+  // DSM_o_=_kappa_o_*min_obs_distance;
+  // ROS_INFO_STREAM("DSM o, s, and w calculation took = \n "<< (double)(clock()- tictoc_stack.top())/CLOCKS_PER_SEC << "seconds.");
+  // tictoc_stack.pop();
+  // tictoc_stack.push(clock());
+  
 
   // | ------------------------ agent collision avoidance repulsion ----------------------- |
   if (_DERG_strategy_id_ == 0) {
     /* D-ERG strategy 0
     */
-  // ROS_INFO_STREAM("DSM o, s, and w calculation took = \n "<< (double)(clock()- tictoc_stack.top())/CLOCKS_PER_SEC << "seconds.");
-  // tictoc_stack.pop();
-  // tictoc_stack.push(clock());
-  // MatrixXd ref_dist = MatrixXd::Zero(3, 1); // difference between target reference r and applied reference v
-  // ref_dist(0) = goal_x_ - applied_ref_x_;
-  // ref_dist(1) = goal_y_ - applied_ref_y_;
-  // ref_dist(2) = goal_z_ - applied_ref_z_;
-  // double norm_ref_dist = sqrt(pow(ref_dist(0), 2) + pow(ref_dist(1), 2)+ pow(ref_dist(2), 2));
-  // NF_att = ref_dist/std::max(norm_ref_dist, _eta_);
-
-  // //Frank : Add NF_o_co, NF_o_nco, NF_w AND/Reactivate the lines below
-  // //Frank : How to code such that differents obstacles are treated the right way ? Back then it worked pretty well but how boutnow ? Check with 1 first then see
-
-  // // | --------------------------- repulsion walls -------------------------------|
-  // double max_repulsion_wall1;
-  // //float arm_radius=0.325; // radius of the quadrotor
-  
-  // max_repulsion_wall1= (_zeta_w_-(abs(_d_w_(1,0)-applied_ref_x_)))/(_zeta_w_-_delta_w_);
-  // if (0 > max_repulsion_wall1){
-  // max_repulsion_wall1=0;
-  // }
-  // NF_w(0,0)=-max_repulsion_wall1;
-  // NF_w(1,0)=0;
-  // NF_w(2,0)=0;
- 
-  
-
-  // c_w(0,0)=1;
-  // c_w(1,0)=0;
-  // c_w(2,0)=0;
-
-
- 
-  // dist_ref_obs_(0)=obs_position(0,0)-applied_ref_x_; // x distance between v and obstacle 1
-  // dist_ref_obs_(1)=obs_position(1,0)-applied_ref_y_; // y distance between v and obstacle 1
-  // dist_ref_obs_(3)=sqrt(dist_ref_obs_(0)*dist_ref_obs_(0)+dist_ref_obs_(1)*dist_ref_obs_(1));
-
-  // max_repulsion_obs1=arm_radius+(_zeta_o_-(dist_ref_obs_(3)-R_o_))/(_zeta_o_-_delta_o_); //Frank : Added the arm radius to add a safety around the cylinder
-  // if (0>max_repulsion_obs1) {
-  // max_repulsion_obs1=0;
-  // }
-
-  // NF_o_co(0,0)=-(max_repulsion_obs1*(dist_ref_obs_(0)/dist_ref_obs_(3)));
-  // NF_o_co(1,0)=-(max_repulsion_obs1*(dist_ref_obs_(1)/dist_ref_obs_(3)));
-  // NF_o_co(2,0)=0;
-
-  // // Non-conservative part
-  // NF_o_nco(2,0)=0;
-  // if (_zeta_o_>=dist_ref_obs_(3)-R_o_) {
-  // NF_o_nco(0,0)=_alpha_o_*(dist_ref_obs_(1)/dist_ref_obs_(3));
-  // NF_o_nco(1,0)=-_alpha_o_*(dist_ref_obs_(0)/dist_ref_obs_(3));
-  // } else {
-  // NF_o_nco(0,0)=0;
-  // NF_o_nco(1,0)=0;
-  // }
-  // // Both combined
-  // NF_o(0,0)=NF_o_co(0,0)+NF_o_nco(0,0);
-  // NF_o(1,0)=NF_o_co(1,0)+NF_o_nco(1,0);
-  // NF_o(2,0)=NF_o_co(2,0)+NF_o_nco(2,0);
-
     std::map<std::string, mrs_msgs::FutureTrajectory>::iterator it = other_uavs_applied_references_.begin();
     // ROS_INFO_STREAM("p^v_x = \n" << it->second.points[0].x);
     // ROS_INFO_STREAM("p^v_y = \n" << it->second.points[0].y);
@@ -3139,8 +3083,6 @@ void DergbryanTracker::DERG_computation(){
     else{ // avoid /0
       point_link_star = point_link_applied_ref;
     }
-
-
 
     // other uavs:
     std::map<std::string, mrs_msgs::FutureTrajectory>::iterator it1 = other_uavs_applied_references_.begin();
@@ -3914,34 +3856,39 @@ void DergbryanTracker::DERG_computation(){
 
 
   // //////////////////////// Determining DSM_total= minimum {DSM_a,DSM_s,DSM_o,DSM_w}////////////////////////////////
-  DSM_total_ = 100000; // init
-  if (_enable_dsm_s_){
-    DSM_total_ = DSM_s_;
+  DSM_total_ = 100000; // initialize very high
+  if((DSM_s_ <= DSM_total_) && _enable_dsm_s_){
+    DSM_total_ = DSM_a_;
   }
-  else if ( (!_enable_dsm_s_) && (_enable_dsm_a_) ){ //|| dsm wall || dsm static obstacle (at least another dsm is enabled)
-    // DSM_total_ will be set hereafter
+
+  if((DSM_a_ <= DSM_total_) && _enable_dsm_a_){
+    DSM_total_ = DSM_a_;
   }
-  else{
+
+  if(!_enable_dsm_s_ && !_enable_dsm_a_){ // if all of the DSMs are disabled, TODO add other DSMs here
     DSM_total_ = _constant_dsm_;
   }
+
+  if(DSM_total_ < 0){ // make sure it is >= 0
+    DSM_total_ = 0;
+  }
+
+  
   // Frank : uncomment these lines when everything is implemented
   //if(DSM_w <= DSM_total){
   //DSM_total=DSM_w;
   //}
+  // if((DSM_o_ <= DSM_total_) && (_enable_dsm_o_)){
+  //   DSM_total_=DSM_o_;
+  // }
+  // //Frank : Add the remaining cases for the other DSMs
 
-  if((DSM_o_ <= DSM_total_) && (_enable_dsm_o_)){
-    DSM_total_=DSM_o_;
-  }
-  //Frank : Add the remaining cases for the other DSMs
-  if((DSM_a_ <= DSM_total_) && (_enable_dsm_a_)){
-    DSM_total_ = DSM_a_;
-  }
-  if((DSM_w_ <= DSM_total_) && (_enable_dsm_w_)){
-    DSM_total_ = DSM_w_;
-  }
-  if(DSM_total_ < 0){
-    DSM_total_ = 0;
-  }
+  // if((DSM_w_ <= DSM_total_) && (_enable_dsm_w_)){
+  //   DSM_total_ = DSM_w_;
+  // }
+
+
+
 
   
   // ROS_INFO_STREAM("DSM_total_ = \n" << DSM_total_);
@@ -3966,7 +3913,7 @@ void DergbryanTracker::DERG_computation(){
   // NF_total(0,0)=NF_att(0,0)+ NF_a(0,0) +NF_o(0,0) + NF_w(0,0);
   // NF_total(1,0)=NF_att(1,0) + NF_a(1,0) +NF_o(1,0) + NF_w(1,0);
   // NF_total(2,0)=NF_att(2,0) + NF_a(2,0) +NF_o(2,0) + NF_w(2,0);
-  NF_total = NF_att + _enable_repulsion_a_*NF_a + _enable_repulsion_w_*NF_w + _enable_repulsion_o_*NF_o; 
+  NF_total = NF_att + _enable_repulsion_a_*NF_a;// + _enable_repulsion_w_*NF_w + _enable_repulsion_o_*NF_o; 
   //ROS_INFO_STREAM("NF_total = \n" << NF_total);
   //ROS_INFO_STREAM("NF_a = \n" << NF_a);
 
@@ -3988,42 +3935,82 @@ void DergbryanTracker::DERG_computation(){
   ComputationalTime_ERG_ = end_ERG_ - start_ERG_;
   ComputationalTime_msg_.ERG = ComputationalTime_ERG_.count();
 
-  
-  // Publishers:
+  // Prepare DSM_msg_:
+  DSM_msg_.stamp = uav_state_.header.stamp;
+  DSM_msg_.DSM = DSM_total_;
+  DSM_msg_.DSM_s = DSM_s_;
+  DSM_msg_.DSM_a = DSM_a_;
+  // DSM_msg_.DSM_o = DSM_o_;
+  // DSM_msg_.DSM_w = DSM_w_;
 
+  /*
+  // TODO= check mpc_tracker to "check" if communicated info it outdated too much
+  */
+  // Publishers always required for collision avoidance:
+  //  - Prepare the uav_applied_ref_out_ msg:
+  uav_applied_ref_out_.stamp = uav_state_.header.stamp; //ros::Time::now();
+  uav_applied_ref_out_.uav_name = _uav_name_;
+  uav_applied_ref_out_.priority = avoidance_this_uav_priority_; 
   mrs_msgs::FuturePoint new_point;
-  // publish applied reference
   new_point.x = applied_ref_x_;
   new_point.y = applied_ref_y_;
   new_point.z = applied_ref_z_;
   uav_applied_ref_out_.points.push_back(new_point);
-  avoidance_applied_ref_publisher_.publish(uav_applied_ref_out_);
-
-  // publish DSM (custom message)
-  DSM_msg_.DSM = DSM_total_;
-  DSM_msg_.DSM_s = DSM_s_;
-  DSM_msg_.DSM_a = DSM_a_;
-  DSM_msg_.DSM_o = DSM_o_;
-  DSM_msg_.DSM_w = DSM_w_;
-  DSM_publisher_.publish(DSM_msg_);
-  //Frank : Add the remaining DSMs to the custom DSM message - DONE
-  // TODO  maybe move to prediction function or only publish when required by that derg strategy??!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-  // TODO= check mpc_tracker to "check" if communicated info it outdated too much
-  // mrs_msgs::FuturePoint new_point;
-  new_point.x = predicted_poses_out_.poses[0].position.x;
-  new_point.y = predicted_poses_out_.poses[0].position.y;
-  new_point.z = predicted_poses_out_.poses[0].position.z;
-  uav_posistion_out_.points.push_back(new_point);
-  avoidance_pos_publisher_.publish(uav_posistion_out_);
-  //mrs_msgs::FuturePoint new_point;
-  for (size_t i = 0; i < num_pred_samples_; i++) {
-    new_point.x = predicted_poses_out_.poses[i].position.x;
-    new_point.y = predicted_poses_out_.poses[i].position.y;
-    new_point.z = predicted_poses_out_.poses[i].position.z;
-    future_trajectory_out_.points.push_back(new_point);
+  //  - Publish the uav_applied_ref_out_ msg:
+  try {
+     avoidance_applied_ref_publisher_.publish(uav_applied_ref_out_);
   }
-  avoidance_trajectory_publisher_.publish(future_trajectory_out_);
+  catch (...) {
+    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", avoidance_applied_ref_publisher_.getTopic().c_str());
+  }
 
+  // Prepare the uav_posistion_out_ msg:
+  uav_posistion_out_.stamp = uav_state_.header.stamp; //ros::Time::now();
+  uav_posistion_out_.uav_name = _uav_name_;
+  uav_posistion_out_.priority = avoidance_this_uav_priority_; 
+  // mrs_msgs::FuturePoint new_point;
+  new_point.x = uav_state_.pose.position.x; // or predicted_poses_out_.poses[0].position.x;
+  new_point.y = uav_state_.pose.position.y; // or predicted_poses_out_.poses[0].position.y;
+  new_point.z = uav_state_.pose.position.z;// or predicted_poses_out_.poses[0].position.z;
+  uav_posistion_out_.points.push_back(new_point);
+  // Publish the uav_posistion_out_ msg:
+  try {
+     avoidance_pos_publisher_.publish(uav_posistion_out_);
+  }
+  catch (...) {
+    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", avoidance_pos_publisher_.getTopic().c_str());
+  }
+
+  if (_DERG_strategy_id_ == 5) { // avoidance_trajectory_publisher_ only used in _DERG_strategy_id_ == 5
+    // Prepare the future_trajectory_out_ msg:
+    future_trajectory_out_.stamp = uav_state_.header.stamp; //ros::Time::now();
+    future_trajectory_out_.uav_name = _uav_name_;
+    future_trajectory_out_.priority = avoidance_this_uav_priority_; 
+    // mrs_msgs::FuturePoint new_point;
+    for (size_t i = 0; i < num_pred_samples_; i++) {
+      new_point.x = predicted_poses_out_.poses[i].position.x;
+      new_point.y = predicted_poses_out_.poses[i].position.y;
+      new_point.z = predicted_poses_out_.poses[i].position.z;
+      future_trajectory_out_.points.push_back(new_point);
+    }
+    // Publish the future_trajectory_out_ msg:
+    try {
+      avoidance_trajectory_publisher_.publish(future_trajectory_out_);
+    }
+    catch (...) {
+      ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", avoidance_trajectory_publisher_.getTopic().c_str());
+    }
+  }
+  
+  // Other publishers:
+
+  // Publish DSM_msg_:
+  try {
+     DSM_publisher_.publish(DSM_msg_);
+  }
+  catch (...) {
+    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", DSM_publisher_.getTopic().c_str());
+  }
 
   // Diagnostics Publisher:
   if(_enable_diagnostics_pub_){
@@ -4292,39 +4279,34 @@ std::tuple< Eigen::Vector3d, Eigen::Vector3d> DergbryanTracker::getMinDistDirLin
 // | ------------------------ callbacks ----------------------- |
 
 void DergbryanTracker::callbackOtherUavAppliedRef(const mrs_msgs::FutureTrajectoryConstPtr& msg) {
-
   mrs_lib::Routine profiler_routine = profiler.createRoutine("callbackOtherUavAppliedRef");
   //ROS_INFO_STREAM("in callbackOtherUavAppliedRef!! \n");
-  mrs_msgs::FutureTrajectory temp_pose= *msg;
+  mrs_msgs::FutureTrajectory temp_pose = *msg;
   other_uavs_applied_references_[msg->uav_name] = temp_pose;
-
   //ROS_INFO_STREAM("pv uav1 = \n" << other_uavs_applied_references_["uav1"]);
   //ROS_INFO_STREAM("pv uav2 = \n" << other_uavs_applied_references_["uav2"]);
 }
 
 void DergbryanTracker::callbackOtherUavPosition(const mrs_msgs::FutureTrajectoryConstPtr& msg) {
-
   mrs_lib::Routine profiler_routine = profiler.createRoutine("callbackOtherUavPosition");
   // ROS_INFO_STREAM("in callbackOtherUavPosition!! \n");
-  mrs_msgs::FutureTrajectory temp_pose= *msg;
+  mrs_msgs::FutureTrajectory temp_pose = *msg;
   other_uavs_positions_[msg->uav_name] = temp_pose;
 }
 
 void DergbryanTracker::callbackOtherUavTrajectory(const mrs_msgs::FutureTrajectoryConstPtr& msg) {
-
   mrs_lib::Routine profiler_routine = profiler.createRoutine("callbackOtherUavTrajectory");
   // ROS_INFO_STREAM("in callbackOtherUavTrajectory!! \n");
-  mrs_msgs::FutureTrajectory temp_traj= *msg;
+  mrs_msgs::FutureTrajectory temp_traj = *msg;
   other_uav_avoidance_trajectories_[msg->uav_name] = temp_traj;
 }
+
 void DergbryanTracker::chatterCallback(mrs_lib::SubscribeHandler<std_msgs::String>& sh_ptr){
   //ROS_INFO_STREAM("in chatterCallback!! \n");
   mrs_lib::Routine profiler_routine = profiler.createRoutine("chatterCallback");
   //// ROS_INFO("I heard: [%s]", sh_ptr->data.c_str()); DOES NOT WORK as in default tutorial ROS
   //ROS_INFO_STREAM("Received: '" << sh_ptr.getMsg()->data << "' from topic '" << sh_ptr.topicName() << "'"); // see examples SubscribeHandler mrs lib
-  }
-
-
+}
 
 void DergbryanTracker::callbackOtherUavTubeMinRadius(mrs_lib::SubscribeHandler<std_msgs::Float32>& sh_ptr) {
   mrs_lib::Routine profiler_routine = profiler.createRoutine("callbackOtherUavTubeMinRadius");
