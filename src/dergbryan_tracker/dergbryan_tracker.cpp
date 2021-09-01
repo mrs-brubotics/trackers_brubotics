@@ -2606,12 +2606,16 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
   ComputationalTime_msg_.trajectory_predictions = (c_end-c_start) / (double)CLOCKS_PER_SEC;
   // Publishers:
   // avoid publishing all trajectory predictions since not required for control, only useful for post-analysis:
-  try {
-      predicted_pose_publisher_.publish(predicted_poses_out_);
+
+  if(_enable_trajectory_pub_ || _enable_visualization_){// TODO change visualization with real topics communicated by uavs, not this topic
+    try {
+        predicted_pose_publisher_.publish(predicted_poses_out_);
+      }
+      catch (...) {
+        ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_pose_publisher_.getTopic().c_str());
     }
-    catch (...) {
-      ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_pose_publisher_.getTopic().c_str());
   }
+  
   if (_enable_trajectory_pub_) {
     
     try {
