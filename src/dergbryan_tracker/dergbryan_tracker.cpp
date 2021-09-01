@@ -28,6 +28,7 @@
 #include <geometry_msgs/Point.h>
 #include <chrono> // computational time calculations
 #include <ctime>  // computational time calculations
+#include <bits/stdc++.h> // computational time calculations: last method of https://www.geeksforgeeks.org/measure-execution-time-with-high-precision-in-c-c/
 #include <trackers_brubotics/ComputationalTime.h> // custom ROS message
 /*end includes added by bryan:*/
 
@@ -1439,9 +1440,15 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
 void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand position_cmd, double uav_heading, const mrs_msgs::AttitudeCommand::ConstPtr &last_attitude_cmd){
   
   // Computational time:
+  // method Kelly:
   start_pred_ = std::chrono::system_clock::now(); 
-  
-  tictoc_stack.push(clock());
+  // method group A:
+  tictoc_stack.push(clock()); 
+  // last method of https://www.geeksforgeeks.org/measure-execution-time-with-high-precision-in-c-c/
+  auto start = std::chrono::high_resolution_clock::now(); 
+  // unsync the I/O of C and C++.
+  std::ios_base::sync_with_stdio(false);
+
 
   // --------------------------------------------------------------
   // |          load the control reference and estimates          | --> the reference is assumed constant over the prediction
@@ -2579,11 +2586,21 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
   } // end for loop prediction
 
   // Computational time:
+  // method Kelly:
   end_pred_ = std::chrono::system_clock::now();
   ComputationalTime_pred_ = end_pred_ - start_pred_;
-  ComputationalTime_msg_.trajectory_predictions = ComputationalTime_pred_.count(); //(double)(clock()- tictoc_stack.top())/CLOCKS_PER_SEC;//
+  //ComputationalTime_msg_.trajectory_predictions = ComputationalTime_pred_.count(); 
+  // method group A:
+  //ComputationalTime_msg_.trajectory_predictions = (double)(clock()- tictoc_stack.top())/CLOCKS_PER_SEC; 
   //ROS_INFO_STREAM("Prediction calculation took = \n "<< (double)(clock()- tictoc_stack.top())/CLOCKS_PER_SEC << "seconds.");
   tictoc_stack.pop();
+  // last method of: https://www.geeksforgeeks.org/measure-execution-time-with-high-precision-in-c-c/:
+  auto end = std::chrono::high_resolution_clock::now();
+  double time_taken = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count();
+  time_taken *= 1e-9;
+  ComputationalTime_msg_.trajectory_predictions = time_taken;
+
+
 
   // Publishers:
   // avoid publishing all trajectory predictions since not required for control, only useful for post-analysis:
