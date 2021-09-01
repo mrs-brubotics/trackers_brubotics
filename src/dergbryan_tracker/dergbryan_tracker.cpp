@@ -2587,13 +2587,14 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
 
   // Publishers:
   // avoid publishing all trajectory predictions since not required for control, only useful for post-analysis:
-  if (_enable_trajectory_pub_) {
-    try {
+  try {
       predicted_pose_publisher_.publish(predicted_poses_out_);
     }
     catch (...) {
       ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_pose_publisher_.getTopic().c_str());
-    }
+  }
+  if (_enable_trajectory_pub_) {
+    
     try {
       predicted_vel_publisher_.publish(predicted_velocities_out_);
     }
