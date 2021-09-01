@@ -97,16 +97,7 @@ private:
 
   std::string _version_;
   std::string _uav_name_;
-  // // | ------------------------ uav state ----------------------- |
-  mrs_msgs::UavState uav_state_;
-  mrs_msgs::UavState uav_state_prev_;
-  bool               got_uav_state_ = false; // now added by bryan
-  std::mutex         mutex_uav_state_; // now added by bryan
-  double uav_heading_; // now added by bryan
-
-  double uav_x_; // now added by bryan
-  double uav_y_; // now added by bryan
-  double uav_z_; // now added by bryan
+ 
 
   // | --------------- dynamic reconfigure server --------------- |
   /* TODO: make it compatible with DRS */
@@ -216,17 +207,15 @@ private:
   int num_pred_samples_;
 
 
-  MatrixXd init_pos = MatrixXd::Zero(3, 1);
-  MatrixXd init_vel = MatrixXd::Zero(3, 1);
-  MatrixXd init_accel = MatrixXd::Zero(3, 1);
-
   // ---------------
   // ROS Publishers:
   // ---------------
   ros::Publisher chatter_publisher_; // just an example to follow
-  //  - Reference input to tracker, reference output of tracker, uav pose
-  ros::Publisher goal_pose_publisher_;
-  // TODO add also pv and p here
+  //  - Reference input to tracker, reference output of tracker, uav pose:
+  ros::Publisher goal_pose_publisher_;  // input goal to tracker (i.e. desired user command or from loaded trajectory)
+  ros::Publisher applied_ref_pose_publisher_; // output goal of tracker (made safe by D-ERG if enabled)
+  ros::Publisher uav_state_publisher_; // actual uav_state used here
+  // TODO add also pos here logged with same header stamp
   //  - Trajectory predictions:
   ros::Publisher predicted_pose_publisher_;
   ros::Publisher predicted_vel_publisher_;
@@ -252,11 +241,14 @@ private:
   ros::Publisher point_link_star_publisher_;
   ros::Publisher sa_max_publisher_;
   ros::Publisher sa_perp_max_publisher_;
-  ros::Publisher pub_applied_ref_pose_;
+
 
   // -------------
   // ROS Messages:
   // -------------
+  //  - Reference input to tracker, reference output of tracker, uav pose:
+  mrs_msgs::UavState uav_state_;
+  mrs_msgs::UavState uav_state_prev_;
   //  - Trajectory predictions:
   // geometry_msgs::PoseArray custom_trajectory_out; // ctu example, array of pose traj predictions
   geometry_msgs::PoseArray predicted_poses_out_; // array of predicted poses
@@ -266,6 +258,17 @@ private:
   geometry_msgs::PoseArray predicted_attituderate_out_; // array of predicted attituderates
   geometry_msgs::PoseArray predicted_des_attituderate_out_; // array of predicted desired attituderates
   geometry_msgs::PoseArray predicted_tiltangle_out_; // array of predicted tilt angles
+
+
+  // | ------------------------ uav state ----------------------- |
+
+  bool               got_uav_state_ = false; // now added by bryan
+  std::mutex         mutex_uav_state_; // now added by bryan
+  double uav_heading_; // now added by bryan
+
+  double uav_x_; // now added by bryan
+  double uav_y_; // now added by bryan
+  double uav_z_; // now added by bryan
 
 
   double total_mass_;
@@ -577,7 +580,7 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
 
   // attitude gains
   param_loader.loadParam("default_gains/horizontal/attitude/kq", kqxy_);
-  kqxy_ = 7.0; //8.0; //1.0; // To mimic a delay in the predicitons
+  //kqxy_ = 7.0; //8.0; //1.0; // To mimic a delay in the predicitons
   param_loader.loadParam("default_gains/vertical/attitude/kq", kqz_);
 
   // mass estimator
@@ -699,11 +702,9 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
 
   chatter_publisher_ = nh2_.advertise<std_msgs::String>("chatter", 1);
   goal_pose_publisher_ = nh2_.advertise<mrs_msgs::ReferenceStamped>("goal_pose", 10);
-  // added by Jonathan and Titouan
-  pub_applied_ref_pose_ = nh2_.advertise<mrs_msgs::ReferenceStamped>("applied_ref_pose", 10);
-
+  applied_ref_pose_publisher_ = nh2_.advertise<mrs_msgs::ReferenceStamped>("applied_ref_pose", 10);
+  uav_state_publisher_ = nh2_.advertise<mrs_msgs::UavState>("uav_state", 10);
   // custom_predicted_traj_publisher = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_traj", 1);
-  
   predicted_pose_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_poses", 10);
   predicted_vel_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_vels", 10);
   predicted_acc_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_accs", 10);
@@ -985,22 +986,8 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
   if (!is_active_) {
     return mrs_msgs::PositionCommand::Ptr();
   }
+
   mrs_msgs::PositionCommand position_cmd;
-
-
-  init_pos(0,0)=uav_state->pose.position.x;
-  init_pos(1,0)=uav_state->pose.position.y;
-  init_pos(2,0)=uav_state->pose.position.z;
-
-  init_vel(0,0)=uav_state->velocity.linear.x;
-  init_vel(1,0)=uav_state->velocity.linear.y;
-  init_vel(2,0)=uav_state->velocity.linear.z;
-  //trajectory_prediction_general();
-
-
-
-
-
   // set the header
   position_cmd.header.stamp    = uav_state->header.stamp;
   position_cmd.header.frame_id = uav_state->header.frame_id;
@@ -1105,7 +1092,6 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
   uav_heading_ = uav_heading;
 
   
-  
   position_cmd.use_position_vertical   = 1;
   position_cmd.use_position_horizontal = 1;
   // QUESTION: Why can't I print this? No value is printed, empty.
@@ -1117,25 +1103,6 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
   position_cmd.use_jerk                = 0;
   position_cmd.use_heading             = 1;
   position_cmd.use_heading_rate        = 1;
-
-  /*TODO,ADDED: SET THE APPLIED REFERNECE POSE (POSITION & HEADING) TEMPORARILY TO THE DESIRED GOAL*/
-
-
-
-  // publish the goal pose
-  mrs_msgs::ReferenceStamped goal_pose;
-  // goal_pose.header.stamp          = ros::Time::now();
-  // goal_pose.header.frame_id  = "fcu_untilted";
-  goal_pose.header.stamp    = uav_state_.header.stamp;
-  goal_pose.header.frame_id = uav_state_.header.frame_id;
-  goal_pose.reference.position.x  = goal_x_;
-  goal_pose.reference.position.y  = goal_y_;
-  goal_pose.reference.position.z  = goal_z_;
-  goal_pose.reference.heading = goal_heading_;
-  goal_pose_publisher_.publish(goal_pose);
-
-
-  
 
   
   if (_use_derg_){
@@ -1154,42 +1121,66 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
     position_cmd.position.z     = applied_ref_z_;
     position_cmd.heading        = goal_heading_;
   }
-  else{
-    // in case the DERG isn't used
-    //time_for_sinus_bryan = time_for_sinus_bryan + dt;
-    position_cmd.position.x     = goal_x_;//+ 0.1*sin(3.14*time_for_sinus_bryan);
-    position_cmd.position.y     = goal_y_;//+ 0.1*sin(3.14*time_for_sinus_bryan);
-    position_cmd.position.z     = goal_z_;//+ 0.1*sin(3.14*time_for_sinus_bryan);
+  else{ // bypass the D-ERG (i.e. potentially UNSAFE!):
+    // set applied ref = desired goal ref (bypass tracker)
+    position_cmd.position.x     = goal_x_;
+    position_cmd.position.y     = goal_y_;
+    position_cmd.position.z     = goal_z_;
     position_cmd.heading        = goal_heading_;
     trajectory_prediction_general(position_cmd, uav_heading, last_attitude_cmd);
   }
-
-  // set applied ref = desired goal ref (bypass tracker)
-
-  // change later to real applied_ref_
+  // Depending on the above case, the applied reference as output to the tracker and input to the controller:
   applied_ref_x_ = position_cmd.position.x;
   applied_ref_y_ = position_cmd.position.y;
   applied_ref_z_ = position_cmd.position.z;
-  //
 
-  // Added by Jonathan and Titouan
-  // publish the applied ref pose to a custom topic
-  mrs_msgs::ReferenceStamped applied_ref_pose;
-  // applied_ref_pose.header.stamp          = ros::Time::now();
-  // applied_ref_pose.header.frame_id  = "frame_applied_ref";
-  applied_ref_pose.header.stamp    = uav_state->header.stamp;
-  applied_ref_pose.header.frame_id = uav_state->header.frame_id;
-  applied_ref_pose.reference.position.x  = applied_ref_x_;
-  applied_ref_pose.reference.position.y  = applied_ref_y_;
-  applied_ref_pose.reference.position.z  = applied_ref_z_;
-  applied_ref_pose.reference.heading = goal_heading_;
-  pub_applied_ref_pose_.publish(applied_ref_pose);
+  // Prepare the applied_ref_pose_msg:
+  mrs_msgs::ReferenceStamped applied_ref_pose_msg;
+  // applied_ref_pose_msg.header.stamp          = ros::Time::now();
+  // applied_ref_pose_msg.header.frame_id  = "frame_applied_ref";
+  applied_ref_pose_msg.header.stamp    = uav_state_.header.stamp;
+  applied_ref_pose_msg.header.frame_id = uav_state_.header.frame_id;
+  applied_ref_pose_msg.reference.position.x  = applied_ref_x_;
+  applied_ref_pose_msg.reference.position.y  = applied_ref_y_;
+  applied_ref_pose_msg.reference.position.z  = applied_ref_z_;
+  applied_ref_pose_msg.reference.heading = goal_heading_; // currently no ERG on heading/yaw
 
-
-
+  // Prepare the goal_pose_msg
+  mrs_msgs::ReferenceStamped goal_pose_msg;
+  // goal_pose_msg.header.stamp          = ros::Time::now();
+  // goal_pose_msg.header.frame_id  = "fcu_untilted";
+  goal_pose_msg.header.stamp    = uav_state_.header.stamp;
+  goal_pose_msg.header.frame_id = uav_state_.header.frame_id;
+  goal_pose_msg.reference.position.x  = goal_x_;
+  goal_pose_msg.reference.position.y  = goal_y_;
+  goal_pose_msg.reference.position.z  = goal_z_;
+  goal_pose_msg.reference.heading = goal_heading_;
 
 
   // Publishers:
+  try {
+    goal_pose_publisher_.publish(goal_pose_msg);
+  }
+  catch (...) {
+    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", goal_pose_publisher_.getTopic().c_str());
+  }
+
+  // if(_enable_visualization_){ // curently only used for RVIZ
+    try {
+      applied_ref_pose_publisher_.publish(applied_ref_pose_msg);
+    }
+    catch (...) {
+      ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", applied_ref_pose_publisher_.getTopic().c_str());
+    }
+  // }  
+  
+  try {
+    uav_state_publisher_.publish(uav_state_);
+  }
+  catch (...) {
+    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", uav_state_publisher_.getTopic().c_str());
+  }
+
   ComputationalTime_msg_.stamp = uav_state_.header.stamp;
   try {
     ComputationalTime_publisher_.publish(ComputationalTime_msg_);
@@ -1197,7 +1188,6 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
   catch (...) {
     ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", ComputationalTime_publisher_.getTopic().c_str());
   }
-
 
   // Clear (i.e. empty) the arrays of:
   //  - Predictions computed in trajectory_prediction_general() and used in DERG_computation():
@@ -1574,11 +1564,11 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
     if(i == 0){
       // ROS_INFO_STREAM("attitude_rate_pred = \n" << attitude_rate_pred);
       //Initial conditions for first iteration
-      custom_pose.position.x = uav_state.pose.position.x; //init_pos(0,0);
-      custom_pose.position.y = uav_state.pose.position.y; //init_pos(1,0);
-      custom_pose.position.z = uav_state.pose.position.z; //init_pos(2,0);
+      custom_pose.position.x = uav_state.pose.position.x;
+      custom_pose.position.y = uav_state.pose.position.y;
+      custom_pose.position.z = uav_state.pose.position.z;
 
-      custom_vel.position.x = uav_state.velocity.linear.x; //init_vel(0,0);
+      custom_vel.position.x = uav_state.velocity.linear.x;
       custom_vel.position.y = uav_state.velocity.linear.y;
       custom_vel.position.z = uav_state.velocity.linear.z;
 
