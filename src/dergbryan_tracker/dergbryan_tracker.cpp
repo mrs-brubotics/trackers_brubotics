@@ -3981,7 +3981,7 @@ void DergbryanTracker::DERG_computation(){
     ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", avoidance_pos_publisher_.getTopic().c_str());
   }
 
-  if (_DERG_strategy_id_ == 5) { // avoidance_trajectory_publisher_ only used in _DERG_strategy_id_ == 5
+  if (_DERG_strategy_id_ == 5 || _enable_visualization_) { // avoidance_trajectory_publisher_ only used in _DERG_strategy_id_ == 5 or when RVIZ is enabled
     // Prepare the future_trajectory_out_ msg:
     future_trajectory_out_.stamp = uav_state_.header.stamp; //ros::Time::now();
     future_trajectory_out_.uav_name = _uav_name_;
