@@ -3858,7 +3858,7 @@ void DergbryanTracker::DERG_computation(){
   // //////////////////////// Determining DSM_total= minimum {DSM_a,DSM_s,DSM_o,DSM_w}////////////////////////////////
   DSM_total_ = 100000; // initialize very high
   if((DSM_s_ <= DSM_total_) && _enable_dsm_s_){
-    DSM_total_ = DSM_a_;
+    DSM_total_ = DSM_s_;
   }
 
   if((DSM_a_ <= DSM_total_) && _enable_dsm_a_){
