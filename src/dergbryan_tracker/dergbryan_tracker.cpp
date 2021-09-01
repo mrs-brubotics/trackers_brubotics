@@ -2606,13 +2606,18 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
   ComputationalTime_msg_.trajectory_predictions = (c_end-c_start) / (double)CLOCKS_PER_SEC;
   // Publishers:
   // avoid publishing all trajectory predictions since not required for control, only useful for post-analysis:
-  if (_enable_trajectory_pub_) {
+
+  if(_enable_trajectory_pub_ || _enable_visualization_){// TODO change visualization with real topics communicated by uavs, not this topic
     try {
-      predicted_pose_publisher_.publish(predicted_poses_out_);
+        predicted_pose_publisher_.publish(predicted_poses_out_);
+      }
+      catch (...) {
+        ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_pose_publisher_.getTopic().c_str());
     }
-    catch (...) {
-      ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_pose_publisher_.getTopic().c_str());
-    }
+  }
+  
+  if (_enable_trajectory_pub_) {
+    
     try {
       predicted_vel_publisher_.publish(predicted_velocities_out_);
     }
@@ -3857,7 +3862,7 @@ void DergbryanTracker::DERG_computation(){
   // //////////////////////// Determining DSM_total= minimum {DSM_a,DSM_s,DSM_o,DSM_w}////////////////////////////////
   DSM_total_ = 100000; // initialize very high
   if((DSM_s_ <= DSM_total_) && _enable_dsm_s_){
-    DSM_total_ = DSM_a_;
+    DSM_total_ = DSM_s_;
   }
 
   if((DSM_a_ <= DSM_total_) && _enable_dsm_a_){
@@ -3980,7 +3985,7 @@ void DergbryanTracker::DERG_computation(){
     ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", avoidance_pos_publisher_.getTopic().c_str());
   }
 
-  if (_DERG_strategy_id_ == 5) { // avoidance_trajectory_publisher_ only used in _DERG_strategy_id_ == 5
+  if (_DERG_strategy_id_ == 5 || _enable_visualization_) { // avoidance_trajectory_publisher_ only used in _DERG_strategy_id_ == 5 or when RVIZ is enabled
     // Prepare the future_trajectory_out_ msg:
     future_trajectory_out_.stamp = uav_state_.header.stamp; //ros::Time::now();
     future_trajectory_out_.uav_name = _uav_name_;
