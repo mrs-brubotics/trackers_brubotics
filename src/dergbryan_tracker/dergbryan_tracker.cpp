@@ -7,8 +7,7 @@
 #include <mrs_lib/param_loader.h>
 #include <mrs_lib/subscribe_handler.h>
 #include <mrs_lib/mutex.h>
-// #include <stack>
-// #include <ctime>
+//#include <stack>
 // #include <iostream>
 /*begin includes added by bryan:*/
 #include <mrs_lib/attitude_converter.h>
@@ -1451,6 +1450,8 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
   // method https://answers.ros.org/question/166286/measure-codenode-running-time/: 
   ros::WallTime WallTime_start, WallTime_end;
   WallTime_start = ros::WallTime::now();
+  // method: clock() CPU time: https://stackoverflow.com/questions/20167685/measuring-cpu-time-in-c/43800564
+  std::clock_t c_start = std::clock();
 
 
   // --------------------------------------------------------------
@@ -2604,8 +2605,10 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
   //ComputationalTime_msg_.trajectory_predictions = time_taken;
   // method: https://answers.ros.org/question/166286/measure-codenode-running-time/
   WallTime_end = ros::WallTime::now();
-  ComputationalTime_msg_.trajectory_predictions = (WallTime_end - WallTime_start).toNSec() * 1e-9;
-
+  //ComputationalTime_msg_.trajectory_predictions = (WallTime_end - WallTime_start).toNSec() * 1e-9;
+  // method: clock() CPU time, https://stackoverflow.com/questions/20167685/measuring-cpu-time-in-c/43800564:
+  std::clock_t c_end = std::clock();
+  ComputationalTime_msg_.trajectory_predictions = (c_end-c_start) / (double)CLOCKS_PER_SEC;
   // Publishers:
   // avoid publishing all trajectory predictions since not required for control, only useful for post-analysis:
   if (_enable_trajectory_pub_) {
