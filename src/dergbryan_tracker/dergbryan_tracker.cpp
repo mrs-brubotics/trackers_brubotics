@@ -877,8 +877,8 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
 
   // initialize the integrals
   uav_mass_difference_ = 0;
-  Iw_w_                = Eigen::Vector2d::Zero(2);
-  Ib_b_                = Eigen::Vector2d::Zero(2);
+  // Iw_w_                = Eigen::Vector2d::Zero(2);
+  // Ib_b_                = Eigen::Vector2d::Zero(2);
 
 
   // | ------------------------ profiler ------------------------ |
@@ -1521,11 +1521,11 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
 
   // | --------------------- initialize body and world integrals --------------------- |
   /* NOTE: this part is added by Bryan, was originally in the controllers activate function */
-  Ib_b_[0] = -last_attitude_cmd->disturbance_bx_b;
-  Ib_b_[1] = -last_attitude_cmd->disturbance_by_b;
+  // Ib_b_[0] = -last_attitude_cmd->disturbance_bx_b;
+  // Ib_b_[1] = -last_attitude_cmd->disturbance_by_b;
 
-  Iw_w_[0] = -last_attitude_cmd->disturbance_wx_w;
-  Iw_w_[1] = -last_attitude_cmd->disturbance_wy_w;
+  // Iw_w_[0] = -last_attitude_cmd->disturbance_wx_w;
+  // Iw_w_[1] = -last_attitude_cmd->disturbance_wy_w;
 
     // ROS_INFO(
     //     "[DergbryanTracker]: setting the mass difference and integrals from the last AttitudeCmd: mass difference: %.2f kg, Ib_b_: %.2f, %.2f N, Iw_w_: "
@@ -1802,7 +1802,7 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
 
     // QUESTION: some gains printed above do not correspond to the gains set in the yaml file (e.G. Kpz). Why is that?
 
-    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: _uav_mass_ = %f", common_handlers_->getMass());
+    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: estimated total_mass = %f", common_handlers_->getMass());
     ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: n_motors = %d", common_handlers_->motor_params.n_motors);
     ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: motor_params.A = %f", common_handlers_->motor_params.A);
     ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: motor_params.B = %f", common_handlers_->motor_params.B);
@@ -1810,25 +1810,25 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
 
     // | --------------- desired orientation matrix --------------- |
     // get body integral in the world frame
-    Eigen::Vector2d Ib_w = Eigen::Vector2d(0, 0);
-    {
-      geometry_msgs::Vector3Stamped Ib_b_stamped;
+    // Eigen::Vector2d Ib_w = Eigen::Vector2d(0, 0);
+    // {
+    //   geometry_msgs::Vector3Stamped Ib_b_stamped;
 
-      Ib_b_stamped.header.stamp    = ros::Time::now();
-      Ib_b_stamped.header.frame_id = "fcu_untilted";
-      Ib_b_stamped.vector.x        = Ib_b_(0);
-      Ib_b_stamped.vector.y        = Ib_b_(1);
-      Ib_b_stamped.vector.z        = 0;
+    //   Ib_b_stamped.header.stamp    = ros::Time::now();
+    //   Ib_b_stamped.header.frame_id = "fcu_untilted";
+    //   Ib_b_stamped.vector.x        = Ib_b_(0);
+    //   Ib_b_stamped.vector.y        = Ib_b_(1);
+    //   Ib_b_stamped.vector.z        = 0;
 
-      auto res = common_handlers_->transformer->transformSingle(uav_state_.header.frame_id, Ib_b_stamped);
+    //   auto res = common_handlers_->transformer->transformSingle(uav_state_.header.frame_id, Ib_b_stamped);
 
-      if (res) {
-        Ib_w[0] = res.value().vector.x;
-        Ib_w[1] = res.value().vector.y;
-      } else {
-        ROS_ERROR_THROTTLE(1.0, "[DergbryanTracker]: could not transform the Ib_b_ to the world frame");
-      }
-    }
+    //   if (res) {
+    //     Ib_w[0] = res.value().vector.x;
+    //     Ib_w[1] = res.value().vector.y;
+    //   } else {
+    //     ROS_ERROR_THROTTLE(1.0, "[DergbryanTracker]: could not transform the Ib_b_ to the world frame");
+    //   }
+    // }
 
     // construct the desired force vector
     
@@ -1837,12 +1837,12 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
     Eigen::Vector3d feed_forward      = total_mass * (Eigen::Vector3d(0, 0, common_handlers_->g) + Ra);
     Eigen::Vector3d position_feedback = -Kp * Ep.array();
     Eigen::Vector3d velocity_feedback = -Kv * Ev.array();
-    Eigen::Vector3d integral_feedback;
-    {
-      std::scoped_lock lock(mutex_integrals_);
+    // Eigen::Vector3d integral_feedback;
+    // {
+    //   std::scoped_lock lock(mutex_integrals_);
 
-      integral_feedback << Ib_w[0] + Iw_w_[0], Ib_w[1] + Iw_w_[1], 0;
-    }
+    //   integral_feedback << Ib_w[0] + Iw_w_[0], Ib_w[1] + Iw_w_[1], 0;
+    // }
 
     // Do you want integral feedback?
     //Eigen::Vector3d f = position_feedback + velocity_feedback + integral_feedback + feed_forward; /// yes (original)
@@ -2193,52 +2193,52 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
     // |                  integrate the world error                 |
     // --------------------------------------------------------------
 
-    {
-      std::scoped_lock lock(mutex_gains_, mutex_integrals_);
+    // {
+    //   std::scoped_lock lock(mutex_gains_, mutex_integrals_);
 
-      Eigen::Vector3d integration_switch(1, 1, 0);
+    //   Eigen::Vector3d integration_switch(1, 1, 0);
 
-      // integrate the world error
-      if (position_cmd.use_position_horizontal) {
-        Iw_w_ -= kiwxy_ * Ep.head(2) * _prediction_dt_;
-      } else if (position_cmd.use_velocity_horizontal) {
-        Iw_w_ -= kiwxy_ * Ev.head(2) * _prediction_dt_;
-      }
+    //   // integrate the world error
+    //   if (position_cmd.use_position_horizontal) {
+    //     Iw_w_ -= kiwxy_ * Ep.head(2) * _prediction_dt_;
+    //   } else if (position_cmd.use_velocity_horizontal) {
+    //     Iw_w_ -= kiwxy_ * Ev.head(2) * _prediction_dt_;
+    //   }
 
-      // saturate the world X
-      bool world_integral_saturated = false;
-      if (!std::isfinite(Iw_w_[0])) {
-        Iw_w_[0] = 0;
-        ROS_ERROR_THROTTLE(1.0, "[DergbryanTracker]: NaN detected in variable 'Iw_w_[0]', setting it to 0!!!");
-      } else if (Iw_w_[0] > kiwxy_lim_) {
-        Iw_w_[0]                 = kiwxy_lim_;
-        world_integral_saturated = true;
-      } else if (Iw_w_[0] < -kiwxy_lim_) {
-        Iw_w_[0]                 = -kiwxy_lim_;
-        world_integral_saturated = true;
-      }
+    //   // saturate the world X
+    //   bool world_integral_saturated = false;
+    //   if (!std::isfinite(Iw_w_[0])) {
+    //     Iw_w_[0] = 0;
+    //     ROS_ERROR_THROTTLE(1.0, "[DergbryanTracker]: NaN detected in variable 'Iw_w_[0]', setting it to 0!!!");
+    //   } else if (Iw_w_[0] > kiwxy_lim_) {
+    //     Iw_w_[0]                 = kiwxy_lim_;
+    //     world_integral_saturated = true;
+    //   } else if (Iw_w_[0] < -kiwxy_lim_) {
+    //     Iw_w_[0]                 = -kiwxy_lim_;
+    //     world_integral_saturated = true;
+    //   }
 
-      if (kiwxy_lim_ >= 0 && world_integral_saturated) {
-        ROS_WARN_THROTTLE(1.0, "[DergbryanTracker]: SE3's world X integral is being saturated!");
-      }
+    //   if (kiwxy_lim_ >= 0 && world_integral_saturated) {
+    //     ROS_WARN_THROTTLE(1.0, "[DergbryanTracker]: SE3's world X integral is being saturated!");
+    //   }
 
-      // saturate the world Y
-      world_integral_saturated = false;
-      if (!std::isfinite(Iw_w_[1])) {
-        Iw_w_[1] = 0;
-        ROS_ERROR_THROTTLE(1.0, "[DergbryanTracker]: NaN detected in variable 'Iw_w_[1]', setting it to 0!!!");
-      } else if (Iw_w_[1] > kiwxy_lim_) {
-        Iw_w_[1]                 = kiwxy_lim_;
-        world_integral_saturated = true;
-      } else if (Iw_w_[1] < -kiwxy_lim_) {
-        Iw_w_[1]                 = -kiwxy_lim_;
-        world_integral_saturated = true;
-      }
+    //   // saturate the world Y
+    //   world_integral_saturated = false;
+    //   if (!std::isfinite(Iw_w_[1])) {
+    //     Iw_w_[1] = 0;
+    //     ROS_ERROR_THROTTLE(1.0, "[DergbryanTracker]: NaN detected in variable 'Iw_w_[1]', setting it to 0!!!");
+    //   } else if (Iw_w_[1] > kiwxy_lim_) {
+    //     Iw_w_[1]                 = kiwxy_lim_;
+    //     world_integral_saturated = true;
+    //   } else if (Iw_w_[1] < -kiwxy_lim_) {
+    //     Iw_w_[1]                 = -kiwxy_lim_;
+    //     world_integral_saturated = true;
+    //   }
 
-      if (kiwxy_lim_ >= 0 && world_integral_saturated) {
-        ROS_WARN_THROTTLE(1.0, "[DergbryanTracker]: SE3's world Y integral is being saturated!");
-      }
-    }
+    //   if (kiwxy_lim_ >= 0 && world_integral_saturated) {
+    //     ROS_WARN_THROTTLE(1.0, "[DergbryanTracker]: SE3's world Y integral is being saturated!");
+    //   }
+    // }
 
     //}
 
@@ -2248,93 +2248,93 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
     // |                  integrate the body error                  |
     // --------------------------------------------------------------
 
-    {
-      std::scoped_lock lock(mutex_gains_);
+    // {
+    //   std::scoped_lock lock(mutex_gains_);
 
-      Eigen::Vector2d Ep_fcu_untilted = Eigen::Vector2d(0, 0);  // position error in the untilted frame of the UAV
-      Eigen::Vector2d Ev_fcu_untilted = Eigen::Vector2d(0, 0);  // velocity error in the untilted frame of the UAV
+    //   Eigen::Vector2d Ep_fcu_untilted = Eigen::Vector2d(0, 0);  // position error in the untilted frame of the UAV
+    //   Eigen::Vector2d Ev_fcu_untilted = Eigen::Vector2d(0, 0);  // velocity error in the untilted frame of the UAV
 
-      // get the position control error in the fcu_untilted frame
-      {
+    //   // get the position control error in the fcu_untilted frame
+    //   {
 
-        geometry_msgs::Vector3Stamped Ep_stamped;
+    //     geometry_msgs::Vector3Stamped Ep_stamped;
 
-        Ep_stamped.header.stamp    = ros::Time::now();
-        Ep_stamped.header.frame_id = uav_state_.header.frame_id;
-        Ep_stamped.vector.x        = Ep(0);
-        Ep_stamped.vector.y        = Ep(1);
-        Ep_stamped.vector.z        = Ep(2);
+    //     Ep_stamped.header.stamp    = ros::Time::now();
+    //     Ep_stamped.header.frame_id = uav_state_.header.frame_id;
+    //     Ep_stamped.vector.x        = Ep(0);
+    //     Ep_stamped.vector.y        = Ep(1);
+    //     Ep_stamped.vector.z        = Ep(2);
 
-        auto res = common_handlers_->transformer->transformSingle("fcu_untilted", Ep_stamped);
+    //     auto res = common_handlers_->transformer->transformSingle("fcu_untilted", Ep_stamped);
 
-        if (res) {
-          Ep_fcu_untilted[0] = res.value().vector.x;
-          Ep_fcu_untilted[1] = res.value().vector.y;
-        } else {
-          ROS_ERROR_THROTTLE(1.0, "[DergbryanTracker]: could not transform the position error to fcu_untilted");
-        }
-      }
+    //     if (res) {
+    //       Ep_fcu_untilted[0] = res.value().vector.x;
+    //       Ep_fcu_untilted[1] = res.value().vector.y;
+    //     } else {
+    //       ROS_ERROR_THROTTLE(1.0, "[DergbryanTracker]: could not transform the position error to fcu_untilted");
+    //     }
+    //   }
 
-      // get the velocity control error in the fcu_untilted frame
-      {
-        geometry_msgs::Vector3Stamped Ev_stamped;
+    //   // get the velocity control error in the fcu_untilted frame
+    //   {
+    //     geometry_msgs::Vector3Stamped Ev_stamped;
 
-        Ev_stamped.header.stamp    = ros::Time::now();
-        Ev_stamped.header.frame_id = uav_state_.header.frame_id;
-        Ev_stamped.vector.x        = Ev(0);
-        Ev_stamped.vector.y        = Ev(1);
-        Ev_stamped.vector.z        = Ev(2);
+    //     Ev_stamped.header.stamp    = ros::Time::now();
+    //     Ev_stamped.header.frame_id = uav_state_.header.frame_id;
+    //     Ev_stamped.vector.x        = Ev(0);
+    //     Ev_stamped.vector.y        = Ev(1);
+    //     Ev_stamped.vector.z        = Ev(2);
 
-        auto res = common_handlers_->transformer->transformSingle("fcu_untilted", Ev_stamped);
+    //     auto res = common_handlers_->transformer->transformSingle("fcu_untilted", Ev_stamped);
 
-        if (res) {
-          Ev_fcu_untilted[0] = res.value().vector.x;
-          Ev_fcu_untilted[1] = res.value().vector.x;
-        } else {
-          ROS_ERROR_THROTTLE(1.0, "[DergbryanTracker]: could not transform the velocity error to fcu_untilted");
-        }
-      }
+    //     if (res) {
+    //       Ev_fcu_untilted[0] = res.value().vector.x;
+    //       Ev_fcu_untilted[1] = res.value().vector.x;
+    //     } else {
+    //       ROS_ERROR_THROTTLE(1.0, "[DergbryanTracker]: could not transform the velocity error to fcu_untilted");
+    //     }
+    //   }
 
-      // integrate the body error
-      if (position_cmd.use_position_horizontal) {
-        Ib_b_ -= kibxy_ * Ep_fcu_untilted * _prediction_dt_;
-      } else if (position_cmd.use_velocity_horizontal) {
-        Ib_b_ -= kibxy_ * Ev_fcu_untilted * _prediction_dt_;
-      }
-    // saturate the body
-      bool body_integral_saturated = false;
-      if (!std::isfinite(Ib_b_[0])) {
-        Ib_b_[0] = 0;
-        ROS_ERROR_THROTTLE(1.0, "[DergbryanTracker]: NaN detected in variable 'Ib_b_[0]', setting it to 0!!!");
-      } else if (Ib_b_[0] > kibxy_lim_) {
-        Ib_b_[0]                = kibxy_lim_;
-        body_integral_saturated = true;
-      } else if (Ib_b_[0] < -kibxy_lim_) {
-        Ib_b_[0]                = -kibxy_lim_;
-        body_integral_saturated = true;
-      }
+    //   // integrate the body error
+    //   if (position_cmd.use_position_horizontal) {
+    //     Ib_b_ -= kibxy_ * Ep_fcu_untilted * _prediction_dt_;
+    //   } else if (position_cmd.use_velocity_horizontal) {
+    //     Ib_b_ -= kibxy_ * Ev_fcu_untilted * _prediction_dt_;
+    //   }
+    // // saturate the body
+    //   bool body_integral_saturated = false;
+    //   if (!std::isfinite(Ib_b_[0])) {
+    //     Ib_b_[0] = 0;
+    //     ROS_ERROR_THROTTLE(1.0, "[DergbryanTracker]: NaN detected in variable 'Ib_b_[0]', setting it to 0!!!");
+    //   } else if (Ib_b_[0] > kibxy_lim_) {
+    //     Ib_b_[0]                = kibxy_lim_;
+    //     body_integral_saturated = true;
+    //   } else if (Ib_b_[0] < -kibxy_lim_) {
+    //     Ib_b_[0]                = -kibxy_lim_;
+    //     body_integral_saturated = true;
+    //   }
 
-      if (kibxy_lim_ > 0 && body_integral_saturated) {
-        ROS_WARN_THROTTLE(1.0, "[DergbryanTracker]: SE3's body pitch integral is being saturated!");
-      }
+    //   if (kibxy_lim_ > 0 && body_integral_saturated) {
+    //     ROS_WARN_THROTTLE(1.0, "[DergbryanTracker]: SE3's body pitch integral is being saturated!");
+    //   }
 
-      // saturate the body
-      body_integral_saturated = false;
-      if (!std::isfinite(Ib_b_[1])) {
-        Ib_b_[1] = 0;
-        ROS_ERROR_THROTTLE(1.0, "[DergbryanTracker]: NaN detected in variable 'Ib_b_[1]', setting it to 0!!!");
-      } else if (Ib_b_[1] > kibxy_lim_) {
-        Ib_b_[1]                = kibxy_lim_;
-        body_integral_saturated = true;
-      } else if (Ib_b_[1] < -kibxy_lim_) {
-        Ib_b_[1]                = -kibxy_lim_;
-        body_integral_saturated = true;
-      }
+    //   // saturate the body
+    //   body_integral_saturated = false;
+    //   if (!std::isfinite(Ib_b_[1])) {
+    //     Ib_b_[1] = 0;
+    //     ROS_ERROR_THROTTLE(1.0, "[DergbryanTracker]: NaN detected in variable 'Ib_b_[1]', setting it to 0!!!");
+    //   } else if (Ib_b_[1] > kibxy_lim_) {
+    //     Ib_b_[1]                = kibxy_lim_;
+    //     body_integral_saturated = true;
+    //   } else if (Ib_b_[1] < -kibxy_lim_) {
+    //     Ib_b_[1]                = -kibxy_lim_;
+    //     body_integral_saturated = true;
+    //   }
 
-      if (kibxy_lim_ > 0 && body_integral_saturated) {
-        ROS_WARN_THROTTLE(1.0, "[DergbryanTracker]: SE3's body roll integral is being saturated!");
-      }
-    }
+    //   if (kibxy_lim_ > 0 && body_integral_saturated) {
+    //     ROS_WARN_THROTTLE(1.0, "[DergbryanTracker]: SE3's body roll integral is being saturated!");
+    //   }
+    // }
 
     //}
 
@@ -2380,36 +2380,36 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
 
     // | ------------ compensated desired acceleration ------------ |
 
-    double desired_x_accel = 0;
-    double desired_y_accel = 0;
-    double desired_z_accel = 0;
+    // double desired_x_accel = 0;
+    // double desired_y_accel = 0;
+    // double desired_z_accel = 0;
 
-    {
+    // {
 
-      Eigen::Matrix3d des_orientation = mrs_lib::AttitudeConverter(Rd);
-      Eigen::Vector3d thrust_vector   = thrust_force * des_orientation.col(2);
+    //   Eigen::Matrix3d des_orientation = mrs_lib::AttitudeConverter(Rd);
+    //   Eigen::Vector3d thrust_vector   = thrust_force * des_orientation.col(2);
 
-      double world_accel_x = (thrust_vector[0] / total_mass) - (Iw_w_[0] / total_mass) - (Ib_w[0] / total_mass);
-      double world_accel_y = (thrust_vector[1] / total_mass) - (Iw_w_[1] / total_mass) - (Ib_w[1] / total_mass);
-      double world_accel_z = (thrust_vector[2] / total_mass) - common_handlers_->g;
+    //   double world_accel_x = (thrust_vector[0] / total_mass) - (Iw_w_[0] / total_mass) - (Ib_w[0] / total_mass);
+    //   double world_accel_y = (thrust_vector[1] / total_mass) - (Iw_w_[1] / total_mass) - (Ib_w[1] / total_mass);
+    //   double world_accel_z = (thrust_vector[2] / total_mass) - common_handlers_->g;
 
-      geometry_msgs::Vector3Stamped world_accel;
+    //   geometry_msgs::Vector3Stamped world_accel;
 
-      world_accel.header.stamp    = ros::Time::now();
-      world_accel.header.frame_id = uav_state.header.frame_id;
-      world_accel.vector.x        = world_accel_x;
-      world_accel.vector.y        = world_accel_y;
-      world_accel.vector.z        = world_accel_z;
+    //   world_accel.header.stamp    = ros::Time::now();
+    //   world_accel.header.frame_id = uav_state.header.frame_id;
+    //   world_accel.vector.x        = world_accel_x;
+    //   world_accel.vector.y        = world_accel_y;
+    //   world_accel.vector.z        = world_accel_z;
 
-      auto res = common_handlers_->transformer->transformSingle("fcu", world_accel);
+    //   auto res = common_handlers_->transformer->transformSingle("fcu", world_accel);
 
-      if (res) {
+    //   if (res) {
 
-        desired_x_accel = res.value().vector.x;
-        desired_y_accel = res.value().vector.y;
-        desired_z_accel = res.value().vector.z;
-      }
-    }
+    //     desired_x_accel = res.value().vector.x;
+    //     desired_y_accel = res.value().vector.y;
+    //     desired_z_accel = res.value().vector.z;
+    //   }
+    // }
 
     // BRYAN: cancel terms for minimal controller
     t = q_feedback;// + Rw + q_feedforward;
@@ -2508,7 +2508,7 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
 
     // | --------------- fill the resulting command --------------- |
 
-    auto output_mode = mrs_lib::get_mutexed(mutex_output_mode_, output_mode_);
+    //auto output_mode = mrs_lib::get_mutexed(mutex_output_mode_, output_mode_);
 
     // // fill in the desired attitude anyway, since we know it
     // output_command->attitude = mrs_lib::AttitudeConverter(Rd);
