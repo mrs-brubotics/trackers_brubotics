@@ -1542,7 +1542,7 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
   predicted_poses_out_.header.frame_id = uav_state_.header.frame_id;
   predicted_velocities_out_.header.stamp = uav_state_.header.stamp; //ros::Time::now();
   predicted_velocities_out_.header.frame_id = uav_state_.header.frame_id;
-  predicted_accelerations_out_.header.stamp = uav_state_.header.stamp //ros::Time::now();
+  predicted_accelerations_out_.header.stamp = uav_state_.header.stamp; //ros::Time::now();
   predicted_accelerations_out_.header.frame_id = uav_state_.header.frame_id;
   predicted_thrust_out_.header.stamp = uav_state_.header.stamp; //ros::Time::now();
   predicted_thrust_out_.header.frame_id = uav_state_.header.frame_id;
