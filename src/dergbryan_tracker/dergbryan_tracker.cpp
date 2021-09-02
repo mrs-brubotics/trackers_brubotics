@@ -196,13 +196,9 @@ private:
 
   bool starting_bool=true;
 
-  // added by Bryan
-  double time_for_sinus_bryan = 0;
-  
-
 
   double dt_ = 0.010; // DO NOT CHANGE! Hardcoded ERG sample time = controller sample time TODO: obtain via loop rate, see MpcTracker
-  double custom_dt_ = 0.010;//0.010;//0.001;//0.020; //0.010; // controller sampling time (in seconds) used in prediction
+  double _prediction_dt_; //0.010;//0.010;//0.001;//0.020; //0.010; // controller sampling time (in seconds) used in prediction
   double _pred_horizon_;//1.5//0.15;//1.5; //0.15; //1.5; //0.4; // prediction horizon (in seconds)
   int num_pred_samples_;
 
@@ -674,9 +670,10 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   param_loader2.loadParam("enable_trajectory_pub", _enable_trajectory_pub_);
 
   param_loader2.loadParam("prediction/horizon", _pred_horizon_);
+  param_loader2.loadParam("prediction/time_step",_prediction_dt_);
   param_loader2.loadParam("prediction/use_body_inertia",_predicitons_use_body_inertia_);
   // convert below to int
-  num_pred_samples_ = (int)(_pred_horizon_/custom_dt_); // number of prediction samples
+  num_pred_samples_ = (int)(_pred_horizon_/_prediction_dt_); // number of prediction samples
   param_loader2.loadParam("dynamic_safety_margin/kappa/s", _kappa_s_);
   param_loader2.loadParam("dynamic_safety_margin/kappa/sw", _kappa_sw_);
   param_loader2.loadParam("dynamic_safety_margin/kappa/a", _kappa_a_);
@@ -1036,7 +1033,6 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
     position_cmd.use_heading_rate        = 1;
 
     
-    time_for_sinus_bryan = 0;
 
     ROS_INFO("[Dergbryan tracker - odom]: [goal_x_=%.2f],[goal_y_=%.2f],[goal_z_=%.2f, goal_heading_=%.2f]",goal_x_,goal_y_,goal_z_,goal_heading_);
 
@@ -1608,22 +1604,22 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
     else{
       // Discrete trajectory prediction using the Euler formula's
       // TODO: in control predictions define custom_acceleration also via uav_state
-      uav_state.velocity.linear.x = uav_state.velocity.linear.x + custom_acceleration.position.x*custom_dt_;
+      uav_state.velocity.linear.x = uav_state.velocity.linear.x + custom_acceleration.position.x*_prediction_dt_;
       custom_vel.position.x = uav_state.velocity.linear.x;
 
-      uav_state.velocity.linear.y = uav_state.velocity.linear.y + custom_acceleration.position.y*custom_dt_;
+      uav_state.velocity.linear.y = uav_state.velocity.linear.y + custom_acceleration.position.y*_prediction_dt_;
       custom_vel.position.y = uav_state.velocity.linear.y;
 
-      uav_state.velocity.linear.z = uav_state.velocity.linear.z + custom_acceleration.position.z*custom_dt_;
+      uav_state.velocity.linear.z = uav_state.velocity.linear.z + custom_acceleration.position.z*_prediction_dt_;
       custom_vel.position.z = uav_state.velocity.linear.z;
 
-      uav_state.pose.position.x = uav_state.pose.position.x + uav_state.velocity.linear.x*custom_dt_;
+      uav_state.pose.position.x = uav_state.pose.position.x + uav_state.velocity.linear.x*_prediction_dt_;
       custom_pose.position.x = uav_state.pose.position.x;
 
-      uav_state.pose.position.y = uav_state.pose.position.y + uav_state.velocity.linear.y*custom_dt_;
+      uav_state.pose.position.y = uav_state.pose.position.y + uav_state.velocity.linear.y*_prediction_dt_;
       custom_pose.position.y = uav_state.pose.position.y;
 
-      uav_state.pose.position.z = uav_state.pose.position.z + uav_state.velocity.linear.z*custom_dt_;
+      uav_state.pose.position.z = uav_state.pose.position.z + uav_state.velocity.linear.z*_prediction_dt_;
       custom_pose.position.z = uav_state.pose.position.z;
 
 
@@ -1635,11 +1631,11 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
                   -desired_attitude_rate_pred(1), desired_attitude_rate_pred(0),  0.0;
         
         Eigen::Matrix3d I = Eigen::Matrix3d::Identity(3, 3);
-        R = (I + skew_Ow_des*custom_dt_ + 1.0/2.0*skew_Ow_des*custom_dt_*skew_Ow_des*custom_dt_ + 1.0/6.0*skew_Ow_des*custom_dt_*skew_Ow_des*custom_dt_*skew_Ow_des*custom_dt_)*R;
+        R = (I + skew_Ow_des*_prediction_dt_ + 1.0/2.0*skew_Ow_des*_prediction_dt_*skew_Ow_des*_prediction_dt_ + 1.0/6.0*skew_Ow_des*_prediction_dt_*skew_Ow_des*_prediction_dt_*skew_Ow_des*_prediction_dt_)*R;
       }
       else{
       // if we include the body rate inertial dynamics:
-        attitude_rate_pred = attitude_rate_pred + attitude_acceleration_pred*custom_dt_;
+        attitude_rate_pred = attitude_rate_pred + attitude_acceleration_pred*_prediction_dt_;
         skew_Ow << 0.0     , -attitude_rate_pred(2), attitude_rate_pred(1),
                   attitude_rate_pred(2) , 0.0,       -attitude_rate_pred(0),
                   -attitude_rate_pred(1), attitude_rate_pred(0),  0.0;
@@ -1652,7 +1648,7 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
         // R = R + Rdot*dt; with Rdot = skew_Ow*R THIS IS WRONG 
         // --> CORRECT to use exponential map like below (= Taylor series)
         Eigen::Matrix3d I = Eigen::Matrix3d::Identity(3, 3);
-        R = (I + skew_Ow*custom_dt_ + 1.0/2.0*skew_Ow*custom_dt_*skew_Ow*custom_dt_ + 1.0/6.0*skew_Ow*custom_dt_*skew_Ow*custom_dt_*skew_Ow*custom_dt_)*R;
+        R = (I + skew_Ow*_prediction_dt_ + 1.0/2.0*skew_Ow*_prediction_dt_*skew_Ow*_prediction_dt_ + 1.0/6.0*skew_Ow*_prediction_dt_*skew_Ow*_prediction_dt_*skew_Ow*_prediction_dt_)*R;
         // for publishing:
         predicted_attituderate.position.x = attitude_rate_pred(0,0);
         predicted_attituderate.position.y = attitude_rate_pred(1,0);
@@ -2204,9 +2200,9 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
 
       // integrate the world error
       if (position_cmd.use_position_horizontal) {
-        Iw_w_ -= kiwxy_ * Ep.head(2) * custom_dt_;
+        Iw_w_ -= kiwxy_ * Ep.head(2) * _prediction_dt_;
       } else if (position_cmd.use_velocity_horizontal) {
-        Iw_w_ -= kiwxy_ * Ev.head(2) * custom_dt_;
+        Iw_w_ -= kiwxy_ * Ev.head(2) * _prediction_dt_;
       }
 
       // saturate the world X
@@ -2301,9 +2297,9 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
 
       // integrate the body error
       if (position_cmd.use_position_horizontal) {
-        Ib_b_ -= kibxy_ * Ep_fcu_untilted * custom_dt_;
+        Ib_b_ -= kibxy_ * Ep_fcu_untilted * _prediction_dt_;
       } else if (position_cmd.use_velocity_horizontal) {
-        Ib_b_ -= kibxy_ * Ev_fcu_untilted * custom_dt_;
+        Ib_b_ -= kibxy_ * Ev_fcu_untilted * _prediction_dt_;
       }
     // saturate the body
       bool body_integral_saturated = false;
@@ -2352,7 +2348,7 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
     //   std::scoped_lock lock(mutex_gains_);
     //   /*QUESTION: do we need to make it work with rampup_active_ or do we assume erg does not need to simulate this phase? */
     //   if (position_cmd.use_position_vertical){// && !rampup_active_) {
-    //     uav_mass_difference_ -= km_ * Ep[2] * custom_dt_;
+    //     uav_mass_difference_ -= km_ * Ep[2] * _prediction_dt_;
     //   }
 
     //   // saturate the mass estimator
@@ -2479,7 +2475,7 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
       Kd_tau[0] = kd_tau;
       Kd_tau[1] = kd_tau;
       Kd_tau[2] = kd_tau/10.0;
-      Eigen::Vector3d tau_D_error = -(attitude_rate_pred - attitude_rate_pred_prev)/custom_dt_; // see http://brettbeauregard.com/blog/2011/04/improving-the-beginner%E2%80%99s-pid-derivative-kick/
+      Eigen::Vector3d tau_D_error = -(attitude_rate_pred - attitude_rate_pred_prev)/_prediction_dt_; // see http://brettbeauregard.com/blog/2011/04/improving-the-beginner%E2%80%99s-pid-derivative-kick/
       attitude_rate_pred_prev = attitude_rate_pred; // update prev for use in next prediction iteration
     
       // P+D-action:
