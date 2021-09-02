@@ -1666,6 +1666,11 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
         ROS_INFO_STREAM("normR2 = " << normR2);
       }
       
+      // Update uav_state.pose.orientation from the current rotation matrix (used later for parasitic heading rate compensation)
+      uav_state.pose.orientation = mrs_lib::AttitudeConverter(R);
+      // if (i == 5 || i == 50) {
+      //   ROS_INFO_STREAM("uav_state.pose.orientation = " << uav_state.pose.orientation); // a quaternion
+      // }
 
     } 
 
@@ -2165,7 +2170,7 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
       double parasitic_heading_rate = 0;
 
       try {
-        // TODO: update uav_state.pose.orientation (only R updated now, not the quaternion)
+        // quaternion uav_state.pose.orientation was updated together with R in the Euler integration part above
         parasitic_heading_rate = mrs_lib::AttitudeConverter(uav_state.pose.orientation).getHeadingRate(q_feedback_yawless);
       }
       catch (...) {
@@ -2173,7 +2178,7 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
       }
 
       try {
-        // TODO: update uav_state.pose.orientation (only R updated now, not the quaternion)
+        // quaternion uav_state.pose.orientation was updated together with R in the Euler integration part above
         rp_heading_rate_compensation(2) = mrs_lib::AttitudeConverter(uav_state.pose.orientation).getYawRateIntrinsic(-parasitic_heading_rate);
       }
       catch (...) {
