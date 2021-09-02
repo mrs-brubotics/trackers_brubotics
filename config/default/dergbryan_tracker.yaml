@@ -4,28 +4,21 @@ network: # TODO import from default and custom config uav_names at a single loca
   robot_names: [
     uav1, uav2, uav3, uav4 , uav5, uav6, uav7, uav8, uav9 , uav10
   ]
+
+prediction:
+  horizon: 3.0 #[s] default 3.0
+  time_step: 0.010 # [s] default 0.010
+  use_body_inertia: false # do you want to use the body inertia in the predictions
+
 constraints:
   total_thrust:
     min: 0.0
     # max thrust can be changed via _thrust_saturation_ ratio [0, 1] in the se3_brubotics.yaml
     extra_saturation_ratio: 0.92 #0.90 # ratio [0, 1] allows some overshoot over the hard thrust limit _thrust_saturation_ to reduce the chance of triggering the emergency controller after 1s of saturation
-prediction:
-  horizon: 3.0 #2.0 #3.0 #[s]
-  time_step: 0.010 # [s] default 0.010
-  use_body_inertia: false # do you want to use the body inertia in the predictions
+  # other constraints need to be set in the constraint_manager.yaml
 
-
-
-  
+#TODO bring strategy_id inside agent collision constraints under constraints
 strategy_id: 4 #1 #4 #0 / 1 / 2 / 3 / 4TODO / 5
-
-
-# use_wall_constraints: true
-
-# use_cylindrical_constraints: false
-
-# use_agents_avoidence: false
-
 agent_collision_volumes:
   sphere:
     radius: 5.0 # a step of 4.5m in xy does not lead to instability.
@@ -34,18 +27,18 @@ agent_collision_volumes:
       lateral: 1.0 #1.5 #1.0 # for the compliant gains, the max overshoots are about this size. The larger thid value, the higher the uav's speed can be and the closer the thrust to saturation.
       longitudinal: 4.0 # = sphere/radius - tube/radius/lateral
 
-dynamic_safety_margin:
+dynamic_safety_margin: # BE CAREFUL!
   kappa:
-    sT: 20 #27 #27 #27 #1.5 # 1.5 #1.1 #1.5 #1.1 # saturation total thrust
-    sw: 10
-    a: 27 #27 #160 #80.0 #15.0 # agent collision avoidance
+    sT: 20 #10 15 20 25 # saturation total thrust
+    sw: 15
+    a: 27 # 10 15 20 25 # agent collision avoidance
     w: 27
     o: 27 
   enable_dsm:
     constant_dsm: 10 # used dsm if all dsms below are disabled
     sT: true
     sw: true
-    a: true #true!!!!!!!!!!!!!!!!!!!!!!!
+    a: true
     w: false
     o: false
 navigation_field:
@@ -74,8 +67,13 @@ navigation_field:
       obstacle_position_y: 10000
       radius : 1 #0.5 +0.5 of security (see /worlds/...)
 
-#mpc_rate: 100.0 # rate of MPC calculation, >= 10 Hz
 
 enable_visualization: false   # RVIZ
 enable_diagnostics_pub: false # Publish diagnostics: distance between agents over time
 enable_trajectory_pub: false # Publish trajectory (state + input) predictions. Topics required for collision avoidance will still be published.
+
+#TODO
+#mpc_rate: 100.0 # rate of MPC calculation, >= 10 Hz
+# use_wall_constraints: true
+# use_cylindrical_constraints: false
+# use_agents_avoidence: false

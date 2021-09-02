@@ -1538,19 +1538,19 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
 
 
 
-  predicted_poses_out_.header.stamp = ros::Time::now();
+  predicted_poses_out_.header.stamp = uav_state_.header.stamp; //ros::Time::now();
   predicted_poses_out_.header.frame_id = uav_state_.header.frame_id;
-  predicted_velocities_out_.header.stamp = ros::Time::now();
+  predicted_velocities_out_.header.stamp = uav_state_.header.stamp; //ros::Time::now();
   predicted_velocities_out_.header.frame_id = uav_state_.header.frame_id;
-  predicted_accelerations_out_.header.stamp = ros::Time::now();
+  predicted_accelerations_out_.header.stamp = uav_state_.header.stamp //ros::Time::now();
   predicted_accelerations_out_.header.frame_id = uav_state_.header.frame_id;
-  predicted_thrust_out_.header.stamp = ros::Time::now();
+  predicted_thrust_out_.header.stamp = uav_state_.header.stamp; //ros::Time::now();
   predicted_thrust_out_.header.frame_id = uav_state_.header.frame_id;
-  predicted_attituderate_out_.header.stamp = ros::Time::now();
+  predicted_attituderate_out_.header.stamp = uav_state_.header.stamp; //ros::Time::now();
   predicted_attituderate_out_.header.frame_id = uav_state_.header.frame_id;
-  predicted_des_attituderate_out_.header.stamp = ros::Time::now();
+  predicted_des_attituderate_out_.header.stamp = uav_state_.header.stamp; //ros::Time::now();
   predicted_des_attituderate_out_.header.frame_id = uav_state_.header.frame_id;
-  predicted_tiltangle_out_.header.stamp = ros::Time::now();
+  predicted_tiltangle_out_.header.stamp = uav_state_.header.stamp;//ros::Time::now();
   predicted_tiltangle_out_.header.frame_id = uav_state_.header.frame_id;
 
 
@@ -2585,11 +2585,6 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
     /*QUESTION: what to do now with the output_command?*/
     //return output_command;
 
-
-
-
-
-
   } // end for loop prediction
 
   // Computational time:
@@ -3335,7 +3330,7 @@ void DergbryanTracker::DERG_computation(){
     }
     // we actually use this
     trackers_brubotics::FutureTrajectoryTube future_tube;
-    future_tube.stamp = ros::Time::now();
+    future_tube.stamp = uav_state_.header.stamp;//ros::Time::now();
     future_tube.uav_name = _uav_name_;
     future_tube.priority = avoidance_this_uav_priority_;
     // future_tube.collision_avoidance = true;
@@ -3566,7 +3561,7 @@ void DergbryanTracker::DERG_computation(){
     }
     // we actually use this
     trackers_brubotics::FutureTrajectoryTube future_tube;
-    future_tube.stamp = ros::Time::now();
+    future_tube.stamp = uav_state_.header.stamp;//ros::Time::now();
     future_tube.uav_name = _uav_name_;
     future_tube.priority = avoidance_this_uav_priority_;
     // future_tube.collision_avoidance = true;
@@ -3791,7 +3786,7 @@ void DergbryanTracker::DERG_computation(){
     }
     // we actually use this
     trackers_brubotics::FutureTrajectoryTube future_tube;
-    future_tube.stamp = ros::Time::now();
+    future_tube.stamp = uav_state_.header.stamp;//ros::Time::now();
     future_tube.uav_name = _uav_name_;
     future_tube.priority = avoidance_this_uav_priority_;
     // future_tube.collision_avoidance = true;
