@@ -2412,7 +2412,7 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
     // }
 
     // BRYAN: cancel terms for minimal controller
-    t = q_feedback;// + Rw + q_feedforward;
+    //t = q_feedback;// + Rw + q_feedforward;
     //_enable_repulsion_a_
     // | --------------- saturate the attitude rate --------------- |
 
