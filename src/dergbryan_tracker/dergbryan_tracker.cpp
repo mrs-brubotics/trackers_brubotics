@@ -316,9 +316,9 @@ private:
 
   double DSM_total_;
   // thrust constraints
-  double DSM_s_; // Dynamic Safety Margin for total thrust saturation
+  double DSM_sT_; // Dynamic Safety Margin for total thrust saturation
   double DSM_sw_; // for the (desired or actual) angular body rates 
-  double _kappa_s_; //1.1; //1.1; // kappa parameter of the DSM_s
+  double _kappa_sT_; //1.1; //1.1; // kappa parameter of the DSM_s
   double _kappa_sw_;
   double _T_min_; // lower saturation limit of total thrust
 
@@ -509,7 +509,7 @@ private:
   void setGoal(const double pos_x, const double pos_y, const double pos_z, const double heading, const bool use_heading);
 
 
-  bool _enable_dsm_s_;
+  bool _enable_dsm_sT_;
   bool _enable_dsm_sw_;
   bool _enable_dsm_a_;
   bool _enable_dsm_o_;
@@ -674,7 +674,7 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   param_loader2.loadParam("prediction/use_body_inertia",_predicitons_use_body_inertia_);
   // convert below to int
   num_pred_samples_ = (int)(_pred_horizon_/_prediction_dt_); // number of prediction samples
-  param_loader2.loadParam("dynamic_safety_margin/kappa/s", _kappa_s_);
+  param_loader2.loadParam("dynamic_safety_margin/kappa/sT", _kappa_sT_);
   param_loader2.loadParam("dynamic_safety_margin/kappa/sw", _kappa_sw_);
   param_loader2.loadParam("dynamic_safety_margin/kappa/a", _kappa_a_);
   param_loader2.loadParam("dynamic_safety_margin/kappa/w", _kappa_w_);
@@ -682,7 +682,7 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   //Frank : Add _kappa_o, _kappa_w - DONE 
   //Frank : Add _zeta_w, _delta_w, _sigma_o, _delta_o, R_o_j (this last one must come from the world file where the obstacle is defined)
   param_loader2.loadParam("dynamic_safety_margin/enable_dsm/constant_dsm", _constant_dsm_);
-  param_loader2.loadParam("dynamic_safety_margin/enable_dsm/s", _enable_dsm_s_);
+  param_loader2.loadParam("dynamic_safety_margin/enable_dsm/sT", _enable_dsm_sT_);
   param_loader2.loadParam("dynamic_safety_margin/enable_dsm/sw", _enable_dsm_sw_);
   param_loader2.loadParam("dynamic_safety_margin/enable_dsm/a", _enable_dsm_a_);
   param_loader2.loadParam("dynamic_safety_margin/enable_dsm/w", _enable_dsm_w_);
@@ -2722,8 +2722,8 @@ void DergbryanTracker::DERG_computation(){
     diff_T = diff_Tmin;
     }
   }
-  DSM_s_ = _kappa_s_*diff_T/(0.5*(thrust_saturation_physical_ - _T_min_)); // scaled DSM in _kappa_s_*[0, 1] from the average between the lower and upper limit to the respective limits
-  //ROS_INFO_STREAM("DSM_s_ = \n" << DSM_s_);
+  DSM_sT_ = _kappa_sT_*diff_T/(0.5*(thrust_saturation_physical_ - _T_min_)); // scaled DSM in _kappa_sT_*[0, 1] from the average between the lower and upper limit to the respective limits
+  //ROS_INFO_STREAM("DSM_sT_ = \n" << DSM_sT_);
 
   // Body rate saturation:
   if (got_constraints_) {
@@ -3923,8 +3923,8 @@ void DergbryanTracker::DERG_computation(){
 
   // //////////////////////// Determining DSM_total= minimum {DSM_a,DSM_s,DSM_o,DSM_w}////////////////////////////////
   DSM_total_ = 100000; // initialize very high
-  if((DSM_s_ <= DSM_total_) && _enable_dsm_s_){
-    DSM_total_ = DSM_s_;
+  if((DSM_sT_ <= DSM_total_) && _enable_dsm_sT_){
+    DSM_total_ = DSM_sT_;
   }
 
   if((DSM_sw_ <= DSM_total_) && _enable_dsm_sw_){
@@ -3935,7 +3935,7 @@ void DergbryanTracker::DERG_computation(){
     DSM_total_ = DSM_a_;
   }
 
-  if(!_enable_dsm_s_ && !_enable_dsm_sw_ && !_enable_dsm_a_){ // if all of the DSMs are disabled, TODO add other DSMs here
+  if(!_enable_dsm_sT_ && !_enable_dsm_sw_ && !_enable_dsm_a_){ // if all of the DSMs are disabled, TODO add other DSMs here
     DSM_total_ = _constant_dsm_;
   }
 
@@ -3962,7 +3962,7 @@ void DergbryanTracker::DERG_computation(){
 
   
   // ROS_INFO_STREAM("DSM_total_ = \n" << DSM_total_);
-  // ROS_INFO_STREAM("DSM_s_ = \n" << DSM_s_);
+  // ROS_INFO_STREAM("DSM_sT_ = \n" << DSM_sT_);
 
   //ROS_INFO_STREAM("DSM_a_ = \n" << DSM_a_);
 
@@ -4008,7 +4008,7 @@ void DergbryanTracker::DERG_computation(){
   // Prepare DSM_msg_:
   DSM_msg_.stamp = uav_state_.header.stamp;
   DSM_msg_.DSM = DSM_total_;
-  DSM_msg_.DSM_s = DSM_s_;
+  DSM_msg_.DSM_s = DSM_sT_;
   DSM_msg_.DSM_sw = DSM_sw_;
   DSM_msg_.DSM_a = DSM_a_;
   // DSM_msg_.DSM_o = DSM_o_;
