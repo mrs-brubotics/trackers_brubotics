@@ -11,6 +11,7 @@ constraints:
     extra_saturation_ratio: 0.92 #0.90 # ratio [0, 1] allows some overshoot over the hard thrust limit _thrust_saturation_ to reduce the chance of triggering the emergency controller after 1s of saturation
 prediction:
   horizon: 3.0 #2.0 #3.0 #[s]
+  use_body_inertia: false # do you want to use the body inertia in the predictions
 
 
   
@@ -33,13 +34,15 @@ agent_collision_volumes:
 
 dynamic_safety_margin:
   kappa:
-    s: 27 #27 #27 #27 #1.5 # 1.5 #1.1 #1.5 #1.1 # saturation total thrust
+    s: 20 #27 #27 #27 #1.5 # 1.5 #1.1 #1.5 #1.1 # saturation total thrust
+    sw: 20
     a: 27 #27 #160 #80.0 #15.0 # agent collision avoidance
     w: 27
     o: 27 
   enable_dsm:
     constant_dsm: 10 # used dsm if all dsms below are disabled
     s: true
+    sw: true
     a: true #true!!!!!!!!!!!!!!!!!!!!!!!
     w: false
     o: false

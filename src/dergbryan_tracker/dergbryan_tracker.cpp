@@ -201,7 +201,7 @@ private:
   
 
 
-  double dt_ = 0.010; // ERG sample time = controller sample time
+  double dt_ = 0.010; // DO NOT CHANGE! Hardcoded ERG sample time = controller sample time TODO: obtain via loop rate, see MpcTracker
   double custom_dt_ = 0.010;//0.010;//0.001;//0.020; //0.010; // controller sampling time (in seconds) used in prediction
   double _pred_horizon_;//1.5//0.15;//1.5; //0.15; //1.5; //0.4; // prediction horizon (in seconds)
   int num_pred_samples_;
@@ -321,7 +321,9 @@ private:
   double DSM_total_;
   // thrust constraints
   double DSM_s_; // Dynamic Safety Margin for total thrust saturation
+  double DSM_sw_; // for the (desired or actual) angular body rates 
   double _kappa_s_; //1.1; //1.1; // kappa parameter of the DSM_s
+  double _kappa_sw_;
   double _T_min_; // lower saturation limit of total thrust
 
   double _eta_;//0.05; // smoothing factor attraction field
@@ -512,6 +514,7 @@ private:
 
 
   bool _enable_dsm_s_;
+  bool _enable_dsm_sw_;
   bool _enable_dsm_a_;
   bool _enable_dsm_o_;
   bool _enable_dsm_w_;
@@ -523,7 +526,7 @@ private:
 
 
 
-  bool USE_INERTIAL_ROTATION_ = false; //true; //TODO move as global variable
+  bool _predicitons_use_body_inertia_;
 
   // method Kelly:
   /* chrono */  
@@ -671,9 +674,11 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   param_loader2.loadParam("enable_trajectory_pub", _enable_trajectory_pub_);
 
   param_loader2.loadParam("prediction/horizon", _pred_horizon_);
+  param_loader2.loadParam("prediction/use_body_inertia",_predicitons_use_body_inertia_);
   // convert below to int
   num_pred_samples_ = (int)(_pred_horizon_/custom_dt_); // number of prediction samples
   param_loader2.loadParam("dynamic_safety_margin/kappa/s", _kappa_s_);
+  param_loader2.loadParam("dynamic_safety_margin/kappa/sw", _kappa_sw_);
   param_loader2.loadParam("dynamic_safety_margin/kappa/a", _kappa_a_);
   param_loader2.loadParam("dynamic_safety_margin/kappa/w", _kappa_w_);
   param_loader2.loadParam("dynamic_safety_margin/kappa/o", _kappa_o_);
@@ -681,6 +686,7 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   //Frank : Add _zeta_w, _delta_w, _sigma_o, _delta_o, R_o_j (this last one must come from the world file where the obstacle is defined)
   param_loader2.loadParam("dynamic_safety_margin/enable_dsm/constant_dsm", _constant_dsm_);
   param_loader2.loadParam("dynamic_safety_margin/enable_dsm/s", _enable_dsm_s_);
+  param_loader2.loadParam("dynamic_safety_margin/enable_dsm/sw", _enable_dsm_sw_);
   param_loader2.loadParam("dynamic_safety_margin/enable_dsm/a", _enable_dsm_a_);
   param_loader2.loadParam("dynamic_safety_margin/enable_dsm/w", _enable_dsm_w_);
   param_loader2.loadParam("dynamic_safety_margin/enable_dsm/o", _enable_dsm_o_);
@@ -1590,7 +1596,7 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
       Eigen::Vector3d Ow(uav_state.velocity.angular.x, uav_state.velocity.angular.y, uav_state.velocity.angular.z);
       attitude_rate_pred = Ow; // actual predicted attitude rate
       
-      if (USE_INERTIAL_ROTATION_){
+      if (_predicitons_use_body_inertia_){
         Eigen::Vector3d Ow_prev(uav_state_prev_.velocity.angular.x, uav_state_prev_.velocity.angular.y, uav_state_prev_.velocity.angular.z);
         attitude_rate_pred_prev = Ow_prev;
       }
@@ -1621,7 +1627,7 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
       custom_pose.position.z = uav_state.pose.position.z;
 
 
-      if (!USE_INERTIAL_ROTATION_){
+      if (!_predicitons_use_body_inertia_){
       // if we ignore the body rate inertial dynamics:
       // assumption made (inner loop is infinitely fast): desired_attitude_rate_pred = attitude_rate_pred
         skew_Ow_des << 0.0     , -desired_attitude_rate_pred(2), desired_attitude_rate_pred(1),
@@ -2452,7 +2458,7 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
     predicted_des_attituderate_out_.poses.push_back(predicted_des_attituderate);
     // if we ignore the body rate inertial dynamics:
     
-    if (!USE_INERTIAL_ROTATION_) // TODO make user setting to include or not
+    if (!_predicitons_use_body_inertia_) // TODO make user setting to include or not
     { 
       // do nothing
     }
@@ -2706,6 +2712,7 @@ void DergbryanTracker::DERG_computation(){
   
   
   // | ------------------------ control input constraints ----------------------- |
+  // Total thrust saturation:
   // TODO: predicted_thrust_out_.poses is not good programming for a scalar. Maybe try using Class: Std_msgs::Float32MultiArray and test plot still work
   double diff_T = thrust_saturation_physical_; // initialization at the highest possible positive difference value
   // ROS_INFO_STREAM("thrust_saturation_physical_ = \n" << thrust_saturation_physical_);
@@ -2721,6 +2728,59 @@ void DergbryanTracker::DERG_computation(){
   }
   DSM_s_ = _kappa_s_*diff_T/(0.5*(thrust_saturation_physical_ - _T_min_)); // scaled DSM in _kappa_s_*[0, 1] from the average between the lower and upper limit to the respective limits
   //ROS_INFO_STREAM("DSM_s_ = \n" << DSM_s_);
+
+  // Body rate saturation:
+  if (got_constraints_) {
+    //ROS_INFO_STREAM("got_constraints_ = \n" << got_constraints_);
+    auto constraints = mrs_lib::get_mutexed(mutex_constraints_, constraints_);
+    // ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: constraints.roll_rate = %f", constraints.roll_rate);
+    // ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: constraints.pitch_rate = %f", constraints.pitch_rate);
+    // ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: constraints.yaw_rate = %f", constraints.yaw_rate);
+    // ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: constraints.roll_rate = %f", constraints.roll_rate);
+    // ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: constraints.pitch_rate = %f", constraints.pitch_rate);
+    // ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: constraints.yaw_rate = %f", constraints.yaw_rate);
+    // initialization at the highest possible positive difference value (1.0) relative to the constraint.
+    // diff_bodyrate_* = 1.0 means the body rate is 0 and diff_bodyrate_= 0 means it's hitting the constraint
+    double rel_diff_bodyrate = 1.0; // used for roll, pitch and yaw
+    double body_rate_roll;
+    double body_rate_pitch;
+    double body_rate_yaw;
+    for (size_t i = 0; i < num_pred_samples_; i++) {
+    // Depending if the predictions _predicitons_use_body_inertia_:
+      if (_predicitons_use_body_inertia_) { // we implement constraints on the actual body rates
+        body_rate_roll = predicted_attituderate_out_.poses[i].position.x;
+        body_rate_pitch = predicted_attituderate_out_.poses[i].position.y;
+        body_rate_yaw = predicted_attituderate_out_.poses[i].position.z;
+      } else{ // we implement constraints on the desired body rates
+        body_rate_roll = predicted_des_attituderate_out_.poses[i].position.x;
+        body_rate_pitch = predicted_des_attituderate_out_.poses[i].position.y;
+        body_rate_yaw = predicted_des_attituderate_out_.poses[i].position.z;
+      }
+      //ROS_INFO_STREAM("body_rate_roll = \n" << body_rate_roll); //
+      double rel_diff_bodyrate_roll_temp = (constraints.roll_rate - std::abs(body_rate_roll))/constraints.roll_rate;
+      double rel_diff_bodyrate_pitch_temp = (constraints.pitch_rate - std::abs(body_rate_pitch))/constraints.pitch_rate;
+      double rel_diff_bodyrate_yaw_temp = (constraints.yaw_rate - std::abs(body_rate_yaw))/constraints.yaw_rate;
+      //ROS_INFO_STREAM("rel_diff_bodyrate_roll_temp = \n" << rel_diff_bodyrate_roll_temp); // printing this gives error
+      if (rel_diff_bodyrate_roll_temp < rel_diff_bodyrate) {
+        rel_diff_bodyrate = rel_diff_bodyrate_roll_temp;
+      }
+      if (rel_diff_bodyrate_pitch_temp < rel_diff_bodyrate) {
+        rel_diff_bodyrate = rel_diff_bodyrate_pitch_temp;
+      }
+      if (rel_diff_bodyrate_yaw_temp < rel_diff_bodyrate) {
+        rel_diff_bodyrate = rel_diff_bodyrate_yaw_temp;
+      }
+    }
+    DSM_sw_ = _kappa_sw_*rel_diff_bodyrate; // scaled DSM in _kappa_sw_*[0, 1]
+    //DSM_sw_ = _kappa_sw_;
+  } else {
+    DSM_sw_ = _kappa_sw_; // the highest possible value
+    ROS_WARN_THROTTLE(1.0, "[DergbryanTracker]: missing dynamics constraints");
+  }
+
+
+
+
   // | --------------------------- repulsion fields ------------------------------|  
   //  - agent: uav collision avoidance
   MatrixXd NF_a_co  = MatrixXd::Zero(3, 1); // conservative part
@@ -3871,11 +3931,15 @@ void DergbryanTracker::DERG_computation(){
     DSM_total_ = DSM_s_;
   }
 
+  if((DSM_sw_ <= DSM_total_) && _enable_dsm_sw_){
+    DSM_total_ = DSM_sw_;
+  }
+
   if((DSM_a_ <= DSM_total_) && _enable_dsm_a_){
     DSM_total_ = DSM_a_;
   }
 
-  if(!_enable_dsm_s_ && !_enable_dsm_a_){ // if all of the DSMs are disabled, TODO add other DSMs here
+  if(!_enable_dsm_s_ && !_enable_dsm_sw_ && !_enable_dsm_a_){ // if all of the DSMs are disabled, TODO add other DSMs here
     DSM_total_ = _constant_dsm_;
   }
 
@@ -3949,6 +4013,7 @@ void DergbryanTracker::DERG_computation(){
   DSM_msg_.stamp = uav_state_.header.stamp;
   DSM_msg_.DSM = DSM_total_;
   DSM_msg_.DSM_s = DSM_s_;
+  DSM_msg_.DSM_sw = DSM_sw_;
   DSM_msg_.DSM_a = DSM_a_;
   // DSM_msg_.DSM_o = DSM_o_;
   // DSM_msg_.DSM_w = DSM_w_;
