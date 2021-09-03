@@ -30,12 +30,12 @@ agent_collision_volumes:
 dynamic_safety_margin: # BE CAREFUL!
   kappa:
     sT: 20 #10 15 20 25 # saturation total thrust
-    sw: 15
+    sw: 13 # 10 13
     a: 27 # 10 15 20 25 # agent collision avoidance
     w: 27
     o: 27 
   enable_dsm:
-    constant_dsm: 10 # used dsm if all dsms below are disabled
+    constant_dsm: 10 # 10 # used dsm if all dsms below are disabled
     sT: true
     sw: true
     a: true

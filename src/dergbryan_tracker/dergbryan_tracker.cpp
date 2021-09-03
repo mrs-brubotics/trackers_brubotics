@@ -1856,7 +1856,11 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
     // Eigen::Vector3d f = position_feedback + velocity_feedback + total_mass * (Eigen::Vector3d(0, 0, common_handlers_->g));// custom 1
     // OLD Eigen::Vector3d f = position_feedback + velocity_feedback + _uav_mass_ * (Eigen::Vector3d(0, 0, _g_));// custom 2
     //OLD Eigen::Vector3d f = position_feedback + velocity_feedback + _uav_mass_ * (Eigen::Vector3d(0, 0, common_handlers_->g));// custom 2
+    
+    
     Eigen::Vector3d f = position_feedback + velocity_feedback + total_mass * (Eigen::Vector3d(0, 0, common_handlers_->g));// custom 2
+    //Eigen::Vector3d f = position_feedback + velocity_feedback + feed_forward;
+    
     
     // also check line above uav_mass_difference_ = 0!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
