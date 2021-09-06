@@ -19,6 +19,7 @@ constraints:
 
 #TODO bring strategy_id inside agent collision constraints under constraints
 strategy_id: 4 #1 #4 #0 / 1 / 2 / 3 / 4TODO / 5
+use_distance_xy: true # if enabled the distance ebtween tubes along z will be ignored. Only horizontal xy plane distance is used.
 agent_collision_volumes:
   sphere:
     radius: 5.0 # a step of 4.5m in xy does not lead to instability.

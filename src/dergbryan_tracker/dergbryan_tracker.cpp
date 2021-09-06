@@ -376,6 +376,7 @@ private:
   double _delta_a_;
   double Ra_ = 0.35; // TODO should be taken from urdf, how to do so??
   int _DERG_strategy_id_;
+  bool _use_distance_xy_;
   // int DERG_strategy_id_ = 3; //0 / 1 / 2 / 3 /4
   // COMPARE AS
   // original strategy: id = 0
@@ -693,6 +694,7 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   param_loader2.loadParam("constraints/total_thrust/extra_saturation_ratio", _extra_thrust_saturation_ratio_);
   _thrust_saturation_ = _extra_thrust_saturation_ratio_*_thrust_saturation_; // as to not trigger the emergency landing too quickly
   param_loader2.loadParam("strategy_id", _DERG_strategy_id_);
+  param_loader2.loadParam("use_distance_xy", _use_distance_xy_);
   param_loader2.loadParam("agent_collision_volumes/sphere/radius", _Sa_max_);
   param_loader2.loadParam("agent_collision_volumes/tube/radius/lateral", _Sa_perp_max_);
   param_loader2.loadParam("agent_collision_volumes/tube/radius/longitudinal", _Sa_long_max_);
@@ -2936,6 +2938,11 @@ void DergbryanTracker::DERG_computation(){
       double dist_between_ref_y = other_uav_ref_y - applied_ref_y_;
       double dist_between_ref_z = other_uav_ref_z - applied_ref_z_;
 
+      // if we only want to account for distances in the xy plane:
+      if (_use_distance_xy_){
+        dist_between_ref_z = 0.0;
+      }
+
       double dist_between_ref = sqrt(dist_between_ref_x*dist_between_ref_x + dist_between_ref_y*dist_between_ref_y + dist_between_ref_z*dist_between_ref_z);
       //ROS_INFO_STREAM("dist_between_ref = \n" << dist_between_ref);
       // Conservative part:
@@ -3048,6 +3055,11 @@ void DergbryanTracker::DERG_computation(){
       double dist_x = point_nu_link1(0) - point_mu_link0(0);
       double dist_y = point_nu_link1(1) - point_mu_link0(1);
       double dist_z = point_nu_link1(2) - point_mu_link0(2);
+
+      // if we only want to account for distances in the xy plane:
+      if (_use_distance_xy_){
+        dist_z = 0.0;
+      }
 
       double dist = sqrt(dist_x*dist_x + dist_y*dist_y + dist_z*dist_z);
       
@@ -3200,6 +3212,11 @@ void DergbryanTracker::DERG_computation(){
       double dist_x = point_nu_link1(0) - point_mu_link0(0);
       double dist_y = point_nu_link1(1) - point_mu_link0(1);
       double dist_z = point_nu_link1(2) - point_mu_link0(2);
+
+      // if we only want to account for distances in the xy plane:
+      if (_use_distance_xy_){
+        dist_z = 0.0;
+      }
 
       double dist = sqrt(dist_x*dist_x + dist_y*dist_y + dist_z*dist_z);
       
@@ -3413,6 +3430,11 @@ void DergbryanTracker::DERG_computation(){
       double dist_x = point_nu_link1(0) - point_mu_link0(0);
       double dist_y = point_nu_link1(1) - point_mu_link0(1);
       double dist_z = point_nu_link1(2) - point_mu_link0(2);
+
+      // if we only want to account for distances in the xy plane:
+      if (_use_distance_xy_){
+        dist_z = 0.0;
+      }
 
       double dist = sqrt(dist_x*dist_x + dist_y*dist_y + dist_z*dist_z);
     
@@ -3657,6 +3679,12 @@ void DergbryanTracker::DERG_computation(){
       double dist_y = point_nu_link1(1) - point_mu_link0(1);
       double dist_z = point_nu_link1(2) - point_mu_link0(2);
 
+      // if we only want to account for distances in the xy plane:
+      if (_use_distance_xy_){
+        dist_z = 0.0;
+      }
+
+
       double dist = sqrt(dist_x*dist_x + dist_y*dist_y + dist_z*dist_z);
     
 
@@ -3880,7 +3908,10 @@ void DergbryanTracker::DERG_computation(){
       double dist_y = point_nu_link1(1) - point_mu_link0(1);
       double dist_z = point_nu_link1(2) - point_mu_link0(2);
 
-
+      // if we only want to account for distances in the xy plane:
+      if (_use_distance_xy_){
+        dist_z = 0.0;
+      }
 
 
       // double dist_x = point_link_applied_ref_other_uav(0) - point_link_applied_ref(0);
