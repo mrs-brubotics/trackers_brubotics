@@ -10,29 +10,29 @@
 <!-- <arg name="custom_config_bypass_tracker" default="" /> -->
 <arg name="custom_config_dergbryan_tracker" default="" />
 <arg name="custom_config_dergPm_tracker" default="" />
-
+<arg name="custom_config_uav_names" default="" />
 
 
 <!-- Trackers' configs -->
 <!-- mpc_copy_tracker -->
 <rosparam ns="$(env UAV_NAME)/control_manager/mpc_copy_tracker" file="$(find trackers_brubotics)/config/default/mpc_copy_tracker.yaml" />
 <rosparam ns="$(env UAV_NAME)/control_manager/mpc_copy_tracker" file="$(find trackers_brubotics)/config/$(arg RUN_TYPE)/$(arg UAV_TYPE)/mpc_copy_tracker.yaml" />
-<!-- <rosparam if="$(eval arg('RUN_TYPE') == 'uav')" ns="mpc_copy_tracker" file="$(find mrs_uav_general)/config/uav_names.yaml" />
-<rosparam if="$(eval arg('RUN_TYPE') == 'simulation')" ns="mpc_copy_tracker" file="$(find mrs_uav_general)/config/uav_names_simulation.yaml" /> -->
-
+<rosparam if="$(eval arg('RUN_TYPE') == 'uav')" ns="$(env UAV_NAME)/control_manager/mpc_copy_tracker" file="$(find mrs_uav_general)/config/uav_names.yaml" />
+<rosparam if="$(eval arg('RUN_TYPE') == 'simulation')" ns="$(env UAV_NAME)/control_manager/mpc_copy_tracker" file="$(find mrs_uav_general)/config/uav_names_simulation.yaml" />
 <rosparam if="$(eval not arg('custom_config_mpc_copy_tracker') == '')" ns="$(env UAV_NAME)/control_manager/mpc_copy_tracker" file="$(arg custom_config_mpc_copy_tracker)" />
-<!-- <rosparam if="$(eval not arg('custom_config_uav_names') == '')" ns="mpc_copy_tracker" file="$(arg custom_config_uav_names)" /> -->
+<rosparam if="$(eval not arg('custom_config_uav_names') == '')" ns="$(env UAV_NAME)/control_manager/mpc_copy_tracker" file="$(arg custom_config_uav_names)" />
 <param name="$(env UAV_NAME)/control_manager/mpc_copy_tracker/enable_profiler" type="bool" value="$(arg PROFILER)" />
-<param name="$(env UAV_NAME)/control_manager/mpc_copy_tracker/predicted_trajectory_topic" value="$(env UAV_NAME)/control_manager/mpc_copy_tracker/predicted_trajectory" />
-<param name="$(env UAV_NAME)/control_manager/mpc_copy_tracker/diagnostics_topic" value="$(env UAV_NAME)/control_manager/mpc_copy_tracker/diagnostics" />
+<param name="$(env UAV_NAME)/control_manager/mpc_copy_tracker/predicted_trajectory_topic" value="control_manager/mpc_copy_tracker/predicted_trajectory" />
+<param name="$(env UAV_NAME)/control_manager/mpc_copy_tracker/diagnostics_topic" value="control_manager/mpc_copy_tracker/diagnostics" />
 <remap from="~$(env UAV_NAME)/control_manager/mpc_copy_tracker/profiler" to="profiler" />
-<remap from="~$(env UAV_NAME)/control_manager/mpc_copy_tracker/diagnostics_out" to="~$(env UAV_NAME)/control_manager/mpc_copy_tracker/diagnostics" />
+<remap from="~$(env UAV_NAME)/control_manager/mpc_copy_tracker/diagnostics_out" to="~control_manager/mpc_copy_tracker/diagnostics" />
 <remap from="~$(env UAV_NAME)/control_manager/mpc_copy_tracker/string_out" to="mrs_uav_status/display_string" />
-<remap from="~$(env UAV_NAME)/control_manager/mpc_copy_tracker/current_trajectory_point_out" to="~$(env UAV_NAME)/control_manager/mpc_copy_tracker/current_trajectory_point" />
-<remap from="~$(env UAV_NAME)/control_manager/mpc_copy_tracker/wiggle_in" to="~$(env UAV_NAME)/control_manager/mpc_copy_tracker/wiggle" />
-<remap from="~$(env UAV_NAME)/control_manager/mpc_copy_tracker/trajectory_processed/poses_out" to="~$(env UAV_NAME)/control_manager/mpc_copy_tracker/trajectory_processed/poses" />
-<remap from="~$(env UAV_NAME)/control_manager/mpc_copy_tracker/trajectory_processed/markers_out" to="~$(env UAV_NAME)/control_manager/mpc_copy_tracker/trajectory_processed/markers" />
-<remap from="~$(env UAV_NAME)/control_manager/mpc_copy_tracker/collision_avoidance_in" to="~$(env UAV_NAME)/control_manager/mpc_copy_tracker/collision_avoidance" />
+<remap from="~$(env UAV_NAME)/control_manager/mpc_copy_tracker/current_trajectory_point_out" to="control_manager/mpc_copy_tracker/current_trajectory_point" />
+<remap from="~$(env UAV_NAME)/control_manager/mpc_copy_tracker/wiggle_in" to="~control_manager/mpc_copy_tracker/wiggle" />
+<remap from="~$(env UAV_NAME)/control_manager/mpc_copy_tracker/trajectory_processed/poses_out" to="~control_manager/mpc_copy_tracker/trajectory_processed/poses" />
+<remap from="~$(env UAV_NAME)/control_manager/mpc_copy_tracker/trajectory_processed/markers_out" to="~control_manager/mpc_copy_tracker/trajectory_processed/markers" />
+<remap from="~$(env UAV_NAME)/control_manager/mpc_copy_tracker/collision_avoidance_in" to="~control_manager/mpc_copy_tracker/collision_avoidance" />
+<remap from="~$(env UAV_NAME)/control_manager/mpc_copy_tracker/odometry_diagnostics_in" to="odometry/diagnostics" />
 
 <!-- dergbryan_tracker -->
 <rosparam ns="$(env UAV_NAME)/control_manager/dergbryan_tracker" file="$(find trackers_brubotics)/config/default/dergbryan_tracker.yaml" />
