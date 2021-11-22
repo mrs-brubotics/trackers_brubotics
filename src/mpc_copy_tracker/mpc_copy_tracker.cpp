@@ -34,6 +34,9 @@
 #include <visualization_msgs/Marker.h>
 #include <visualization_msgs/MarkerArray.h>
 
+#include <trackers_brubotics/ComputationalTime.h> // custom ROS message
+#include <trackers_brubotics/DistanceBetweenUavs.h> // custom ROS message
+#include <trackers_brubotics/TrajectoryTracking.h> // custom ROS message
 //}
 
 /* defines //{ */
@@ -371,12 +374,68 @@ private:
 
   // Custom:
   // ---------------------custom publishers --------------------------- //
-  ros::Publisher pub_goal_pose_;
+  ros::Publisher goal_pose_publisher_;  // input goal to tracker (i.e. desired user command or from loaded trajectory)
+
   // | ---------------------- desired goal ---------------------- |
   double     goal_x_;
   double     goal_y_;
   double     goal_z_;
   double     goal_heading_;
+
+  // | ------------------------ added by bryan ----------------------- |
+  double uav_x_; // now added by bryan
+  double uav_y_; // now added by bryan
+  double uav_z_; // now added by bryan
+
+
+  bool starting_bool_=true;
+  std::mutex mutex_goal_;
+
+  ros::Publisher DistanceBetweenUavs_publisher_;
+  trackers_brubotics::DistanceBetweenUavs DistanceBetweenUavs_msg_;
+  //  - Data analysis:
+  ros::Publisher TrajectoryTracking_publisher_; // for trajectory diagnostics
+  ros::Publisher ComputationalTime_publisher_; // ComputationalTime
+  ros::Publisher avoidance_pos_publisher_; 
+
+    // method Kelly:
+  /* chrono */  
+  std::chrono::time_point<std::chrono::system_clock> start_ERG_, end_ERG_;
+  std::chrono::time_point<std::chrono::system_clock> start_NF_, end_NF_;
+  std::chrono::time_point<std::chrono::system_clock> start_DSM_, end_DSM_;
+  std::chrono::time_point<std::chrono::system_clock> start_pred_, end_pred_;
+  std::chrono::duration<double> ComputationalTime_ERG_, ComputationalTime_NF_, ComputationalTime_DSM_, ComputationalTime_pred_;
+  trackers_brubotics::ComputationalTime ComputationalTime_msg_;
+  // method Zakaria & Frank
+  std::stack<clock_t> tictoc_stack; 
+
+  // trajectory diagnostic parameters:
+  double arrival_norm_pos_error_treshold_ = 0.30; // [m]
+  double arrival_period_treshold_ = 5.0; // [s]
+  bool arrived_at_traj_end_point_ = false; // false by default
+  geometry_msgs::Point traj_start_point_;
+  geometry_msgs::Point traj_end_point_;
+  trackers_brubotics::TrajectoryTracking TrajectoryTracking_msg_;
+  bool flag_running_timer_at_traj_end_point_ = false;
+  ros::Time time_started_timer_at_traj_end_point_;
+  double time_at_start_point_ = 0.0; //default = 0.0
+  double time_at_end_point_ = 0.0; //default = 0.0
+
+  bool _enable_diagnostics_pub_;
+
+  // -----------------------
+  // ROS callback functions:
+  // -----------------------
+  void callbackOtherUavPosition(const mrs_msgs::FutureTrajectoryConstPtr& msg);
+  std::map<std::string, mrs_msgs::FutureTrajectory> other_uavs_positions_;
+
+  
+  mrs_msgs::FutureTrajectory uav_posistion_out_;
+
+  std::vector<ros::Subscriber>  other_uav_subscribers_; // used for collision avoidance
+
+  double Ra_ = 0.35; // TODO should be taken from urdf, how to do so??
+ 
 };
 
 //}
@@ -483,6 +542,8 @@ void MpcCopyTracker::initialize(const ros::NodeHandle& parent_nh, [[maybe_unused
   param_loader.loadParam("collision_avoidance/collision_slow_down_start", _avoidance_collision_slow_down_);
   param_loader.loadParam("collision_avoidance/collision_start_climbing", _avoidance_collision_start_climbing_);
   param_loader.loadParam("collision_avoidance/trajectory_timeout", _collision_trajectory_timeout_);
+  
+  param_loader.loadParam("enable_diagnostics_pub", _enable_diagnostics_pub_);
 
   if (!param_loader.loadedSuccessfully()) {
     ROS_ERROR("[MpcCopyTracker]: could not load all parameters!");
@@ -554,6 +615,14 @@ void MpcCopyTracker::initialize(const ros::NodeHandle& parent_nh, [[maybe_unused
   // collision avoidance toggle service
   service_server_toggle_avoidance_ = nh_.advertiseService("collision_avoidance_in", &MpcCopyTracker::callbackToggleCollisionAvoidance, this);
 
+  DistanceBetweenUavs_publisher_ = nh_.advertise<trackers_brubotics::DistanceBetweenUavs>("DistanceBetweenUavs", 10);
+  TrajectoryTracking_publisher_ = nh_.advertise<trackers_brubotics::TrajectoryTracking>("TrajectoryTracking", 10);
+  ComputationalTime_publisher_ = nh_.advertise<trackers_brubotics::ComputationalTime>("ComputationalTime", 10);
+  avoidance_pos_publisher_ = nh_.advertise<mrs_msgs::FutureTrajectory>("uav_position", 10);
+
+
+
+
   mrs_lib::SubscribeHandlerOptions shopts;
   shopts.nh                 = nh_;
   shopts.node_name          = "MpcCopyTracker";
@@ -578,10 +647,16 @@ void MpcCopyTracker::initialize(const ros::NodeHandle& parent_nh, [[maybe_unused
 
     other_uav_diag_subscribers_.push_back(
         mrs_lib::SubscribeHandler<mrs_msgs::MpcTrackerDiagnostics>(shopts, diag_topic_name, &MpcCopyTracker::callbackOtherMavDiagnostics, this));
+  
+    std::string position_topic_name = std::string("/") + _avoidance_other_uav_names_[i] + std::string("/") + std::string("control_manager/mpc_copy_tracker/uav_position"); 
+    ROS_INFO("[MpcCopyTracker]: subscribing to %s", position_topic_name.c_str());
+    other_uav_subscribers_.push_back(nh_.subscribe(position_topic_name, 1, &MpcCopyTracker::callbackOtherUavPosition, this, ros::TransportHints().tcpNoDelay()));
+  
+  
   }
 
   // create custom publishers
-  pub_goal_pose_ = nh_.advertise<mrs_msgs::ReferenceStamped>("goal_pose", 10);
+  goal_pose_publisher_ = nh_.advertise<mrs_msgs::ReferenceStamped>("goal_pose", 10);
 
   // | --------------- dynamic reconfigure server --------------- |
 
@@ -886,12 +961,43 @@ const mrs_msgs::PositionCommand::ConstPtr MpcCopyTracker::update(const mrs_msgs:
 
   mrs_lib::set_mutexed(mutex_uav_state_, *uav_state, uav_state_);
 
+  {
+    std::scoped_lock lock(mutex_uav_state_);
+
+    uav_state_ = *uav_state;
+    uav_x_     = uav_state_.pose.position.x;
+    uav_y_     = uav_state_.pose.position.y;
+    uav_z_     = uav_state_.pose.position.z;
+
+    //got_uav_state_ = true;
+  }
   // up to this part the update() method is evaluated even when the tracker is not active
   if (!is_active_) {
     return mrs_msgs::PositionCommand::Ptr();
   }
 
   mrs_msgs::PositionCommand position_cmd;
+  // set the header
+  position_cmd.header.stamp    = uav_state->header.stamp;
+  position_cmd.header.frame_id = uav_state->header.frame_id;
+  if (starting_bool_) {
+    // stay in place
+    goal_x_= uav_state->pose.position.x;
+    goal_y_= uav_state->pose.position.y;
+    goal_z_= uav_state->pose.position.z;
+    // set heading based on current odom
+    try {
+      goal_heading_ = mrs_lib::AttitudeConverter(uav_state->pose.orientation).getHeading();
+      position_cmd.use_heading = 1;
+    }
+    catch (...) {
+      position_cmd.use_heading = 0;
+      ROS_ERROR_THROTTLE(1.0, "[MpcCopyTracker]: could not calculate the current UAV heading");
+    }
+
+    starting_bool_=false;
+  return mrs_msgs::PositionCommand::ConstPtr(new mrs_msgs::PositionCommand(position_cmd));
+}
 
   if (!mpc_computed_ || mpc_result_invalid_) {
 
@@ -947,17 +1053,26 @@ const mrs_msgs::PositionCommand::ConstPtr MpcCopyTracker::update(const mrs_msgs:
     return mrs_msgs::PositionCommand::ConstPtr(new mrs_msgs::PositionCommand(position_cmd));
   }
 
-  // publish the goal pose to a custom topic
-  mrs_msgs::ReferenceStamped goal_pose;
-  // goal_pose.header.stamp          = ros::Time::now();
-  // goal_pose.header.frame_id  = "fcu_untilted";
-  goal_pose.header.stamp    = uav_state->header.stamp;
-  goal_pose.header.frame_id = uav_state->header.frame_id;
-  goal_pose.reference.position.x  = goal_x_;
-  goal_pose.reference.position.y  = goal_y_;
-  goal_pose.reference.position.z  = goal_z_;
-  goal_pose.reference.heading = goal_heading_;
-  pub_goal_pose_.publish(goal_pose);
+  // Prepare the goal_pose_msg
+  mrs_msgs::ReferenceStamped goal_pose_msg;
+  // goal_pose_msg.header.stamp          = ros::Time::now();
+  // goal_pose_msg.header.frame_id  = "fcu_untilted";
+  goal_pose_msg.header.stamp    = uav_state->header.stamp;
+  goal_pose_msg.header.frame_id = uav_state->header.frame_id;
+  goal_pose_msg.reference.position.x  = goal_x_;
+  goal_pose_msg.reference.position.y  = goal_y_;
+  goal_pose_msg.reference.position.z  = goal_z_;
+  goal_pose_msg.reference.heading = goal_heading_;
+
+
+  // Publishers:
+  try {
+    goal_pose_publisher_.publish(goal_pose_msg);
+  }
+  catch (...) {
+    ROS_ERROR("[MpcCopyTracker]: Exception caught during publishing topic %s.", goal_pose_publisher_.getTopic().c_str());
+  }
+
 
 
 
@@ -1045,6 +1160,92 @@ const mrs_msgs::PositionCommand::ConstPtr MpcCopyTracker::update(const mrs_msgs:
   // set the header
   position_cmd.header.stamp    = uav_state->header.stamp;
   position_cmd.header.frame_id = uav_state->header.frame_id;
+
+  // Prepare the uav_posistion_out_ msg:
+  uav_posistion_out_.stamp = uav_state_.header.stamp; //ros::Time::now();
+  uav_posistion_out_.uav_name = _uav_name_;
+  uav_posistion_out_.priority = avoidance_this_uav_priority_; 
+  mrs_msgs::FuturePoint new_point;
+  new_point.x = uav_state_.pose.position.x; // or predicted_poses_out_.poses[0].position.x;
+  new_point.y = uav_state_.pose.position.y; // or predicted_poses_out_.poses[0].position.y;
+  new_point.z = uav_state_.pose.position.z;// or predicted_poses_out_.poses[0].position.z;
+  uav_posistion_out_.points.push_back(new_point);
+  // Publish the uav_posistion_out_ msg:
+  try {
+     avoidance_pos_publisher_.publish(uav_posistion_out_);
+  }
+  catch (...) {
+    ROS_ERROR("[MpcCopyTracker]: Exception caught during publishing topic %s.", avoidance_pos_publisher_.getTopic().c_str());
+  }
+
+
+  // Diagnostics Publisher - distance to collisions:
+  if(_enable_diagnostics_pub_){
+    /*
+    - compute relevant info for: collision avoidance.
+    - this method avoids post-processing timesynchronization problems in matlab
+    */
+    // Colision avoidance:
+    double min_distance_this_uav2other_uav = 100000; // initialized with very high value
+    // this uav:
+    Eigen::Vector3d pos_this_uav(uav_x_, uav_y_, uav_z_);
+    // other uavs:
+    std::map<std::string, mrs_msgs::FutureTrajectory>::iterator it = other_uavs_positions_.begin();
+    while ((it != other_uavs_positions_.end()) ) {
+      // make sure we use the same uavid for both iterators. It must be robust to possible difference in lenths of the iterators (if some communication got lost) or a different order (e.g. if not auto alphabetical).
+      std::string other_uav_name = it->first;
+      try
+      {
+        mrs_msgs::FutureTrajectory temp_pos = other_uavs_positions_[other_uav_name];
+      }
+      catch(...)
+      {
+        // other_uavs_positions_[other_uav_name] does not exist. Skip this iteration directly.
+        ROS_WARN_THROTTLE(1.0, "[MpcCopyTracker]: Lost communicated position corresponding to the position of %s \n", other_uav_name.c_str());
+        it++;
+        continue;
+      }     
+      double other_uav_pos_x = other_uavs_positions_[other_uav_name].points[0].x;
+      double other_uav_pos_y = other_uavs_positions_[other_uav_name].points[0].y;
+      double other_uav_pos_z = other_uavs_positions_[other_uav_name].points[0].z;
+      Eigen::Vector3d pos_other_uav(other_uav_pos_x, other_uav_pos_y, other_uav_pos_z);
+      // compute minimum distance from this_uav to all other_uav:
+      double min_distance_this_uav2other_uav_temp = (pos_this_uav - pos_other_uav).norm()-2*Ra_; 
+      min_distance_this_uav2other_uav = std::min(min_distance_this_uav2other_uav, min_distance_this_uav2other_uav_temp);
+      DistanceBetweenUavs_msg_.stamp = uav_state_.header.stamp;
+      DistanceBetweenUavs_msg_.other_uav_name = other_uav_name;
+      DistanceBetweenUavs_msg_.min_distance_this_uav2other_uav = min_distance_this_uav2other_uav;
+      try {
+        DistanceBetweenUavs_publisher_.publish(DistanceBetweenUavs_msg_);
+      }
+      catch (...) {
+        ROS_ERROR("[MpcCopyTracker]: Exception caught during publishing topic %s.", DistanceBetweenUavs_publisher_.getTopic().c_str());
+      }
+      it++;
+    }
+  }
+  
+  // ------------------------
+
+
+
+
+
+
+  ComputationalTime_msg_.stamp = uav_state_.header.stamp;
+  try {
+    ComputationalTime_publisher_.publish(ComputationalTime_msg_);
+  }
+  catch (...) {
+    ROS_ERROR("[MpcCopyTracker]: Exception caught during publishing topic %s.", ComputationalTime_publisher_.getTopic().c_str());
+  }
+
+
+  // Clear (i.e. empty) the arrays of:
+  // Note: under communication delay the arrays will be empty and not equal to the last know uav position!
+  // TODO maybe then better to place these in the try catch statement right after they are published.
+  //  - Predictions computed in trajectory_prediction_general() and used in DERG_computation():
+  uav_posistion_out_.points.clear();
 
   // u have to return a position command
   // can set the jerk to 0
@@ -1590,6 +1791,14 @@ bool MpcCopyTracker::callbackWiggle(std_srvs::SetBool::Request& req, std_srvs::S
   res.message = "wiggle updated";
 
   return true;
+}
+
+
+void MpcCopyTracker::callbackOtherUavPosition(const mrs_msgs::FutureTrajectoryConstPtr& msg) {
+  mrs_lib::Routine profiler_routine = profiler.createRoutine("callbackOtherUavPosition");
+  // ROS_INFO_STREAM("in callbackOtherUavPosition!! \n");
+  mrs_msgs::FutureTrajectory temp_pose = *msg;
+  other_uavs_positions_[msg->uav_name] = temp_pose;
 }
 
 //}
@@ -2745,6 +2954,17 @@ void MpcCopyTracker::setGoal(const double pos_x, const double pos_y, const doubl
 
   double desired_heading = sradians::wrap(heading);
 
+  {
+  std::scoped_lock lock(mutex_goal_);
+
+  goal_x_ = pos_x;
+  goal_y_ = pos_y;
+  goal_z_= pos_z;
+  goal_heading_ = desired_heading;
+
+  }
+
+
   auto mpc_x_heading = mrs_lib::get_mutexed(mutex_mpc_x_, mpc_x_heading_);
 
   if (!use_heading) {
@@ -3114,6 +3334,25 @@ void MpcCopyTracker::timerMPC(const ros::TimerEvent& event) {
 
   mrs_lib::Routine profiler_routine = profiler.createRoutine("timerMPC", _mpc_rate_, 0.01, event);
 
+  //-------------------
+  // added by bryan:
+  // Computational time:
+  // method Kelly:
+  start_pred_ = std::chrono::system_clock::now(); 
+  // method group A:
+  tictoc_stack.push(clock()); 
+  // last method of https://www.geeksforgeeks.org/measure-execution-time-with-high-precision-in-c-c/
+  auto start = std::chrono::high_resolution_clock::now(); 
+  // unsync the I/O of C and C++.
+  std::ios_base::sync_with_stdio(false);
+  // method https://answers.ros.org/question/166286/measure-codenode-running-time/: 
+  ros::WallTime WallTime_start, WallTime_end;
+  WallTime_start = ros::WallTime::now();
+  // method: clock() CPU time: https://stackoverflow.com/questions/20167685/measuring-cpu-time-in-c/43800564
+  std::clock_t c_start = std::clock();
+  //----------------
+
+
   ros::Time     begin = ros::Time::now();
   ros::Time     end;
   ros::Duration interval;
@@ -3207,6 +3446,31 @@ void MpcCopyTracker::timerMPC(const ros::TimerEvent& event) {
 
   end      = ros::Time::now();
   interval = end - begin;
+
+  // ---------------
+  // added by bryan
+  // Computational time:
+  // method Kelly:
+  end_pred_ = std::chrono::system_clock::now();
+  ComputationalTime_pred_ = end_pred_ - start_pred_;
+  //ComputationalTime_msg_.trajectory_predictions = ComputationalTime_pred_.count(); 
+  // method group A:
+  //ComputationalTime_msg_.trajectory_predictions = (double)(clock()- tictoc_stack.top())/CLOCKS_PER_SEC; 
+  //ROS_INFO_STREAM("Prediction calculation took = \n "<< (double)(clock()- tictoc_stack.top())/CLOCKS_PER_SEC << "seconds.");
+  tictoc_stack.pop();
+  // last method of: https://www.geeksforgeeks.org/measure-execution-time-with-high-precision-in-c-c/:
+  auto end_high_res_clock = std::chrono::high_resolution_clock::now();
+  double time_taken = std::chrono::duration_cast<std::chrono::nanoseconds>(end_high_res_clock - start).count();
+  time_taken *= 1e-9;
+  //ComputationalTime_msg_.trajectory_predictions = time_taken;
+  // method: https://answers.ros.org/question/166286/measure-codenode-running-time/
+  WallTime_end = ros::WallTime::now();
+  //ComputationalTime_msg_.trajectory_predictions = (WallTime_end - WallTime_start).toNSec() * 1e-9;
+  // method: clock() CPU time, https://stackoverflow.com/questions/20167685/measuring-cpu-time-in-c/43800564:
+  std::clock_t c_end = std::clock();
+  ComputationalTime_msg_.trajectory_predictions = (c_end-c_start) / (double)CLOCKS_PER_SEC;
+
+  //---------------
 
   // | ----------------- acumulate the MPC delay ---------------- |
   if (interval.toSec() > _dt1_) {
@@ -3349,6 +3613,13 @@ void MpcCopyTracker::timerTrajectoryTracking(const ros::TimerEvent& event) {
   {
     std::scoped_lock lock(mutex_trajectory_tracking_states_);
 
+    if(trajectory_tracking_idx_ == 0){
+      //ROS_INFO_STREAM("[MpcCopyTracker]: trajectory_tracking_idx_ = \n" << trajectory_tracking_idx_);
+      // set the global variable to keep track of the time when the trajectory was started
+      time_at_start_point_ = (ros::Time::now()).toSec();
+      // publish it below (add to msg) 
+    }
+
     // do a step of the main tracking idx
 
     // reset the subsampling counter
@@ -3356,6 +3627,72 @@ void MpcCopyTracker::timerTrajectoryTracking(const ros::TimerEvent& event) {
 
     // INCREMENT THE TRACKING IDX
     trajectory_tracking_idx_++;
+    ROS_INFO_STREAM_THROTTLE(1.0, "[MpcCopyTracker]: trajectory_tracking_idx_" << trajectory_tracking_idx_);
+
+    // !!!!! bryan, inspired by original timerMpc
+    // looping  
+    if (trajectory_tracking_loop_) {
+      if (trajectory_tracking_idx_ >= trajectory_size) {
+        trajectory_tracking_idx_ -= trajectory_size;
+      }
+    } else {
+      if (trajectory_tracking_idx_ >= trajectory_size) {
+        trajectory_tracking_idx_ = trajectory_tracking_idx_ - 1;
+      }
+    }
+    {
+      std::scoped_lock lock(mutex_des_whole_trajectory_, mutex_goal_);
+      goal_x_ = (*des_x_whole_trajectory_)[trajectory_tracking_idx_];
+      goal_y_ = (*des_y_whole_trajectory_)[trajectory_tracking_idx_];
+      goal_z_ = (*des_z_whole_trajectory_)[trajectory_tracking_idx_];
+      goal_heading_ = (*des_heading_whole_trajectory_)[trajectory_tracking_idx_];
+
+      // Diagnostics of the TrajectoryTracking:
+      if(_enable_diagnostics_pub_){
+        // ROS_INFO("[DergbryanTracker]: Diagnostics of the TrajectoryTracking");
+        TrajectoryTracking_msg_.stamp = uav_state_.header.stamp;
+        traj_start_point_.x = (*des_x_whole_trajectory_)[0];
+        traj_start_point_.y = (*des_y_whole_trajectory_)[0];
+        traj_start_point_.z = (*des_z_whole_trajectory_)[0];
+        TrajectoryTracking_msg_.traj_start_point = traj_start_point_;
+        traj_end_point_.x = (*des_x_whole_trajectory_)[trajectory_size_-1];
+        traj_end_point_.y = (*des_y_whole_trajectory_)[trajectory_size_-1];
+        traj_end_point_.z = (*des_z_whole_trajectory_)[trajectory_size_-1];
+        TrajectoryTracking_msg_.traj_end_point = traj_end_point_;
+        TrajectoryTracking_msg_.arrival_norm_pos_error_treshold = arrival_norm_pos_error_treshold_; // static
+        TrajectoryTracking_msg_.arrival_period_treshold = arrival_period_treshold_; // static
+        TrajectoryTracking_msg_.time_at_start_point = time_at_start_point_; // initialized higher up
+        // Check if we arrived at the traj_end_point:
+        Eigen::Vector3d pos_error2goal;
+        pos_error2goal[0] = traj_end_point_.x - uav_state_.pose.position.x;
+        pos_error2goal[1] = traj_end_point_.y - uav_state_.pose.position.y;
+        pos_error2goal[2] = traj_end_point_.z - uav_state_.pose.position.z;
+        if(pos_error2goal.norm() <= arrival_norm_pos_error_treshold_){ // within position treshold
+          if (flag_running_timer_at_traj_end_point_ == false)  { // if timer not started
+            flag_running_timer_at_traj_end_point_ = true; // set the flag to ...
+            time_started_timer_at_traj_end_point_ = ros::Time::now(); // ... start the timer
+          }
+          double elapsed_time = (ros::Time::now() - time_started_timer_at_traj_end_point_).toSec();
+          if(elapsed_time >= arrival_period_treshold_){
+            arrived_at_traj_end_point_ = true;
+            time_at_end_point_ = (ros::Time::now()).toSec();
+          } 
+        } else {
+          flag_running_timer_at_traj_end_point_ = false; // if the uav would escape the pos error treshold this will we reset the timer if uav goes back withing treshold later
+          arrived_at_traj_end_point_ = false;
+          time_at_end_point_ = 0.0; //reset
+        }
+        TrajectoryTracking_msg_.time_at_end_point = time_at_end_point_;
+        TrajectoryTracking_msg_.arrived_at_traj_end_point = arrived_at_traj_end_point_;
+        try {
+          TrajectoryTracking_publisher_.publish(TrajectoryTracking_msg_);
+        }
+        catch (...) {
+          ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", TrajectoryTracking_publisher_.getTopic().c_str());
+        }
+      }
+    }
+
 
     // if the tracking idx hits the end of the trajectory
     if (trajectory_tracking_idx_ == trajectory_size) {

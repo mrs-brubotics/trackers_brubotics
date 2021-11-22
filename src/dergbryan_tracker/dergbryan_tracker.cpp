@@ -194,7 +194,7 @@ private:
   
   // bool hover_          = false; old, don't need anymore
 
-  bool starting_bool=true;
+  bool starting_bool_=true;
 
 
   double dt_ = 0.010; // DO NOT CHANGE! Hardcoded ERG sample time = controller sample time TODO: obtain via loop rate, see MpcTracker
@@ -533,8 +533,6 @@ private:
   std::chrono::time_point<std::chrono::system_clock> start_pred_, end_pred_;
   std::chrono::duration<double> ComputationalTime_ERG_, ComputationalTime_NF_, ComputationalTime_DSM_, ComputationalTime_pred_;
   trackers_brubotics::ComputationalTime ComputationalTime_msg_;
-
-  
   // method Zakaria & Frank
   std::stack<clock_t> tictoc_stack; 
 };
@@ -1005,7 +1003,7 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
   // set the header
   position_cmd.header.stamp    = uav_state->header.stamp;
   position_cmd.header.frame_id = uav_state->header.frame_id;
-  if (starting_bool) {
+  if (starting_bool_) {
     // stay in place
     goal_x_= uav_state->pose.position.x;
     goal_y_= uav_state->pose.position.y;
@@ -1045,7 +1043,7 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
 
     uav_state_prev_ = uav_state_; // required for computing derrivative of angular rate
 
-    starting_bool=false;
+    starting_bool_=false;
   return mrs_msgs::PositionCommand::ConstPtr(new mrs_msgs::PositionCommand(position_cmd));
 }
 /* begin copy of se3controller*/
@@ -1119,7 +1117,7 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
 
   
   if (_use_derg_){
-    // initially applied_ref_x_, applied_ref_y_, applied_ref_z_ is defined as stay where you are when starting_bool = 1;
+    // initially applied_ref_x_, applied_ref_y_, applied_ref_z_ is defined as stay where you are when starting_bool_ = 1;
     position_cmd.position.x     = applied_ref_x_;
     position_cmd.position.y     = applied_ref_y_;
     position_cmd.position.z     = applied_ref_z_;
@@ -4118,7 +4116,7 @@ void DergbryanTracker::DERG_computation(){
     ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", DSM_publisher_.getTopic().c_str());
   }
 
-  // Diagnostics Publisher:
+  // Diagnostics Publisher - distance to collisions:
   if(_enable_diagnostics_pub_){
     /*
     - compute relevant info for: collision avoidance.
@@ -5092,6 +5090,7 @@ void DergbryanTracker::timerTrajectoryTracking(const ros::TimerEvent& event) {
 
     // reset the subsampling counter
     //trajectory_tracking_sub_idx_ = 0;
+
     if(trajectory_tracking_idx_ == 0){
       //ROS_INFO_STREAM("[DergbryanTracker]: trajectory_tracking_idx_ = \n" << trajectory_tracking_idx_);
       // set the global variable to keep track of the time when the trajectory was started

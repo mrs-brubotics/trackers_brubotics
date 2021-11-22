@@ -104,3 +104,5 @@ mpc_solver:
     verbose: false
     max_n_iterations: 25 # default: 25
     Q: [5000, 0, 0, 0]
+  
+enable_diagnostics_pub: false # Publish diagnostics: distance between agents over time + settling time
