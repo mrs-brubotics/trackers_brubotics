@@ -410,7 +410,7 @@ private:
   std::stack<clock_t> tictoc_stack; 
 
   // trajectory diagnostic parameters:
-  double arrival_norm_pos_error_treshold_ = 0.30; // [m]
+  double arrival_norm_pos_error_treshold_ = 0.50; // [m]
   double arrival_period_treshold_ = 5.0; // [s]
   bool arrived_at_traj_end_point_ = false; // false by default
   geometry_msgs::Point traj_start_point_;
@@ -1569,6 +1569,14 @@ const std_srvs::TriggerResponse::ConstPtr MpcCopyTracker::gotoTrajectoryStart([[
   std_srvs::TriggerResponse res;
   res.success = success;
   res.message = message;
+
+  if(_enable_diagnostics_pub_){ 
+    // the global variables used in the TrajectoryTracking_msg_ computations will be reset accordingly
+    time_at_start_point_ = 0.0;
+    time_at_end_point_ = 0.0;
+    flag_running_timer_at_traj_end_point_ = false;
+    arrived_at_traj_end_point_ = false;
+  }
 
   return std_srvs::TriggerResponse::ConstPtr(new std_srvs::TriggerResponse(res));
 }
@@ -3667,12 +3675,15 @@ void MpcCopyTracker::timerTrajectoryTracking(const ros::TimerEvent& event) {
         pos_error2goal[0] = traj_end_point_.x - uav_state_.pose.position.x;
         pos_error2goal[1] = traj_end_point_.y - uav_state_.pose.position.y;
         pos_error2goal[2] = traj_end_point_.z - uav_state_.pose.position.z;
-        if(pos_error2goal.norm() <= arrival_norm_pos_error_treshold_){ // within position treshold
+        double norm_pos_error2goal = pos_error2goal.norm();
+        TrajectoryTracking_msg_.norm_pos_error2goal = norm_pos_error2goal; 
+        if(norm_pos_error2goal <= arrival_norm_pos_error_treshold_){ // within position treshold
           if (flag_running_timer_at_traj_end_point_ == false)  { // if timer not started
             flag_running_timer_at_traj_end_point_ = true; // set the flag to ...
             time_started_timer_at_traj_end_point_ = ros::Time::now(); // ... start the timer
           }
           double elapsed_time = (ros::Time::now() - time_started_timer_at_traj_end_point_).toSec();
+          TrajectoryTracking_msg_.elapsed_time_in_pos_error_treshold = elapsed_time; 
           if(elapsed_time >= arrival_period_treshold_){
             arrived_at_traj_end_point_ = true;
             time_at_end_point_ = (ros::Time::now()).toSec();

@@ -10,6 +10,10 @@ bool arrived_at_traj_end_point
 # the times when the trajectory is started and ended (i.e.when arrival_period_treshold triggers 0->1)
 float64 time_at_start_point
 float64 time_at_end_point
+# distance of uav to goal
+float64 norm_pos_error2goal
+# time elapsed since error below pos_error_treshold
+float64 elapsed_time_in_pos_error_treshold
 
 
 
