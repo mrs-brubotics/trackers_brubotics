@@ -1,10 +1,9 @@
 # issue: why can't we use the dergbryantracker.yaml in testing package? it shshould be loaded in the session.yaml
 use_derg: true # if false it bypasses the desired goal reference directly, but still computes the trajectory predictions
-network: # TODO import from default and custom config uav_names at a single location
+network:
   robot_names: [
-    uav1, uav2, uav3, uav4 , uav5, uav6, uav7, uav8, uav9 , uav10
+    uav1, uav2, uav3, uav4 , uav5, uav6, uav7, uav8, uav9 , uav10, uav11, uav12, uav13, uav14, uav15, uav16, uav17, uav18, uav19, uav20, uav21, uav22, uav23, uav24, uav25, uav26, uav27, uav28, uav29, uav30
   ]
-
 prediction:
   horizon: 3.0 #[s] default 3.0
   time_step: 0.010 # [s] default 0.010
@@ -29,6 +28,10 @@ agent_collision_volumes:
       longitudinal: 4.0 # = sphere/radius - tube/radius/lateral
 
 dynamic_safety_margin: # BE CAREFUL!
+  type_id: 2 # // 1: level set based, 2: trajectory based
+  lyapunov: # only used when dsm type_id = 1
+    type_id: 2 # 1: traditional, 2: optimally aligned
+    epsilon: 0.5 # used only if traditional Lyapunov
   kappa:
     sT: 20 #10 15 20 25 # saturation total thrust
     sw: 13 # 10 13 # saturation angular body rates 

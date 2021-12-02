@@ -374,7 +374,7 @@ private:
   bool _use_derg_;
   double _zeta_a_;
   double _delta_a_;
-  double Ra_ = 0.35; // TODO should be taken from urdf, how to do so??
+  double Ra_ = 0.35; // TODO should be taken from urdf, how to do so?? is there  way to subscribe to uav type and then ahrdcode in if cases here?
   int _DERG_strategy_id_;
   bool _use_distance_xy_;
   // int DERG_strategy_id_ = 3; //0 / 1 / 2 / 3 /4
@@ -416,9 +416,9 @@ private:
   // double Sa_long = Sa-Sa_perp;// see drawing//1.0;//1.5;//2.5;
   // double kappa_a = 0.10*20*Sa/Sa_perp;
 
-
-
-
+  int _DSM_type_; // 1: level set based, 2: trajectory based
+  int _Lyapunov_type_; // 1: traditional, 2: optimally aligned
+  double _epsilon_;
 
 
   //Frank : add new DSM_w, DSM_o DONE 
@@ -521,6 +521,10 @@ private:
   bool _enable_repulsion_o_;
   bool _use_tube_;
 
+
+  bool consider_projection_NF_on_max_NF_a_co_ = false;
+  double max_repulsion_other_uav_;
+  Eigen::Vector3d max_NF_a_co_;
 
 
   bool _predicitons_use_body_inertia_;
@@ -673,6 +677,9 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   param_loader2.loadParam("prediction/use_body_inertia",_predicitons_use_body_inertia_);
   // convert below to int
   num_pred_samples_ = (int)(_pred_horizon_/_prediction_dt_); // number of prediction samples
+  param_loader2.loadParam("dynamic_safety_margin/type_id", _DSM_type_);
+  param_loader2.loadParam("dynamic_safety_margin/lyapunov/type_id", _Lyapunov_type_);
+  param_loader2.loadParam("dynamic_safety_margin/lyapunov/epsilon", _epsilon_);
   param_loader2.loadParam("dynamic_safety_margin/kappa/sT", _kappa_sT_);
   param_loader2.loadParam("dynamic_safety_margin/kappa/sw", _kappa_sw_);
   param_loader2.loadParam("dynamic_safety_margin/kappa/a", _kappa_a_);
@@ -2711,35 +2718,91 @@ void DergbryanTracker::DERG_computation(){
   //                 | Navigation Field (NF) + Dynamic Safety Margin|
   //                  **********************************************
   // | -------------------------- attraction field -------------------------------|
-  MatrixXd NF_att   = MatrixXd::Zero(3, 1); // attraction field
-  MatrixXd ref_dist = MatrixXd::Zero(3, 1); // difference between target reference r and applied reference v
+  Eigen::Vector3d NF_att   = Vector3d::Zero(3, 1); // attraction field
+  Eigen::Vector3d ref_dist = Vector3d::Zero(3, 1); // difference between target reference r and applied reference v
   ref_dist(0) = goal_x_ - applied_ref_x_;
   ref_dist(1) = goal_y_ - applied_ref_y_;
   ref_dist(2) = goal_z_ - applied_ref_z_;
-  double norm_ref_dist = sqrt(pow(ref_dist(0), 2) + pow(ref_dist(1), 2)+ pow(ref_dist(2), 2)); // TODO use Eigen's .norm()
+  double norm_ref_dist = sqrt(pow(ref_dist(0), 2.0) + pow(ref_dist(1), 2.0)+ pow(ref_dist(2), 2.0)); // TODO use Eigen's .norm()
   NF_att = ref_dist/std::max(norm_ref_dist, _eta_);
-  
-  
+
+
+  // 
+  double V_Lyap;
+  Eigen::MatrixXd P_Lyap(6,6);
+  if (_DSM_type_== 1){ //Level-set based
+  // TODO: consider making a function for the invariant sets as was done for the trajectory predictions
+    if (_Lyapunov_type_ == 1){
+    // TODO compute analytic expression for kxy different from kz. The point is that the theory assumes the worst case (min Gamma) that works for arbitrary directions.
+    // So one should compute for all xyz direction and take the worst case.
+    P_Lyap << kpxy_+_epsilon_*pow(kvxy_,2.0), 0.0, 0.0, _epsilon_*kvxy_, 0.0, 0.0,
+          0.0, kpxy_+_epsilon_*pow(kvxy_,2.0), 0.0, 0.0, _epsilon_*kvxy_, 0.0,
+          0.0, 0.0, kpz_+_epsilon_*pow(kvz_,2.0), 0.0, 0.0, _epsilon_*kvz_,
+          _epsilon_*kvxy_, 0.0, 0.0, 1.0, 0.0, 0.0,
+          0.0, _epsilon_*kvxy_, 0.0, 0.0, 1.0, 0.0,
+          0.0, 0.0, _epsilon_*kvz_, 0.0, 0.0, 1.0;
+    P_Lyap = 0.5*P_Lyap;
+    }
+    else if (_Lyapunov_type_ == 2){
+      // TODO generalize, computed offline for kpxy=3, kdxy=2 and mass=2.40
+      P_Lyap << 0.7248, 0.0, 0.0, 0.4240, 0.0, 0.0,
+                      0.0, 0.7248, 0.0, 0.0, 0.4240, 0.0,
+                      0.0, 0.0, 0.7248, 0.0, 0.0, 0.4240,
+                      0.4240, 0.0, 0.0, 0.3510, 0.0, 0.0,
+                      0.0, 0.4240, 0.0, 0.0, 0.3510, 0.0,
+                      0.0, 0.0, 0.4240, 0.0, 0.0, 0.3510;
+    }
+    Eigen::VectorXd temp(6,1);
+    temp << uav_x_ - applied_ref_x_,
+            uav_y_ - applied_ref_y_,
+            uav_z_ - applied_ref_z_,
+            uav_state_.velocity.linear.x,
+            uav_state_.velocity.linear.y,
+            uav_state_.velocity.linear.z;
+    V_Lyap = temp.transpose()*P_Lyap*temp;
+  }
+
   // | ------------------------ control input constraints ----------------------- |
   // Total thrust saturation:
-  // TODO: predicted_thrust_out_.poses is not good programming for a scalar. Maybe try using Class: Std_msgs::Float32MultiArray and test plot still work
-  double diff_T = thrust_saturation_physical_; // initialization at the highest possible positive difference value
-  // ROS_INFO_STREAM("thrust_saturation_physical_ = \n" << thrust_saturation_physical_);
-  for (size_t i = 0; i < num_pred_samples_; i++) {
-    double diff_Tmax = thrust_saturation_physical_ - predicted_thrust_out_.poses[i].position.x;
-    double diff_Tmin = predicted_thrust_out_.poses[i].position.x - _T_min_;
-    if (diff_Tmax < diff_T) {
-    diff_T = diff_Tmax;
+  if (_DSM_type_ == 1){ // Level-set based
+      double Gamma_sTmax;
+      double Gamma_sTmin;
+      double total_mass = common_handlers_->getMass(); // total estimated mass calculated by controller
+      thrust_saturation_physical_ = mrs_lib::quadratic_thrust_model::thrustToForce(common_handlers_->motor_params, _thrust_saturation_);
+      
+    if (_Lyapunov_type_ == 1){
+      // TODO compute analytic expression for kxy different from kz. The point is that the theory assumes the worst case (min Gamma) that works for arbitrary directions.
+      // So one should compute for all xyz direction and take the worst case.
+      Gamma_sTmax = 0.5*pow((thrust_saturation_physical_-total_mass*common_handlers_->g),2.0)/pow(total_mass,2.0)*(kpxy_+_epsilon_*(1-_epsilon_)*pow(kvxy_,2.0))/(pow(kpxy_,2.0)+pow(kvxy_,2.0)*(kpxy_+_epsilon_*pow(kvxy_,2.0)-2.0*_epsilon_*kpxy_));
+      Gamma_sTmin = 0.5*pow((_T_min_-total_mass*common_handlers_->g),2.0)/pow(total_mass,2.0)*(kpxy_+_epsilon_*(1-_epsilon_)*pow(kvxy_,2.0))/(pow(kpxy_,2.0)+pow(kvxy_,2.0)*(kpxy_+_epsilon_*pow(kvxy_,2.0)-2.0*_epsilon_*kpxy_));
     }
-    if (diff_Tmin < diff_T) {
-    diff_T = diff_Tmin;
+    else if (_Lyapunov_type_ == 2){ // Optimally aligned case:
+      double denum = 74.88; // TODO generalize, computed offline for kpxy=3, kdxy=2 and mass=2.40
+      Gamma_sTmax = pow((thrust_saturation_physical_-total_mass*common_handlers_->g),2.0)/denum;
+      Gamma_sTmax = pow((_T_min_-total_mass*common_handlers_->g),2.0)/denum;
     }
+    DSM_sT_ = _kappa_sT_*(std::min(Gamma_sTmax,Gamma_sTmin) - V_Lyap)/Gamma_sTmax; // TODO adapt to account for lower saturation limit too
   }
-  DSM_sT_ = _kappa_sT_*diff_T/(0.5*(thrust_saturation_physical_ - _T_min_)); // scaled DSM in _kappa_sT_*[0, 1] from the average between the lower and upper limit to the respective limits
+  else if (_DSM_type_== 2){ // Trajectory based
+    // TODO: predicted_thrust_out_.poses is not good programming for a scalar. Maybe try using Class: Std_msgs::Float32MultiArray and test plot still work
+    double diff_T = thrust_saturation_physical_; // initialization at the highest possible positive difference value
+    // ROS_INFO_STREAM("thrust_saturation_physical_ = \n" << thrust_saturation_physical_);
+    for (size_t i = 0; i < num_pred_samples_; i++) {
+      double diff_Tmax = thrust_saturation_physical_ - predicted_thrust_out_.poses[i].position.x;
+      double diff_Tmin = predicted_thrust_out_.poses[i].position.x - _T_min_;
+      if (diff_Tmax < diff_T) {
+      diff_T = diff_Tmax;
+      }
+      if (diff_Tmin < diff_T) {
+      diff_T = diff_Tmin;
+      }
+    }
+    DSM_sT_ = _kappa_sT_*diff_T/(0.5*(thrust_saturation_physical_ - _T_min_)); // scaled DSM in _kappa_sT_*[0, 1] from the average between the lower and upper limit to the respective limits
+  }
   //ROS_INFO_STREAM("DSM_sT_ = \n" << DSM_sT_);
 
   // Body rate saturation:
-  if (got_constraints_) {
+  if (got_constraints_ && _DSM_type_ == 2) { // _DSM_type_ = 1 not possible sinc elevel-set based on outer loop only
     //ROS_INFO_STREAM("got_constraints_ = \n" << got_constraints_);
     auto constraints = mrs_lib::get_mutexed(mutex_constraints_, constraints_);
     // ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: constraints.roll_rate = %f", constraints.roll_rate);
@@ -2792,8 +2855,11 @@ void DergbryanTracker::DERG_computation(){
 
   // | --------------------------- repulsion fields ------------------------------|  
   //  - agent: uav collision avoidance
-  MatrixXd NF_a_co  = MatrixXd::Zero(3, 1); // conservative part
-  MatrixXd NF_a_nco = MatrixXd::Zero(3, 1); // non-conservative part
+  Eigen::Vector3d NF_a_co  = Vector3d::Zero(3, 1); // conservative part
+  Eigen::Vector3d NF_a_nco = Vector3d::Zero(3, 1); // non-conservative part
+
+  Eigen::MatrixXd all_NF_a_co  = MatrixXd::Zero(3, 1); // all conservative parts
+  Eigen::MatrixXd all_NF_a_nco = MatrixXd::Zero(3, 1); // all non-conservative parts
 
 
   // TODO: for wall and obstacle constraints (group A's code)
@@ -2930,8 +2996,14 @@ void DergbryanTracker::DERG_computation(){
 
   // | ------------------------ agent collision avoidance repulsion ----------------------- |
   if (_DERG_strategy_id_ == 0) {
-    /* D-ERG strategy 0
+    /* D-ERG strategy 0:
+    The agents share reference positions as the centers of fixed-size spheres.
+    TODO one could also consider morphing spheres instead of fixed size spheres.
     */
+
+    max_repulsion_other_uav_ = 0.0; // amplitude of max repulsive term
+    max_NF_a_co_  = Vector3d::Zero(3, 1); // NF term related with max_repulsion_other_uav_
+
     std::map<std::string, mrs_msgs::FutureTrajectory>::iterator it = other_uavs_applied_references_.begin();
     // ROS_INFO_STREAM("p^v_x = \n" << it->second.points[0].x);
     // ROS_INFO_STREAM("p^v_y = \n" << it->second.points[0].y);
@@ -2941,55 +3013,81 @@ void DergbryanTracker::DERG_computation(){
       double other_uav_ref_y = it->second.points[0].y;
       double other_uav_ref_z = it->second.points[0].z;
 
-      double dist_between_ref_x = other_uav_ref_x - applied_ref_x_;
-      double dist_between_ref_y = other_uav_ref_y - applied_ref_y_;
-      double dist_between_ref_z = other_uav_ref_z - applied_ref_z_;
+      double dist_x = other_uav_ref_x - applied_ref_x_;
+      double dist_y = other_uav_ref_y - applied_ref_y_;
+      double dist_z = other_uav_ref_z - applied_ref_z_;
 
       // if we only want to account for distances in the xy plane:
       if (_use_distance_xy_){
-        dist_between_ref_z = 0.0;
+        dist_z = 0.0;
       }
 
-      double dist_between_ref = sqrt(dist_between_ref_x*dist_between_ref_x + dist_between_ref_y*dist_between_ref_y + dist_between_ref_z*dist_between_ref_z);
-      //ROS_INFO_STREAM("dist_between_ref = \n" << dist_between_ref);
+      double dist = sqrt(dist_x*dist_x + dist_y*dist_y + dist_z*dist_z);
+      //ROS_INFO_STREAM("dist = \n" << dist);
       // Conservative part:
-      double max_repulsion_other_uav = (_zeta_a_ - (dist_between_ref - 2*Ra_ - 2*_Sa_max_))/(_zeta_a_ - _delta_a_);
-      if (0 > max_repulsion_other_uav) {
-        max_repulsion_other_uav = 0;
+      double norm_repulsion_other_uav = (_zeta_a_ - (dist - 2*Ra_ - 2*_Sa_max_))/(_zeta_a_ - _delta_a_);
+      if (0.0 > norm_repulsion_other_uav) {
+        norm_repulsion_other_uav = 0.0;
       }
-      NF_a_co(0,0) = NF_a_co(0,0) - max_repulsion_other_uav*(dist_between_ref_x / dist_between_ref);
-      NF_a_co(1,0) = NF_a_co(1,0) - max_repulsion_other_uav*(dist_between_ref_y / dist_between_ref);
-      NF_a_co(2,0) = NF_a_co(2,0) - max_repulsion_other_uav*(dist_between_ref_z / dist_between_ref);
+
+      Eigen::Vector3d NF_a_co_temp = Vector3d::Zero(3, 1);
+      NF_a_co_temp(0,0) = -norm_repulsion_other_uav*(dist_x/dist);
+      NF_a_co_temp(1,0) = -norm_repulsion_other_uav*(dist_y/dist);
+      NF_a_co_temp(2,0) = -norm_repulsion_other_uav*(dist_z/dist);
+
+      if (norm_repulsion_other_uav >= 1.0){ // assuming the NF only penetrates 1 constraint boundary delta   t a time (i.e. >1)
+        max_repulsion_other_uav_ = norm_repulsion_other_uav;
+        max_NF_a_co_ = NF_a_co_temp;
+        consider_projection_NF_on_max_NF_a_co_ = true;
+      }
+
+      NF_a_co(0,0)=NF_a_co(0,0) + NF_a_co_temp(0,0);
+      NF_a_co(1,0)=NF_a_co(1,0) + NF_a_co_temp(1,0);
+      NF_a_co(2,0)=NF_a_co(2,0) + NF_a_co_temp(2,0);
 
       // Non-conservative part:
       if (_alpha_a_ >= 0.0001){
-        if (_zeta_a_ >= dist_between_ref - 2*Ra_ - 2*_Sa_max_) {
-          NF_a_nco = NF_a_nco + calcCirculationField(_circ_type_, dist_between_ref_x, dist_between_ref_y, dist_between_ref_z, dist_between_ref);
+        if (_zeta_a_ >= dist - 2*Ra_ - 2*_Sa_max_) {
+          NF_a_nco = NF_a_nco + calcCirculationField(_circ_type_, dist_x, dist_y, dist_z, dist);
         }
       }
       it++;
     }
-    // ROS_INFO_STREAM("NF calculation took = \n "<< (double)(clock()- tictoc_stack.top())/CLOCKS_PER_SEC << "seconds.");
-    // tictoc_stack.pop();
-    // tictoc_stack.push(clock());
-    DSM_a_ = 100000; // large value
-    for (size_t i = 0; i < num_pred_samples_; i++) {
-      double pos_error_x = applied_ref_x_ - predicted_poses_out_.poses[i].position.x;
-      double pos_error_y = applied_ref_y_ - predicted_poses_out_.poses[i].position.y;
-      double pos_error_z = applied_ref_z_ - predicted_poses_out_.poses[i].position.z;
 
-      double pos_error = sqrt(pos_error_x*pos_error_x + pos_error_y*pos_error_y + pos_error_z*pos_error_z);
-      
-      double DSM_a_temp = _kappa_a_*(_Sa_max_ - pos_error)/_Sa_max_; // in _kappa_a_*[0 , 1]
-      
+    DSM_a_ = 100000; // large value
+    double DSM_a_temp;
+   
+    if (_DSM_type_  == 1){ // Invariant level set based DSM: 
+      double Gamma_a = 0.5*(kpxy_ + _epsilon_*(1.0-_epsilon_)*pow(kvxy_,2.0))*pow(_Sa_max_,2.0); // TODO: compute analytic expression for kxy different rom kz
+      double DSM_a_temp = _kappa_a_*(Gamma_a - V_Lyap)/Gamma_a; // in _kappa_a_*[0 , 1]
+        
       if (DSM_a_temp < DSM_a_){  
-      DSM_a_ = DSM_a_temp; // choose smallest DSM_a_ over the predicted trajectory //Frank : Ask bryan if he expects a similar reasoning for each DSM
+        DSM_a_ = DSM_a_temp;
       }
     }
-    // ROS_INFO_STREAM("DSM a calculation took = \n "<< (double)(clock()- tictoc_stack.top())/CLOCKS_PER_SEC << "seconds.");
-    // tictoc_stack.pop();
-  }
+    else if(_DSM_type_ == 2){ // Trajectory based DSM:
+      for (size_t i = 0; i < num_pred_samples_; i++) {
+        double pos_error_x = applied_ref_x_ - predicted_poses_out_.poses[i].position.x;
+        double pos_error_y = applied_ref_y_ - predicted_poses_out_.poses[i].position.y;
+        double pos_error_z = applied_ref_z_ - predicted_poses_out_.poses[i].position.z;
 
+        double pos_error = sqrt(pos_error_x*pos_error_x + pos_error_y*pos_error_y + pos_error_z*pos_error_z);
+        
+        DSM_a_temp = _kappa_a_*(_Sa_max_ - pos_error)/_Sa_max_; // in _kappa_a_*[0 , 1]
+        
+        if (DSM_a_temp < DSM_a_){  
+        DSM_a_ = DSM_a_temp;
+        }
+      } 
+    }
+
+    
+
+
+
+
+  }
+  // TODO: clean up strategy 1 2 3, 5
   if (_DERG_strategy_id_ == 1) {
     /* D-ERG strategy 1
     */
@@ -3090,16 +3188,16 @@ void DergbryanTracker::DERG_computation(){
         double dist = (point_link_applied_ref_other_uav - point_link_applied_ref).norm();
       }
       
-      double max_repulsion_other_uav = (_zeta_a_ - (dist - 2*Ra_ - 2*_Sa_perp_max_))/(_zeta_a_ - _delta_a_);
-      if (0 > max_repulsion_other_uav) {
-        max_repulsion_other_uav = 0;
+      double norm_repulsion_other_uav = (_zeta_a_ - (dist - 2*Ra_ - 2*_Sa_perp_max_))/(_zeta_a_ - _delta_a_);
+      if (0 > norm_repulsion_other_uav) {
+        norm_repulsion_other_uav = 0;
       }
 
-      NF_a_co(0,0) = NF_a_co(0,0) - max_repulsion_other_uav*(dist_x / dist);
-      NF_a_co(1,0) = NF_a_co(1,0) - max_repulsion_other_uav*(dist_y / dist);
+      NF_a_co(0,0) = NF_a_co(0,0) - norm_repulsion_other_uav*(dist_x / dist);
+      NF_a_co(1,0) = NF_a_co(1,0) - norm_repulsion_other_uav*(dist_y / dist);
 
       if(!_use_tube_){ // If tube used NF_a_co in z should be 0.
-      NF_a_co(2,0) = NF_a_co(2,0) - max_repulsion_other_uav*(dist_z / dist);
+      NF_a_co(2,0) = NF_a_co(2,0) - norm_repulsion_other_uav*(dist_z / dist);
       }
 
       // Non-conservative part
@@ -3243,14 +3341,14 @@ void DergbryanTracker::DERG_computation(){
 
 
       // Conservative part
-      double max_repulsion_other_uav = (_zeta_a_ - (dist - 2*Ra_ - 2*_Sa_perp_max_))/(_zeta_a_ - _delta_a_);
-      if (0 > max_repulsion_other_uav) {
-        max_repulsion_other_uav = 0;
+      double norm_repulsion_other_uav = (_zeta_a_ - (dist - 2*Ra_ - 2*_Sa_perp_max_))/(_zeta_a_ - _delta_a_);
+      if (0 > norm_repulsion_other_uav) {
+        norm_repulsion_other_uav = 0;
       }
 
-      NF_a_co(0,0)=NF_a_co(0,0) - max_repulsion_other_uav*(dist_x/dist);
-      NF_a_co(1,0)=NF_a_co(1,0) - max_repulsion_other_uav*(dist_y/dist);
-      NF_a_co(2,0)=NF_a_co(2,0) - max_repulsion_other_uav*(dist_z/dist);
+      NF_a_co(0,0)=NF_a_co(0,0) - norm_repulsion_other_uav*(dist_x/dist);
+      NF_a_co(1,0)=NF_a_co(1,0) - norm_repulsion_other_uav*(dist_y/dist);
+      NF_a_co(2,0)=NF_a_co(2,0) - norm_repulsion_other_uav*(dist_z/dist);
 
       // Non-conservative part
       if (_alpha_a_ >= 0.0001){
@@ -3482,14 +3580,14 @@ void DergbryanTracker::DERG_computation(){
 
       // Conservative part
       // same comment as before!!!
-      double max_repulsion_other_uav = (_zeta_a_ - (dist - 2*Ra_ - (Sa_perp_.data + Sa_perp_other_uav)))/(_zeta_a_ - _delta_a_);
-      if (0 > max_repulsion_other_uav) {
-        max_repulsion_other_uav = 0;
+      double norm_repulsion_other_uav = (_zeta_a_ - (dist - 2*Ra_ - (Sa_perp_.data + Sa_perp_other_uav)))/(_zeta_a_ - _delta_a_);
+      if (0 > norm_repulsion_other_uav) {
+        norm_repulsion_other_uav = 0;
       }
 
-      NF_a_co(0,0)=NF_a_co(0,0) - max_repulsion_other_uav*(dist_x/dist);
-      NF_a_co(1,0)=NF_a_co(1,0) - max_repulsion_other_uav*(dist_y/dist);
-      NF_a_co(2,0)=NF_a_co(2,0) - max_repulsion_other_uav*(dist_z/dist);
+      NF_a_co(0,0)=NF_a_co(0,0) - norm_repulsion_other_uav*(dist_x/dist);
+      NF_a_co(1,0)=NF_a_co(1,0) - norm_repulsion_other_uav*(dist_y/dist);
+      NF_a_co(2,0)=NF_a_co(2,0) - norm_repulsion_other_uav*(dist_z/dist);
 
       // Non-conservative part
       if (_alpha_a_ >= 0.0001){
@@ -3508,9 +3606,12 @@ void DergbryanTracker::DERG_computation(){
   }
   }
 
-    if (_DERG_strategy_id_ == 4) {
+    if (_DERG_strategy_id_ == 4 && _DSM_type_== 2){ // Trajectory based) {
     /* D-ERG strategy 4: 
     */
+    max_repulsion_other_uav_ = 0.0; // amplitude of max repulsive term
+    max_NF_a_co_  = Vector3d::Zero(3, 1); // NF term related with max_repulsion_other_uav_
+
     // this uav:
     DSM_a_ = 100000; // large value
     double DSM_a_temp;
@@ -3731,14 +3832,29 @@ void DergbryanTracker::DERG_computation(){
 
       // Conservative part
       // same comment as before!!!
-      double max_repulsion_other_uav = (_zeta_a_ - (dist - 2*Ra_ - (Sa_perp_.data + Sa_perp_other_uav)))/(_zeta_a_ - _delta_a_);
-      if (0 > max_repulsion_other_uav) {
-        max_repulsion_other_uav = 0;
+      double norm_repulsion_other_uav = (_zeta_a_ - (dist - 2*Ra_ - (Sa_perp_.data + Sa_perp_other_uav)))/(_zeta_a_ - _delta_a_);
+      if (0.0 > norm_repulsion_other_uav) {
+        norm_repulsion_other_uav = 0.0;
       }
 
-      NF_a_co(0,0)=NF_a_co(0,0) - max_repulsion_other_uav*(dist_x/dist);
-      NF_a_co(1,0)=NF_a_co(1,0) - max_repulsion_other_uav*(dist_y/dist);
-      NF_a_co(2,0)=NF_a_co(2,0) - max_repulsion_other_uav*(dist_z/dist);
+      Eigen::Vector3d NF_a_co_temp = Vector3d::Zero(3, 1);
+      NF_a_co_temp(0,0) = -norm_repulsion_other_uav*(dist_x/dist);
+      NF_a_co_temp(1,0) = -norm_repulsion_other_uav*(dist_y/dist);
+      NF_a_co_temp(2,0) = -norm_repulsion_other_uav*(dist_z/dist);
+
+      if (norm_repulsion_other_uav >= 1.0){ // assuming the NF only penetrates 1 constraint boundary delta   t a time (i.e. >1)
+        max_repulsion_other_uav_ = norm_repulsion_other_uav;
+        max_NF_a_co_ = NF_a_co_temp;
+        consider_projection_NF_on_max_NF_a_co_ = true;
+      }
+
+      NF_a_co(0,0)=NF_a_co(0,0) + NF_a_co_temp(0,0);
+      NF_a_co(1,0)=NF_a_co(1,0) + NF_a_co_temp(1,0);
+      NF_a_co(2,0)=NF_a_co(2,0) + NF_a_co_temp(2,0);
+      // https://www.py4u.net/discuss/81139
+      all_NF_a_co.conservativeResize(all_NF_a_co.rows(), all_NF_a_co.cols()+1);
+      all_NF_a_co.col(all_NF_a_co.cols()-1) = NF_a_co_temp;
+
 
       // Non-conservative part
       if (_alpha_a_ >= 0.0001){
@@ -3750,6 +3866,17 @@ void DergbryanTracker::DERG_computation(){
       //it2++;
       //it3++;
     }
+
+    bool enable_only_max_rep_term = false; // don't sum all agent repulsions, but only the largest repulsive contribution
+    if(enable_only_max_rep_term) {
+      double max_norm = 0.0; //init
+      for (size_t i = 0; i < all_NF_a_co.cols(); i++) 
+        if ((all_NF_a_co.col(i)).norm()>max_norm) {
+          max_norm = (all_NF_a_co.col(i)).norm();
+          NF_a_co = all_NF_a_co.col(i);
+          // TODO later NF_a_nco =  
+        }
+      }
   // added by Titouan and Jonathan
   if(_enable_visualization_){
     tf::pointEigenToMsg(point_link_star, point_link_star_.position);  // conversion from Eigen::Vector3d to geometry_msgs::Point
@@ -3938,14 +4065,14 @@ void DergbryanTracker::DERG_computation(){
 
 
       // Conservative part
-      double max_repulsion_other_uav = (_zeta_a_ - (dist - 2*Ra_ - (Sa_perp_.data + Sa_perp_other_uav)))/(_zeta_a_ - _delta_a_);
-      if (0 > max_repulsion_other_uav) {
-        max_repulsion_other_uav = 0;
+      double norm_repulsion_other_uav = (_zeta_a_ - (dist - 2*Ra_ - (Sa_perp_.data + Sa_perp_other_uav)))/(_zeta_a_ - _delta_a_);
+      if (0 > norm_repulsion_other_uav) {
+        norm_repulsion_other_uav = 0;
       }
 
-      NF_a_co(0,0)=NF_a_co(0,0) - max_repulsion_other_uav*(dist_x/dist);
-      NF_a_co(1,0)=NF_a_co(1,0) - max_repulsion_other_uav*(dist_y/dist);
-      NF_a_co(2,0)=NF_a_co(2,0) - max_repulsion_other_uav*(dist_z/dist);
+      NF_a_co(0,0)=NF_a_co(0,0) - norm_repulsion_other_uav*(dist_x/dist);
+      NF_a_co(1,0)=NF_a_co(1,0) - norm_repulsion_other_uav*(dist_y/dist);
+      NF_a_co(2,0)=NF_a_co(2,0) - norm_repulsion_other_uav*(dist_z/dist);
 
       // Non-conservative part
       if (_alpha_a_ >= 0.0001){
@@ -4017,10 +4144,10 @@ void DergbryanTracker::DERG_computation(){
 
 
   // Both combined
-  MatrixXd NF_a = NF_a_co + NF_a_nco;
+  Eigen::Vector3d NF_a = NF_a_co + NF_a_nco;
   
   // | ------------------------- total repulsion field ---------------------------|
-  MatrixXd NF_total = MatrixXd::Zero(3, 1);
+  Eigen::Vector3d NF_total = Vector3d::Zero(3, 1);
   //Frank : Rework the code above and make lines achieving this result. 
   // NF_total(0,0)=NF_att(0,0)+ NF_a(0,0) +NF_o(0,0) + NF_w(0,0);
   // NF_total(1,0)=NF_att(1,0) + NF_a(1,0) +NF_o(1,0) + NF_w(1,0);
@@ -4029,6 +4156,20 @@ void DergbryanTracker::DERG_computation(){
   //ROS_INFO_STREAM("NF_total = \n" << NF_total);
   //ROS_INFO_STREAM("NF_a = \n" << NF_a);
 
+  if (consider_projection_NF_on_max_NF_a_co_ == true && _enable_repulsion_a_){
+    double temp = max_NF_a_co_.dot(NF_total);
+    if (temp < 0.0){ // NF_total points inside static delta boundary
+      // subtract from the original NF_total the part of NF_total that penetrates into max_NF_a_co_
+      NF_total = NF_total - (temp/(max_NF_a_co_.dot(max_NF_a_co_)))*max_NF_a_co_; // https://www.youtube.com/watch?v=qz3Q3v84k9Y
+      // this avoids a pure NF consisting of multiple max unitary vectors from penetrating the obstacle
+      // this avoids the DSM to become exactly 0 for a strictly positiive delta allowing slow movement near the constraints
+    }
+    consider_projection_NF_on_max_NF_a_co_ = false; // reset consider_projection_NF_on_max_NF_a_co_ to false
+    // Note: the above implementation assumes there is only 1 delta region penetrated simultaneously.
+    // TODO: improve that you check for all constraints and recursively apply the projection untill no constraints are penetrated anymore
+    // This is currently only implemented for agent constraints under strategy 0 (fixed size spheres) and 4 (morphing tubes) yet. 
+  }
+  
   // | -------------------------------------------------------------------------- |
 
 
@@ -4156,19 +4297,27 @@ void DergbryanTracker::DERG_computation(){
       double other_uav_pos_z = other_uavs_positions_[other_uav_name].points[0].z;
       Eigen::Vector3d pos_other_uav(other_uav_pos_x, other_uav_pos_y, other_uav_pos_z);
       // compute minimum distance from this_uav to all other_uav:
-      double min_distance_this_uav2other_uav_temp = (pos_this_uav - pos_other_uav).norm()-2*Ra_; 
-      min_distance_this_uav2other_uav = std::min(min_distance_this_uav2other_uav, min_distance_this_uav2other_uav_temp);
-      DistanceBetweenUavs_msg_.stamp = uav_state_.header.stamp;
-      DistanceBetweenUavs_msg_.other_uav_name = other_uav_name;
-      DistanceBetweenUavs_msg_.min_distance_this_uav2other_uav = min_distance_this_uav2other_uav;
-      try {
-        DistanceBetweenUavs_publisher_.publish(DistanceBetweenUavs_msg_);
-      }
-      catch (...) {
-        ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", DistanceBetweenUavs_publisher_.getTopic().c_str());
+      double distance_this_uav2other_uav = (pos_this_uav - pos_other_uav).norm()-2*Ra_;
+      DistanceBetweenUavs_msg_.distances_this_uav2other_uavs.push_back(distance_this_uav2other_uav);
+      DistanceBetweenUavs_msg_.other_uav_names.push_back(other_uav_name);
+      
+      if (distance_this_uav2other_uav < min_distance_this_uav2other_uav){
+        min_distance_this_uav2other_uav = distance_this_uav2other_uav; // min_distance_this_uav2other_uav = std::min(min_distance_this_uav2other_uav, distance_this_uav2other_uav);
+        DistanceBetweenUavs_msg_.min_distance_this_uav2other_uav = min_distance_this_uav2other_uav;
+        DistanceBetweenUavs_msg_.other_uav_name = other_uav_name;
       }
       it++;
     }
+    DistanceBetweenUavs_msg_.stamp = uav_state_.header.stamp;
+    try {
+      DistanceBetweenUavs_publisher_.publish(DistanceBetweenUavs_msg_);
+    }
+    catch (...) {
+      ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", DistanceBetweenUavs_publisher_.getTopic().c_str());
+    }
+    // clear()
+    DistanceBetweenUavs_msg_.distances_this_uav2other_uavs.clear();
+    DistanceBetweenUavs_msg_.other_uav_names.clear();
   }
   
   // RVIZ Publisher:
