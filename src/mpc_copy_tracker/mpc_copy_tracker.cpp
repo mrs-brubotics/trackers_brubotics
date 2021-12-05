@@ -615,10 +615,10 @@ void MpcCopyTracker::initialize(const ros::NodeHandle& parent_nh, [[maybe_unused
   // collision avoidance toggle service
   service_server_toggle_avoidance_ = nh_.advertiseService("collision_avoidance_in", &MpcCopyTracker::callbackToggleCollisionAvoidance, this);
 
-  DistanceBetweenUavs_publisher_ = nh_.advertise<trackers_brubotics::DistanceBetweenUavs>("DistanceBetweenUavs", 10);
-  TrajectoryTracking_publisher_ = nh_.advertise<trackers_brubotics::TrajectoryTracking>("TrajectoryTracking", 10);
-  ComputationalTime_publisher_ = nh_.advertise<trackers_brubotics::ComputationalTime>("ComputationalTime", 10);
-  avoidance_pos_publisher_ = nh_.advertise<mrs_msgs::FutureTrajectory>("uav_position", 10);
+  DistanceBetweenUavs_publisher_ = nh_.advertise<trackers_brubotics::DistanceBetweenUavs>("DistanceBetweenUavs", 1);
+  TrajectoryTracking_publisher_ = nh_.advertise<trackers_brubotics::TrajectoryTracking>("TrajectoryTracking", 1);
+  ComputationalTime_publisher_ = nh_.advertise<trackers_brubotics::ComputationalTime>("ComputationalTime", 1);
+  avoidance_pos_publisher_ = nh_.advertise<mrs_msgs::FutureTrajectory>("uav_position", 1);
 
 
 
@@ -656,7 +656,7 @@ void MpcCopyTracker::initialize(const ros::NodeHandle& parent_nh, [[maybe_unused
   }
 
   // create custom publishers
-  goal_pose_publisher_ = nh_.advertise<mrs_msgs::ReferenceStamped>("goal_pose", 10);
+  goal_pose_publisher_ = nh_.advertise<mrs_msgs::ReferenceStamped>("goal_pose", 1);
 
   // | --------------- dynamic reconfigure server --------------- |
 
