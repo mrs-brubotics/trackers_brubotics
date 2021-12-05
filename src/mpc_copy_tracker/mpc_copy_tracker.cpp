@@ -1210,21 +1210,31 @@ const mrs_msgs::PositionCommand::ConstPtr MpcCopyTracker::update(const mrs_msgs:
       double other_uav_pos_z = other_uavs_positions_[other_uav_name].points[0].z;
       Eigen::Vector3d pos_other_uav(other_uav_pos_x, other_uav_pos_y, other_uav_pos_z);
       // compute minimum distance from this_uav to all other_uav:
-      double min_distance_this_uav2other_uav_temp = (pos_this_uav - pos_other_uav).norm()-2*Ra_; 
-      min_distance_this_uav2other_uav = std::min(min_distance_this_uav2other_uav, min_distance_this_uav2other_uav_temp);
-      DistanceBetweenUavs_msg_.stamp = uav_state_.header.stamp;
-      DistanceBetweenUavs_msg_.other_uav_name = other_uav_name;
-      DistanceBetweenUavs_msg_.min_distance_this_uav2other_uav = min_distance_this_uav2other_uav;
-      try {
-        DistanceBetweenUavs_publisher_.publish(DistanceBetweenUavs_msg_);
+      double distance_this_uav2other_uav = (pos_this_uav - pos_other_uav).norm()-2*Ra_;
+      DistanceBetweenUavs_msg_.distances_this_uav2other_uavs.push_back(distance_this_uav2other_uav);
+      DistanceBetweenUavs_msg_.other_uav_names.push_back(other_uav_name);
+      if (distance_this_uav2other_uav <= 0.0){ // a collision is detected
+        // trigger elanding
+        deactivate();
       }
-      catch (...) {
-        ROS_ERROR("[MpcCopyTracker]: Exception caught during publishing topic %s.", DistanceBetweenUavs_publisher_.getTopic().c_str());
+      if (distance_this_uav2other_uav < min_distance_this_uav2other_uav){
+        min_distance_this_uav2other_uav = distance_this_uav2other_uav; // min_distance_this_uav2other_uav = std::min(min_distance_this_uav2other_uav, distance_this_uav2other_uav);
+        DistanceBetweenUavs_msg_.min_distance_this_uav2other_uav = min_distance_this_uav2other_uav;
+        DistanceBetweenUavs_msg_.other_uav_name = other_uav_name;
       }
       it++;
     }
+    DistanceBetweenUavs_msg_.stamp = uav_state_.header.stamp;
+    try {
+      DistanceBetweenUavs_publisher_.publish(DistanceBetweenUavs_msg_);
+    }
+    catch (...) {
+      ROS_ERROR("[MpcCopyTracker]: Exception caught during publishing topic %s.", DistanceBetweenUavs_publisher_.getTopic().c_str());
+    }
+    // clear()
+    DistanceBetweenUavs_msg_.distances_this_uav2other_uavs.clear();
+    DistanceBetweenUavs_msg_.other_uav_names.clear();
   }
-  
   // ------------------------
 
 

@@ -2777,7 +2777,8 @@ void DergbryanTracker::DERG_computation(){
       Gamma_sTmin = 0.5*pow((_T_min_-total_mass*common_handlers_->g),2.0)/pow(total_mass,2.0)*(kpxy_+_epsilon_*(1-_epsilon_)*pow(kvxy_,2.0))/(pow(kpxy_,2.0)+pow(kvxy_,2.0)*(kpxy_+_epsilon_*pow(kvxy_,2.0)-2.0*_epsilon_*kpxy_));
     }
     else if (_Lyapunov_type_ == 2){ // Optimally aligned case:
-      double denum = 74.88; // TODO generalize, computed offline for kpxy=3, kdxy=2 and mass=2.40
+      //double denum = 74.88; // TODO generalize, computed offline for kpxy=3, kdxy=2 and mass=2.40 f450
+      double denum = 159.25; // TODO generalize, computed offline for kpxy=3, kdxy=2 and mass=2.40 t650
       Gamma_sTmax = pow((thrust_saturation_physical_-total_mass*common_handlers_->g),2.0)/denum;
       Gamma_sTmax = pow((_T_min_-total_mass*common_handlers_->g),2.0)/denum;
     }
@@ -4104,12 +4105,13 @@ void DergbryanTracker::DERG_computation(){
     DSM_total_ = DSM_a_;
   }
 
-  if(!_enable_dsm_sT_ && !_enable_dsm_sw_ && !_enable_dsm_a_){ // if all of the DSMs are disabled, TODO add other DSMs here
+  if((!_enable_dsm_sT_ && !_enable_dsm_sw_ && !_enable_dsm_a_) || (_constant_dsm_>=0.0)){ // if all of the DSMs are disabled or a positive cosntant DSM is added, TODO add other DSMs here
     DSM_total_ = _constant_dsm_;
+    // in case the _constant_dsm_ is negative it will be set to 0 in the next if
   }
 
-  if(DSM_total_ < 0){ // make sure it is >= 0
-    DSM_total_ = 0;
+  if(DSM_total_ < 0.0){ // make sure it is >= 0
+    DSM_total_ = 0.0;
   }
 
   
@@ -4275,7 +4277,7 @@ void DergbryanTracker::DERG_computation(){
     // Colision avoidance:
     double min_distance_this_uav2other_uav = 100000; // initialized with very high value
     // this uav:
-    Eigen::Vector3d pos_this_uav(predicted_poses_out_.poses[0].position.x, predicted_poses_out_.poses[0].position.y, predicted_poses_out_.poses[0].position.z);
+    Eigen::Vector3d pos_this_uav(uav_x_, uav_y_, uav_z_);
     // other uavs:
     std::map<std::string, mrs_msgs::FutureTrajectory>::iterator it = other_uavs_positions_.begin();
     while ((it != other_uavs_positions_.end()) ) {
@@ -4300,7 +4302,10 @@ void DergbryanTracker::DERG_computation(){
       double distance_this_uav2other_uav = (pos_this_uav - pos_other_uav).norm()-2*Ra_;
       DistanceBetweenUavs_msg_.distances_this_uav2other_uavs.push_back(distance_this_uav2other_uav);
       DistanceBetweenUavs_msg_.other_uav_names.push_back(other_uav_name);
-      
+      if (distance_this_uav2other_uav <= 0.0){ // a collision is detected
+        // trigger elanding
+        deactivate();
+      }
       if (distance_this_uav2other_uav < min_distance_this_uav2other_uav){
         min_distance_this_uav2other_uav = distance_this_uav2other_uav; // min_distance_this_uav2other_uav = std::min(min_distance_this_uav2other_uav, distance_this_uav2other_uav);
         DistanceBetweenUavs_msg_.min_distance_this_uav2other_uav = min_distance_this_uav2other_uav;

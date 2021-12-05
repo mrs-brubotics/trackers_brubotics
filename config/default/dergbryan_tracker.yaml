@@ -39,7 +39,7 @@ dynamic_safety_margin: # BE CAREFUL!
     w: 27
     o: 27 
   enable_dsm:
-    constant_dsm: 10 # 10 # used dsm if all dsms below are disabled
+    constant_dsm: -1.0 # 10 # used dsm if all dsms below are disabled or if the value is >= 0.0
     sT: true
     sw: true
     a: true
