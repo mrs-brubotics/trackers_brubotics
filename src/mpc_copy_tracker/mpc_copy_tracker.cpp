@@ -410,7 +410,7 @@ private:
   std::stack<clock_t> tictoc_stack; 
 
   // trajectory diagnostic parameters:
-  double arrival_norm_pos_error_treshold_ = 0.50; // [m]
+  double arrival_norm_pos_error_treshold_ = 1.0; // 0.50 is too short as long as SS errors take long to converge since this leads to overestimated setling time; // [m]
   double arrival_period_treshold_ = 5.0; // [s]
   bool arrived_at_traj_end_point_ = false; // false by default
   geometry_msgs::Point traj_start_point_;
@@ -1234,6 +1234,7 @@ const mrs_msgs::PositionCommand::ConstPtr MpcCopyTracker::update(const mrs_msgs:
     // clear()
     DistanceBetweenUavs_msg_.distances_this_uav2other_uavs.clear();
     DistanceBetweenUavs_msg_.other_uav_names.clear();
+
   }
   // ------------------------
 
@@ -1241,14 +1242,14 @@ const mrs_msgs::PositionCommand::ConstPtr MpcCopyTracker::update(const mrs_msgs:
 
 
 
-
-  ComputationalTime_msg_.stamp = uav_state_.header.stamp;
-  try {
-    ComputationalTime_publisher_.publish(ComputationalTime_msg_);
-  }
-  catch (...) {
-    ROS_ERROR("[MpcCopyTracker]: Exception caught during publishing topic %s.", ComputationalTime_publisher_.getTopic().c_str());
-  }
+  // publishing here can leas to forgotten or or additionaldata in the parts message. publishing is now done right after the message is filled.
+  // ComputationalTime_msg_.stamp = uav_state_.header.stamp;
+  // try {
+  //   ComputationalTime_publisher_.publish(ComputationalTime_msg_);
+  // }
+  // catch (...) {
+  //   ROS_ERROR("[MpcCopyTracker]: Exception caught during publishing topic %s.", ComputationalTime_publisher_.getTopic().c_str());
+  // }
 
 
   // Clear (i.e. empty) the arrays of:
@@ -1256,6 +1257,8 @@ const mrs_msgs::PositionCommand::ConstPtr MpcCopyTracker::update(const mrs_msgs:
   // TODO maybe then better to place these in the try catch statement right after they are published.
   //  - Predictions computed in trajectory_prediction_general() and used in DERG_computation():
   uav_posistion_out_.points.clear();
+
+
 
   // u have to return a position command
   // can set the jerk to 0
@@ -3355,18 +3358,18 @@ void MpcCopyTracker::timerMPC(const ros::TimerEvent& event) {
   //-------------------
   // added by bryan:
   // Computational time:
-  // method Kelly:
-  start_pred_ = std::chrono::system_clock::now(); 
-  // method group A:
-  tictoc_stack.push(clock()); 
-  // last method of https://www.geeksforgeeks.org/measure-execution-time-with-high-precision-in-c-c/
-  auto start = std::chrono::high_resolution_clock::now(); 
-  // unsync the I/O of C and C++.
-  std::ios_base::sync_with_stdio(false);
-  // method https://answers.ros.org/question/166286/measure-codenode-running-time/: 
-  ros::WallTime WallTime_start, WallTime_end;
-  WallTime_start = ros::WallTime::now();
-  // method: clock() CPU time: https://stackoverflow.com/questions/20167685/measuring-cpu-time-in-c/43800564
+  // // method Kelly:
+  // start_pred_ = std::chrono::system_clock::now(); 
+  // // method group A:
+  // tictoc_stack.push(clock()); 
+  // // last method of https://www.geeksforgeeks.org/measure-execution-time-with-high-precision-in-c-c/
+  // auto start = std::chrono::high_resolution_clock::now(); 
+  // // unsync the I/O of C and C++.
+  // std::ios_base::sync_with_stdio(false);
+  // // method https://answers.ros.org/question/166286/measure-codenode-running-time/: 
+  // ros::WallTime WallTime_start, WallTime_end;
+  // WallTime_start = ros::WallTime::now();
+  // // method: clock() CPU time: https://stackoverflow.com/questions/20167685/measuring-cpu-time-in-c/43800564
   std::clock_t c_start = std::clock();
   //----------------
 
@@ -3468,26 +3471,41 @@ void MpcCopyTracker::timerMPC(const ros::TimerEvent& event) {
   // ---------------
   // added by bryan
   // Computational time:
-  // method Kelly:
-  end_pred_ = std::chrono::system_clock::now();
-  ComputationalTime_pred_ = end_pred_ - start_pred_;
-  //ComputationalTime_msg_.trajectory_predictions = ComputationalTime_pred_.count(); 
-  // method group A:
-  //ComputationalTime_msg_.trajectory_predictions = (double)(clock()- tictoc_stack.top())/CLOCKS_PER_SEC; 
-  //ROS_INFO_STREAM("Prediction calculation took = \n "<< (double)(clock()- tictoc_stack.top())/CLOCKS_PER_SEC << "seconds.");
-  tictoc_stack.pop();
-  // last method of: https://www.geeksforgeeks.org/measure-execution-time-with-high-precision-in-c-c/:
-  auto end_high_res_clock = std::chrono::high_resolution_clock::now();
-  double time_taken = std::chrono::duration_cast<std::chrono::nanoseconds>(end_high_res_clock - start).count();
-  time_taken *= 1e-9;
-  //ComputationalTime_msg_.trajectory_predictions = time_taken;
-  // method: https://answers.ros.org/question/166286/measure-codenode-running-time/
-  WallTime_end = ros::WallTime::now();
-  //ComputationalTime_msg_.trajectory_predictions = (WallTime_end - WallTime_start).toNSec() * 1e-9;
-  // method: clock() CPU time, https://stackoverflow.com/questions/20167685/measuring-cpu-time-in-c/43800564:
+  // // method Kelly:
+  // end_pred_ = std::chrono::system_clock::now();
+  // ComputationalTime_pred_ = end_pred_ - start_pred_;
+  // //ComputationalTime_msg_.trajectory_predictions = ComputationalTime_pred_.count(); 
+  // // method group A:
+  // //ComputationalTime_msg_.trajectory_predictions = (double)(clock()- tictoc_stack.top())/CLOCKS_PER_SEC; 
+  // //ROS_INFO_STREAM("Prediction calculation took = \n "<< (double)(clock()- tictoc_stack.top())/CLOCKS_PER_SEC << "seconds.");
+  // tictoc_stack.pop();
+  // // last method of: https://www.geeksforgeeks.org/measure-execution-time-with-high-precision-in-c-c/:
+  // auto end_high_res_clock = std::chrono::high_resolution_clock::now();
+  // double time_taken = std::chrono::duration_cast<std::chrono::nanoseconds>(end_high_res_clock - start).count();
+  // time_taken *= 1e-9;
+  // //ComputationalTime_msg_.trajectory_predictions = time_taken;
+  // // method: https://answers.ros.org/question/166286/measure-codenode-running-time/
+  // WallTime_end = ros::WallTime::now();
+  // //ComputationalTime_msg_.trajectory_predictions = (WallTime_end - WallTime_start).toNSec() * 1e-9;
+  // // method: clock() CPU time, https://stackoverflow.com/questions/20167685/measuring-cpu-time-in-c/43800564:
+  // std::clock_t c_end = std::clock();
+  // ComputationalTime_msg_.trajectory_predictions = (c_end-c_start) / (double)CLOCKS_PER_SEC;
   std::clock_t c_end = std::clock();
-  ComputationalTime_msg_.trajectory_predictions = (c_end-c_start) / (double)CLOCKS_PER_SEC;
+  double part = 1000.0*(c_end-c_start) / (double)CLOCKS_PER_SEC;
+  ComputationalTime_msg_.parts.push_back(part);
+    std::string name_part = "MPC routine";
+  ComputationalTime_msg_.name_parts.push_back(name_part);
 
+  ComputationalTime_msg_.stamp = uav_state_.header.stamp;
+  try {
+    ComputationalTime_publisher_.publish(ComputationalTime_msg_);
+  }
+  catch (...) {
+    ROS_ERROR("[MpcCopyTracker]: Exception caught during publishing topic %s.", ComputationalTime_publisher_.getTopic().c_str());
+  }
+  //
+  ComputationalTime_msg_.parts.clear();
+  ComputationalTime_msg_.name_parts.clear();
   //---------------
 
   // | ----------------- acumulate the MPC delay ---------------- |

@@ -484,7 +484,7 @@ private:
   int    trajectory_count_         = 0;  // counts how many trajectories we have received
 
   // trajectory diagnostic parameters:
-  double arrival_norm_pos_error_treshold_ = 0.50; // [m]
+  double arrival_norm_pos_error_treshold_ = 1.0; // 0.50 is too short as long as SS errors take long to converge since this leads to overestimated setling time; // [m]
   double arrival_period_treshold_ = 5.0; // [s]
   bool arrived_at_traj_end_point_ = false; // false by default
   geometry_msgs::Point traj_start_point_;
@@ -1222,7 +1222,9 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
   uav_applied_ref_out_.points.clear();
   uav_posistion_out_.points.clear();
   future_trajectory_out_.points.clear();
-  
+  //
+  ComputationalTime_msg_.parts.clear();
+  ComputationalTime_msg_.name_parts.clear();
 
   // return a position command:
   return mrs_msgs::PositionCommand::ConstPtr(new mrs_msgs::PositionCommand(position_cmd));
@@ -1458,17 +1460,17 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
 void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand position_cmd, double uav_heading, const mrs_msgs::AttitudeCommand::ConstPtr &last_attitude_cmd){
   
   // Computational time:
-  // method Kelly:
-  start_pred_ = std::chrono::system_clock::now(); 
-  // method group A:
-  tictoc_stack.push(clock()); 
-  // last method of https://www.geeksforgeeks.org/measure-execution-time-with-high-precision-in-c-c/
-  auto start = std::chrono::high_resolution_clock::now(); 
-  // unsync the I/O of C and C++.
-  std::ios_base::sync_with_stdio(false);
-  // method https://answers.ros.org/question/166286/measure-codenode-running-time/: 
-  ros::WallTime WallTime_start, WallTime_end;
-  WallTime_start = ros::WallTime::now();
+  // // method Kelly:
+  // start_pred_ = std::chrono::system_clock::now(); 
+  // // method group A:
+  // tictoc_stack.push(clock()); 
+  // // last method of https://www.geeksforgeeks.org/measure-execution-time-with-high-precision-in-c-c/
+  // auto start = std::chrono::high_resolution_clock::now(); 
+  // // unsync the I/O of C and C++.
+  // std::ios_base::sync_with_stdio(false);
+  // // method https://answers.ros.org/question/166286/measure-codenode-running-time/: 
+  // ros::WallTime WallTime_start, WallTime_end;
+  // WallTime_start = ros::WallTime::now();
   // method: clock() CPU time: https://stackoverflow.com/questions/20167685/measuring-cpu-time-in-c/43800564
   std::clock_t c_start = std::clock();
 
@@ -2613,25 +2615,32 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
   } // end for loop prediction
 
   // Computational time:
-  // method Kelly:
-  end_pred_ = std::chrono::system_clock::now();
-  ComputationalTime_pred_ = end_pred_ - start_pred_;
-  //ComputationalTime_msg_.trajectory_predictions = ComputationalTime_pred_.count(); 
-  // method group A:
-  //ComputationalTime_msg_.trajectory_predictions = (double)(clock()- tictoc_stack.top())/CLOCKS_PER_SEC; 
-  //ROS_INFO_STREAM("Prediction calculation took = \n "<< (double)(clock()- tictoc_stack.top())/CLOCKS_PER_SEC << "seconds.");
-  tictoc_stack.pop();
-  // last method of: https://www.geeksforgeeks.org/measure-execution-time-with-high-precision-in-c-c/:
-  auto end = std::chrono::high_resolution_clock::now();
-  double time_taken = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count();
-  time_taken *= 1e-9;
-  //ComputationalTime_msg_.trajectory_predictions = time_taken;
-  // method: https://answers.ros.org/question/166286/measure-codenode-running-time/
-  WallTime_end = ros::WallTime::now();
-  //ComputationalTime_msg_.trajectory_predictions = (WallTime_end - WallTime_start).toNSec() * 1e-9;
-  // method: clock() CPU time, https://stackoverflow.com/questions/20167685/measuring-cpu-time-in-c/43800564:
+  // // method Kelly:
+  // end_pred_ = std::chrono::system_clock::now();
+  // ComputationalTime_pred_ = end_pred_ - start_pred_;
+  // //ComputationalTime_msg_.trajectory_predictions = ComputationalTime_pred_.count(); 
+  // // method group A:
+  // //ComputationalTime_msg_.trajectory_predictions = (double)(clock()- tictoc_stack.top())/CLOCKS_PER_SEC; 
+  // //ROS_INFO_STREAM("Prediction calculation took = \n "<< (double)(clock()- tictoc_stack.top())/CLOCKS_PER_SEC << "seconds.");
+  // tictoc_stack.pop();
+  // // last method of: https://www.geeksforgeeks.org/measure-execution-time-with-high-precision-in-c-c/:
+  // auto end = std::chrono::high_resolution_clock::now();
+  // double time_taken = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count();
+  // time_taken *= 1e-9;
+  // //ComputationalTime_msg_.trajectory_predictions = time_taken;
+  // // method: https://answers.ros.org/question/166286/measure-codenode-running-time/
+  // WallTime_end = ros::WallTime::now();
+  // //ComputationalTime_msg_.trajectory_predictions = (WallTime_end - WallTime_start).toNSec() * 1e-9;
+  // // method: clock() CPU time, https://stackoverflow.com/questions/20167685/measuring-cpu-time-in-c/43800564:
+  // std::clock_t c_end = std::clock();
+  // ComputationalTime_msg_.trajectory_predictions = (c_end-c_start) / (double)CLOCKS_PER_SEC;
+
   std::clock_t c_end = std::clock();
-  ComputationalTime_msg_.trajectory_predictions = (c_end-c_start) / (double)CLOCKS_PER_SEC;
+  //std::setprecision(2);
+  double part = 1000.0*(c_end-c_start) / (double)CLOCKS_PER_SEC;
+  ComputationalTime_msg_.parts.push_back(part);
+  std::string name_part = "trajectory prediction";
+  ComputationalTime_msg_.name_parts.push_back(name_part);
   // Publishers:
   // avoid publishing all trajectory predictions since not required for control, only useful for post-analysis:
 
@@ -2710,9 +2719,9 @@ void DergbryanTracker::DERG_computation(){
 
   // Computational time:
   // method Kelly
-  start_ERG_ = std::chrono::system_clock::now();
+  // start_ERG_ = std::chrono::system_clock::now();
   // TODO: implement computational time calc also via other methods as done for traj predictions
-
+  std::clock_t c_start = std::clock();
   // | -------------------------------------------------------------------------- |
   //                  ______________________________________________
   //                 | Navigation Field (NF) + Dynamic Safety Margin|
@@ -2730,8 +2739,15 @@ void DergbryanTracker::DERG_computation(){
   // 
   double V_Lyap;
   Eigen::MatrixXd P_Lyap(6,6);
+  Eigen::VectorXd state_vec_V_Lyap(6,1);
   if (_DSM_type_== 1){ //Level-set based
   // TODO: consider making a function for the invariant sets as was done for the trajectory predictions
+    state_vec_V_Lyap << uav_x_ - applied_ref_x_,
+                        uav_y_ - applied_ref_y_,
+                        uav_z_ - applied_ref_z_,
+                        uav_state_.velocity.linear.x,
+                        uav_state_.velocity.linear.y,
+                        uav_state_.velocity.linear.z;
     if (_Lyapunov_type_ == 1){
     // TODO compute analytic expression for kxy different from kz. The point is that the theory assumes the worst case (min Gamma) that works for arbitrary directions.
     // So one should compute for all xyz direction and take the worst case.
@@ -2742,24 +2758,8 @@ void DergbryanTracker::DERG_computation(){
           0.0, _epsilon_*kvxy_, 0.0, 0.0, 1.0, 0.0,
           0.0, 0.0, _epsilon_*kvz_, 0.0, 0.0, 1.0;
     P_Lyap = 0.5*P_Lyap;
+    V_Lyap = state_vec_V_Lyap.transpose()*P_Lyap*state_vec_V_Lyap;
     }
-    else if (_Lyapunov_type_ == 2){
-      // TODO generalize, computed offline for kpxy=3, kdxy=2 and mass=2.40
-      P_Lyap << 0.7248, 0.0, 0.0, 0.4240, 0.0, 0.0,
-                      0.0, 0.7248, 0.0, 0.0, 0.4240, 0.0,
-                      0.0, 0.0, 0.7248, 0.0, 0.0, 0.4240,
-                      0.4240, 0.0, 0.0, 0.3510, 0.0, 0.0,
-                      0.0, 0.4240, 0.0, 0.0, 0.3510, 0.0,
-                      0.0, 0.0, 0.4240, 0.0, 0.0, 0.3510;
-    }
-    Eigen::VectorXd temp(6,1);
-    temp << uav_x_ - applied_ref_x_,
-            uav_y_ - applied_ref_y_,
-            uav_z_ - applied_ref_z_,
-            uav_state_.velocity.linear.x,
-            uav_state_.velocity.linear.y,
-            uav_state_.velocity.linear.z;
-    V_Lyap = temp.transpose()*P_Lyap*temp;
   }
 
   // | ------------------------ control input constraints ----------------------- |
@@ -2774,15 +2774,28 @@ void DergbryanTracker::DERG_computation(){
       // TODO compute analytic expression for kxy different from kz. The point is that the theory assumes the worst case (min Gamma) that works for arbitrary directions.
       // So one should compute for all xyz direction and take the worst case.
       Gamma_sTmax = 0.5*pow((thrust_saturation_physical_-total_mass*common_handlers_->g),2.0)/pow(total_mass,2.0)*(kpxy_+_epsilon_*(1-_epsilon_)*pow(kvxy_,2.0))/(pow(kpxy_,2.0)+pow(kvxy_,2.0)*(kpxy_+_epsilon_*pow(kvxy_,2.0)-2.0*_epsilon_*kpxy_));
-      Gamma_sTmin = 0.5*pow((_T_min_-total_mass*common_handlers_->g),2.0)/pow(total_mass,2.0)*(kpxy_+_epsilon_*(1-_epsilon_)*pow(kvxy_,2.0))/(pow(kpxy_,2.0)+pow(kvxy_,2.0)*(kpxy_+_epsilon_*pow(kvxy_,2.0)-2.0*_epsilon_*kpxy_));
+      Gamma_sTmin = 0.5*pow((_T_min_-total_mass*common_handlers_->g),2.0)/pow(total_mass,2.0)*(kpxy_+_epsilon_*(1.0-_epsilon_)*pow(kvxy_,2.0))/(pow(kpxy_,2.0)+pow(kvxy_,2.0)*(kpxy_+_epsilon_*pow(kvxy_,2.0)-2.0*_epsilon_*kpxy_));
     }
     else if (_Lyapunov_type_ == 2){ // Optimally aligned case:
+      // TODO generalize, computed offline for kpxy=3, kdxy=2 and mass=3.5kg
+      P_Lyap << 0.7248, 0.0, 0.0, 0.4240, 0.0, 0.0,
+                0.0, 0.7248, 0.0, 0.0, 0.4240, 0.0,
+                0.0, 0.0, 0.7248, 0.0, 0.0, 0.4240,
+                0.4240, 0.0, 0.0, 0.3510, 0.0, 0.0,
+                0.0, 0.4240, 0.0, 0.0, 0.3510, 0.0,
+                0.0, 0.0, 0.4240, 0.0, 0.0, 0.3510;
+      V_Lyap = state_vec_V_Lyap.transpose()*P_Lyap*state_vec_V_Lyap;
       //double denum = 74.88; // TODO generalize, computed offline for kpxy=3, kdxy=2 and mass=2.40 f450
-      double denum = 159.25; // TODO generalize, computed offline for kpxy=3, kdxy=2 and mass=2.40 t650
+      double denum = 159.25; // TODO generalize, computed offline for kpxy=3, kdxy=2 and mass=3.50 t650
       Gamma_sTmax = pow((thrust_saturation_physical_-total_mass*common_handlers_->g),2.0)/denum;
-      Gamma_sTmax = pow((_T_min_-total_mass*common_handlers_->g),2.0)/denum;
+      Gamma_sTmin = pow((_T_min_-total_mass*common_handlers_->g),2.0)/denum;
     }
-    DSM_sT_ = _kappa_sT_*(std::min(Gamma_sTmax,Gamma_sTmin) - V_Lyap)/Gamma_sTmax; // TODO adapt to account for lower saturation limit too
+    DSM_sT_ = _kappa_sT_*(std::min(Gamma_sTmax,Gamma_sTmin) - V_Lyap)/std::min(Gamma_sTmax,Gamma_sTmin);
+    
+    // double DSM_sT_max = _kappa_sT_*(Gamma_sTmax - V_Lyap)/Gamma_sTmax;
+    // double DSM_sT_min = _kappa_sT_*(Gamma_sTmin - V_Lyap)/Gamma_sTmin;
+    // DSM_sT_ = std::min(DSM_sT_max,DSM_sT_min)
+    DSM_msg_.DSM_s = DSM_sT_;
   }
   else if (_DSM_type_== 2){ // Trajectory based
     // TODO: predicted_thrust_out_.poses is not good programming for a scalar. Maybe try using Class: Std_msgs::Float32MultiArray and test plot still work
@@ -2799,6 +2812,7 @@ void DergbryanTracker::DERG_computation(){
       }
     }
     DSM_sT_ = _kappa_sT_*diff_T/(0.5*(thrust_saturation_physical_ - _T_min_)); // scaled DSM in _kappa_sT_*[0, 1] from the average between the lower and upper limit to the respective limits
+     DSM_msg_.DSM_s = DSM_sT_;
   }
   //ROS_INFO_STREAM("DSM_sT_ = \n" << DSM_sT_);
 
@@ -2845,6 +2859,7 @@ void DergbryanTracker::DERG_computation(){
       }
     }
     DSM_sw_ = _kappa_sw_*rel_diff_bodyrate; // scaled DSM in _kappa_sw_*[0, 1]
+    DSM_msg_.DSM_sw = DSM_sw_;
     //DSM_sw_ = _kappa_sw_;
   } else {
     DSM_sw_ = _kappa_sw_; // the highest possible value
@@ -3057,9 +3072,27 @@ void DergbryanTracker::DERG_computation(){
 
     DSM_a_ = 100000; // large value
     double DSM_a_temp;
-   
+    double Gamma_a;
     if (_DSM_type_  == 1){ // Invariant level set based DSM: 
-      double Gamma_a = 0.5*(kpxy_ + _epsilon_*(1.0-_epsilon_)*pow(kvxy_,2.0))*pow(_Sa_max_,2.0); // TODO: compute analytic expression for kxy different rom kz
+      if (_Lyapunov_type_ == 1){
+        Gamma_a = 0.5*(kpxy_ + _epsilon_*(1.0-_epsilon_)*pow(kvxy_,2.0))*pow(_Sa_max_,2.0); // TODO: compute analytic expression for kxy different rom kz
+      }
+      else if (_Lyapunov_type_ == 2){ // Optimally aligned case:
+        // TODO generalize, computed offline for kpxy=3, kdxy=2 and mass=3.5kg
+        P_Lyap << 1.0225, 0.0, 0.0, 0.0620, 0.0, 0.0,
+                  0.0, 1.0225, 0.0, 0.0, 0.0620, 0.0,
+                  0.0, 0.0, 1.0225, 0.0, 0.0, 0.0620,
+                  0.0620, 0.0, 0.0, 0.1706, 0.0, 0.0,
+                  0.0, 0.0620, 0.0, 0.0, 0.1706, 0.0,
+                  0.0, 0.0, 0.0620, 0.0, 0.0, 0.1706;
+        V_Lyap = state_vec_V_Lyap.transpose()*P_Lyap*state_vec_V_Lyap;
+        double denum = 1.0; // TODO always normalized
+        Gamma_a = pow(_Sa_max_,2.0)/denum;
+    }
+      
+      
+      
+      
       double DSM_a_temp = _kappa_a_*(Gamma_a - V_Lyap)/Gamma_a; // in _kappa_a_*[0 , 1]
         
       if (DSM_a_temp < DSM_a_){  
@@ -3246,11 +3279,11 @@ void DergbryanTracker::DERG_computation(){
 
       
     }
-
-  // added by Titouan and Jonathan
-  if(_enable_visualization_){
-    tf::pointEigenToMsg(point_link_star, point_link_star_.position);  // conversion from Eigen::Vector3d to geometry_msgs::Point
-  }
+    DSM_msg_.DSM_a = DSM_a_;
+    // added by Titouan and Jonathan
+    if(_enable_visualization_){
+      tf::pointEigenToMsg(point_link_star, point_link_star_.position);  // conversion from Eigen::Vector3d to geometry_msgs::Point
+    }
   }
 
   if (_DERG_strategy_id_ == 2) {
@@ -3383,11 +3416,11 @@ void DergbryanTracker::DERG_computation(){
 
       
     }
-
-  // added by Titouan and Jonathan
-  if(_enable_visualization_){
-    tf::pointEigenToMsg(point_link_star, point_link_star_.position);  // conversion from Eigen::Vector3d to geometry_msgs::Point
-  }
+    DSM_msg_.DSM_a = DSM_a_;
+    // added by Titouan and Jonathan
+    if(_enable_visualization_){
+      tf::pointEigenToMsg(point_link_star, point_link_star_.position);  // conversion from Eigen::Vector3d to geometry_msgs::Point
+    }
   }
     if (_DERG_strategy_id_ == 3) {
     /* D-ERG strategy 3: a tube of variable length _Sa_long_ and fixed width _Sa_perp_max_. 
@@ -3600,11 +3633,11 @@ void DergbryanTracker::DERG_computation(){
       //it2++;
       //it3++;
     }
-
-  // added by Titouan and Jonathan
-  if(_enable_visualization_){
-    tf::pointEigenToMsg(point_link_star, point_link_star_.position);  // conversion from Eigen::Vector3d to geometry_msgs::Point
-  }
+    DSM_msg_.DSM_a = DSM_a_;
+    // added by Titouan and Jonathan
+    if(_enable_visualization_){
+      tf::pointEigenToMsg(point_link_star, point_link_star_.position);  // conversion from Eigen::Vector3d to geometry_msgs::Point
+    }
   }
 
     if (_DERG_strategy_id_ == 4 && _DSM_type_== 2){ // Trajectory based) {
@@ -3878,10 +3911,11 @@ void DergbryanTracker::DERG_computation(){
           // TODO later NF_a_nco =  
         }
       }
-  // added by Titouan and Jonathan
-  if(_enable_visualization_){
-    tf::pointEigenToMsg(point_link_star, point_link_star_.position);  // conversion from Eigen::Vector3d to geometry_msgs::Point
-  }
+    DSM_msg_.DSM_a = DSM_a_;
+    // added by Titouan and Jonathan
+    if(_enable_visualization_){
+      tf::pointEigenToMsg(point_link_star, point_link_star_.position);  // conversion from Eigen::Vector3d to geometry_msgs::Point
+    }
   }
 
   if (_DERG_strategy_id_ == 5) {
@@ -4084,6 +4118,7 @@ void DergbryanTracker::DERG_computation(){
       it1++;
     } 
 
+  DSM_msg_.DSM_a = DSM_a_;
   // added by Titouan and Jonathan
   if(_enable_visualization_){
     tf::pointEigenToMsg(point_link_star, point_link_star_.position);  // conversion from Eigen::Vector3d to geometry_msgs::Point
@@ -4186,16 +4221,21 @@ void DergbryanTracker::DERG_computation(){
 
 
   // Computational time:
-  end_ERG_ = std::chrono::system_clock::now();
-  ComputationalTime_ERG_ = end_ERG_ - start_ERG_;
-  ComputationalTime_msg_.ERG = ComputationalTime_ERG_.count();
+  // end_ERG_ = std::chrono::system_clock::now();
+  // ComputationalTime_ERG_ = end_ERG_ - start_ERG_;
+  // ComputationalTime_msg_.ERG = ComputationalTime_ERG_.count();
+
+  std::clock_t c_end = std::clock();
+  double part = 1000.0*(c_end-c_start) / (double)CLOCKS_PER_SEC;
+  ComputationalTime_msg_.parts.push_back(part);
+  std::string name_part = "D-ERG: NF and DSM";
+  ComputationalTime_msg_.name_parts.push_back(name_part);
 
   // Prepare DSM_msg_:
   DSM_msg_.stamp = uav_state_.header.stamp;
   DSM_msg_.DSM = DSM_total_;
-  DSM_msg_.DSM_s = DSM_sT_;
-  DSM_msg_.DSM_sw = DSM_sw_;
-  DSM_msg_.DSM_a = DSM_a_;
+ 
+
   // DSM_msg_.DSM_o = DSM_o_;
   // DSM_msg_.DSM_w = DSM_w_;
 
