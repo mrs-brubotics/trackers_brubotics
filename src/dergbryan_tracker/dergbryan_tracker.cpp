@@ -880,10 +880,10 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
 
 
   // | -------------------------------load--------------------------------|
-  predicted_load_pose_publisher = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_load_poses", 10);
-  predicted_load_vel_publisher = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_load_vels", 10);
+  predicted_load_pose_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_load_poses", 10);
+  predicted_load_vel_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_load_vels", 10);
   //predicted_load_acc_publisher = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_load_accs", 10);
-  predicted_tension_force = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_tension_force", 10);
+  predicted_tension_force_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_tension_force", 10);
 
   predicted_phi_publisher = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_phi", 10);
   predicted_theta_publisher = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_theta", 10);
@@ -899,8 +899,8 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   publisher_tracker_load_vel   = nh2_.advertise<geometry_msgs::Twist>("tracker_load_vel",10);
   publisher_tracker_uav_state   = nh2_.advertise<mrs_msgs::UavState>("tracker_uav_state",10);
   publisher_tracker_load_old_vel   = nh2_.advertise<geometry_msgs::Vector3>("tracker_load_old_vel",10);
-  publisher_tension_force = nh2_.advertise<geometry_msgs::Pose>("tracker_custom_tension_force",10);
-  publisher_tracker_load_acceleration = nh2_.advertise<geometry_msgs::Vector3>("tracker_custom_tracker_load_acceleration",10);
+  //publisher_tension_force = nh2_.advertise<geometry_msgs::Pose>("tracker_custom_tension_force",10);
+  //publisher_tracker_load_acceleration = nh2_.advertise<geometry_msgs::Vector3>("tracker_custom_tracker_load_acceleration",10);
   // custom_publisher_pos_difference_x   = nh2_.advertise<std_msgs::Float32>("pos_difference_x",10);
   // custom_publisher_pos_difference_y   = nh2_.advertise<std_msgs::Float32>("pos_difference_y",10);
 
@@ -1316,7 +1316,8 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
     position_cmd.position.y     = goal_y_;
     position_cmd.position.z     = goal_z_;
     position_cmd.heading        = goal_heading_;
-    trajectory_prediction_general(position_cmd, uav_heading, last_attitude_cmd);
+    trajectory_prediction_general_load(position_cmd, uav_heading, last_attitude_cmd);
+    // trajectory_prediction_general(position_cmd, uav_heading, last_attitude_cmd);
   }
   // Depending on the above case, the applied reference as output to the tracker and input to the controller:
   applied_ref_x_ = position_cmd.position.x;
@@ -1381,6 +1382,7 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
   // Clear (i.e. empty) the arrays of:
   // Note: under communication delay the arrays will be empty and not equal to the last know uav position!
   // TODO maybe then better to place these in the try catch statement right after they are published.
+  
   //  - Predictions computed in trajectory_prediction_general() and used in DERG_computation():
   predicted_poses_out_.poses.clear();
   predicted_velocities_out_.poses.clear();
@@ -1389,6 +1391,23 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
   predicted_attituderate_out_.poses.clear();
   predicted_des_attituderate_out_.poses.clear();
   predicted_tiltangle_out_.poses.clear();
+  
+    //-------------LOAD-------------//
+  predicted_load_poses_out.poses.clear();
+  predicted_load_velocities_out.poses.clear();
+  //predicted_load_accelerations_out.poses.clear();
+  predicted_tension_force_out.poses.clear();
+
+  predicted_phi.poses.clear();
+  predicted_theta.poses.clear();
+  predicted_phi_dot.poses.clear();
+  predicted_theta_dot.poses.clear();
+
+  predicted_q_state_dot_dot_uav_out.poses.clear();
+  predicted_q_state_dot_dot_load_out.poses.clear();    
+  // predicted_phi_dot_dot.poses.clear();
+  // predicted_theta_dot_dot.poses.clear();
+  
   //  - DERG - collision avoidance:
   uav_applied_ref_out_.points.clear();
   uav_posistion_out_.points.clear();
