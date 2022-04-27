@@ -915,6 +915,7 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   publisher_load_velocity_init   = nh2_.advertise<geometry_msgs::Pose>("load_velocity_init",10);
   publisher_load_acceleration_init   = nh2_.advertise<geometry_msgs::Pose>("load_acceleration_init",10);
 
+  run_type = getenv("RUN_TYPE");
   // | ------------------------------------------------------------|
 
 
@@ -1267,6 +1268,38 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
   //   }
   // }
 
+//|---------------------LOAD------------------------------ |//
+    uav_name = getenv("UAV_NAME");
+    
+  if (run_type == "simulation"){
+    // to see how many UAVs there are
+    number_of_uav = getenv("NUMBER_OF_UAV"); // is exported in the session.yaml
+    if (number_of_uav == "2"){
+      if (uav_name == "uav1"){  // to see which UAV it is
+        uav_id = true; //uav 1
+      }else{
+        uav_id = false; //uav 2
+      }
+    }
+  }
+
+    //ROS_INFO_STREAM("RUN_TYPE \n" << run_type );
+    std::string slash = "/";
+    //ROS_INFO_STREAM("UAV_NAME \n" << run_type  );
+    //ROS_INFO_STREAM("old load velocity = \n" << old_load_lin_vel);
+    if (run_type == "simulation")
+    {
+      // subscriber of the simulation
+      //ROS_INFO_STREAM("load velocity 1 = \n" << load_lin_vel_);
+      load_state_sub =  nh_.subscribe("/gazebo/link_states", 1, &DergbryanTracker::loadStatesCallback, this, ros::TransportHints().tcpNoDelay());
+      //ROS_INFO_STREAM("load velocity 2 = \n" << load_lin_vel_);
+    }else{
+      // subscriber of the encoder
+      data_payload_sub = nh_.subscribe(slash.append(uav_name.append("/serial/received_message")), 1, &DergbryanTracker::BacaCallback, this, ros::TransportHints().tcpNoDelay());
+    }
+//|----------------------------------------------------- |//
+
+
   // | ----------------- get the current heading ---------------- |
 
   double uav_heading = 0;
@@ -1293,7 +1326,10 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
   position_cmd.use_heading             = 1;
   position_cmd.use_heading_rate        = 1;
 
-  
+//|---------------------LOAD--------------------- |//
+  load_gains_switch = getenv("LOAD_GAIN_SWITCH");
+//|---------------------------------------------- |//
+
   if (_use_derg_){
     // initially applied_ref_x_, applied_ref_y_, applied_ref_z_ is defined as stay where you are when starting_bool_ = 1;
     position_cmd.position.x     = applied_ref_x_;
@@ -1301,7 +1337,14 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
     position_cmd.position.z     = applied_ref_z_;
     position_cmd.heading        = goal_heading_;
     //tictoc_stack.push(clock());
-    trajectory_prediction_general(position_cmd, uav_heading, last_attitude_cmd);
+    if (load_gains_switch == "true" && payload_spawned){ 
+      ROS_INFO_STREAM("if loadgainswitch and payload_spawned = \n" << true);
+      trajectory_prediction_general_load(position_cmd, uav_heading, last_attitude_cmd);
+    }
+    else{
+      trajectory_prediction_general(position_cmd, uav_heading, last_attitude_cmd);
+    }
+
     //ROS_INFO_STREAM("Prediction calculation took = \n "<< (double)(clock()- tictoc_stack.top())/CLOCKS_PER_SEC << "seconds.");
     //tictoc_stack.pop();
     DERG_computation(); // modifies the applied reference
@@ -1316,7 +1359,13 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
     position_cmd.position.y     = goal_y_;
     position_cmd.position.z     = goal_z_;
     position_cmd.heading        = goal_heading_;
-    trajectory_prediction_general_load(position_cmd, uav_heading, last_attitude_cmd);
+    if ((load_gains_switch == "true") && (payload_spawned)){  
+      trajectory_prediction_general_load(position_cmd, uav_heading, last_attitude_cmd);
+    }
+    else{
+      trajectory_prediction_general(position_cmd, uav_heading, last_attitude_cmd);
+    }
+
     // trajectory_prediction_general(position_cmd, uav_heading, last_attitude_cmd);
   }
   // Depending on the above case, the applied reference as output to the tracker and input to the controller:
@@ -1415,8 +1464,13 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
   //
   ComputationalTime_msg_.parts.clear();
   ComputationalTime_msg_.name_parts.clear();
-
+  
+    //-----------------LOAD-------------//
+  load_vel_time = ros::Time::now();;
+  load_vel_dt = (load_vel_time - last_load_vel_time).toSec();
+  //ROS_INFO_STREAM("Time= \n" << load_vel_dt);
   // return a position command:
+  //-----------------------------------//
   return mrs_msgs::PositionCommand::ConstPtr(new mrs_msgs::PositionCommand(position_cmd));
 }
 //}
@@ -6530,7 +6584,7 @@ std::tuple< Eigen::Vector3d, Eigen::Vector3d> DergbryanTracker::getMinDistDirLin
     load_pose_position_.y = load_pose.position.y;
     load_pose_position_.z = load_pose.position.z;
 
-    // ROS_INFO_STREAM("Load Pose \n" << load_pose );
+    //ROS_INFO_STREAM("payload_spawned \n" << payload_spawned );
 
     // for (int i = 0; i < 3; i++) // to set it to zero when the load hasn't spawn yet
     // {
