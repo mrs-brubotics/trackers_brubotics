@@ -1338,7 +1338,7 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
     position_cmd.heading        = goal_heading_;
     //tictoc_stack.push(clock());
     if (load_gains_switch == "true" && payload_spawned){ 
-      ROS_INFO_STREAM("if loadgainswitch and payload_spawned = \n" << true);
+      //ROS_INFO_STREAM("if loadgainswitch and payload_spawned = \n" << true);
       trajectory_prediction_general_load(position_cmd, uav_heading, last_attitude_cmd);
     }
     else{
@@ -1771,11 +1771,11 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
     
     // | --------------------- initialize body and world integrals --------------------- |
     /* NOTE: this part is added by Bryan, was originally in the controllers activate function */
-      Ib_b_[0] = -last_attitude_cmd->disturbance_bx_b;
-      Ib_b_[1] = -last_attitude_cmd->disturbance_by_b;
+      // Ib_b_[0] = -last_attitude_cmd->disturbance_bx_b;
+      // Ib_b_[1] = -last_attitude_cmd->disturbance_by_b;
 
-      Iw_w_[0] = -last_attitude_cmd->disturbance_wx_w;
-      Iw_w_[1] = -last_attitude_cmd->disturbance_wy_w;
+      // Iw_w_[0] = -last_attitude_cmd->disturbance_wx_w;
+      // Iw_w_[1] = -last_attitude_cmd->disturbance_wy_w;
 
       // ROS_INFO(
       //     "[DergbryanTracker]: setting the mass difference and integrals from the last AttitudeCmd: mass difference: %.2f kg, Ib_b_: %.2f, %.2f N, Iw_w_: "
@@ -1783,7 +1783,7 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
       //     uav_mass_difference_, Ib_b_[0], Ib_b_[1], Iw_w_[0], Iw_w_[1]);
     /* NOTE: TILL HERE*/
 
-    // | ----------------- Thesis B ---------------- |
+    // | -------------------LOAD----------------- |
     // Rpl - position reference load in global frame
     // Rvl - velocity reference load in global frame
     Eigen::Vector3d Rpl = Eigen::Vector3d::Zero(3);
@@ -1806,35 +1806,35 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
     // | --------------------------------- |
 
   // Discrete trajectory prediction using the forward Euler formula's
-  predicted_thrust_out_.header.stamp = ros::Time::now();
+  predicted_thrust_out_.header.stamp = uav_state_.header.stamp; //ros::Time::now();
   predicted_thrust_out_.header.frame_id = uav_state_.header.frame_id;
 
 
-  predicted_poses_out_.header.stamp = ros::Time::now();
+  predicted_poses_out_.header.stamp = uav_state_.header.stamp; //ros::Time::now();
   predicted_poses_out_.header.frame_id = uav_state_.header.frame_id;
-  predicted_velocities_out_.header.stamp = ros::Time::now();
+  predicted_velocities_out_.header.stamp = uav_state_.header.stamp; //ros::Time::now();
   predicted_velocities_out_.header.frame_id = uav_state_.header.frame_id;
   // predicted_accelerations_out.header.stamp = ros::Time::now();
   // predicted_accelerations_out.header.frame_id = uav_state_.header.frame_id;
-  predicted_attituderate_out_.header.stamp = ros::Time::now();
+  predicted_attituderate_out_.header.stamp = uav_state_.header.stamp; //ros::Time::now();
   predicted_attituderate_out_.header.frame_id = uav_state_.header.frame_id;
 
   // Thesis B
-  predicted_load_poses_out.header.stamp = ros::Time::now();
+  predicted_load_poses_out.header.stamp = uav_state_.header.stamp; //ros::Time::now();
   //predicted_load_poses_out.header.frame_id = uav_state_.header.frame_id;
-  predicted_load_velocities_out.header.stamp = ros::Time::now();
-  //predicted_load_velocities_out.header.frame_id = uav_state_.header.frame_id;
+  predicted_load_velocities_out.header.stamp = uav_state_.header.stamp; //ros::Time::now();
+  predicted_load_velocities_out.header.frame_id = uav_state_.header.frame_id;
   //predicted_load_accelerations_out.header.stamp = ros::Time::now();
   //predicted_load_accelerations_out.header.frame_id = uav_state_.header.frame_id;
-  predicted_tension_force_out.header.stamp = ros::Time::now();
+  predicted_tension_force_out.header.stamp = uav_state_.header.stamp; //ros::Time::now();
 
-  predicted_phi.header.stamp = ros::Time::now();
-  predicted_theta.header.stamp = ros::Time::now();
-  predicted_phi_dot.header.stamp = ros::Time::now();
-  predicted_theta_dot.header.stamp = ros::Time::now();
+  predicted_phi.header.stamp = uav_state_.header.stamp; //ros::Time::now();
+  predicted_theta.header.stamp = uav_state_.header.stamp; //ros::Time::now();
+  predicted_phi_dot.header.stamp = uav_state_.header.stamp; //ros::Time::now();
+  predicted_theta_dot.header.stamp = uav_state_.header.stamp; //ros::Time::now();
 
-  predicted_q_state_dot_dot_uav_out.header.stamp = ros::Time::now();
-  predicted_q_state_dot_dot_load_out.header.stamp = ros::Time::now();
+  predicted_q_state_dot_dot_uav_out.header.stamp = uav_state_.header.stamp; //ros::Time::now();
+  predicted_q_state_dot_dot_load_out.header.stamp = uav_state_.header.stamp; //ros::Time::now();
   // predicted_phi_dot_dot.header.stamp = ros::Time::now();
   // predicted_theta_dot_dot.header.stamp = ros::Time::now();
 
