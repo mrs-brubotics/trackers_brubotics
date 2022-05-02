@@ -1819,7 +1819,7 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
   predicted_attituderate_out_.header.stamp = uav_state_.header.stamp; //ros::Time::now();
   predicted_attituderate_out_.header.frame_id = uav_state_.header.frame_id;
 
-  // Thesis B
+  // LOAD
   predicted_load_poses_out.header.stamp = uav_state_.header.stamp; //ros::Time::now();
   //predicted_load_poses_out.header.frame_id = uav_state_.header.frame_id;
   predicted_load_velocities_out.header.stamp = uav_state_.header.stamp; //ros::Time::now();
@@ -1827,12 +1827,10 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
   //predicted_load_accelerations_out.header.stamp = ros::Time::now();
   //predicted_load_accelerations_out.header.frame_id = uav_state_.header.frame_id;
   predicted_tension_force_out.header.stamp = uav_state_.header.stamp; //ros::Time::now();
-
   predicted_phi.header.stamp = uav_state_.header.stamp; //ros::Time::now();
   predicted_theta.header.stamp = uav_state_.header.stamp; //ros::Time::now();
   predicted_phi_dot.header.stamp = uav_state_.header.stamp; //ros::Time::now();
   predicted_theta_dot.header.stamp = uav_state_.header.stamp; //ros::Time::now();
-
   predicted_q_state_dot_dot_uav_out.header.stamp = uav_state_.header.stamp; //ros::Time::now();
   predicted_q_state_dot_dot_load_out.header.stamp = uav_state_.header.stamp; //ros::Time::now();
   // predicted_phi_dot_dot.header.stamp = ros::Time::now();
@@ -1841,21 +1839,23 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
   geometry_msgs::Pose custom_pose;
   geometry_msgs::Pose custom_vel;
   geometry_msgs::Pose custom_acceleration;
+// load
   geometry_msgs::Pose custom_load_pose;
   geometry_msgs::Pose custom_load_vel;
   geometry_msgs::Pose custom_load_acceleration;
-  geometry_msgs::Pose predicted_thrust; 
-  geometry_msgs::Pose predicted_thrust_norm; 
-  geometry_msgs::Pose predicted_attituderate;
   geometry_msgs::Pose custom_tension_force;
-
   geometry_msgs::Pose theta_load_to_publish;
   geometry_msgs::Pose phi_load_to_publish;
   geometry_msgs::Pose theta_dot_load_to_publish;
   geometry_msgs::Pose phi_dot_load_to_publish;
-
   geometry_msgs::Pose predicted_q_state_dot_dot_uav;
   geometry_msgs::Pose predicted_q_state_dot_dot_load;
+//
+
+  geometry_msgs::Pose predicted_thrust; 
+  geometry_msgs::Pose predicted_thrust_norm; 
+  geometry_msgs::Pose predicted_attituderate;
+  
 
   // geometry_msgs::Pose theta_dot_dot_load_to_publish;
   // geometry_msgs::Pose phi_dot_dot_load_to_publish;
@@ -2750,6 +2750,12 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
 
     // ROS_INFO_STREAM("G = \n" << G_vector);
 
+    Eigen::MatrixXd D_matrix = Eigen::MatrixXd::Zero(5, 5); // Adding damping force created by air and non perfect joint.
+    D_matrix(3,3)=10;
+    D_matrix(4,4)=10;
+
+    //ROS_INFO_STREAM("D = \n" << D_matrix);
+
     Eigen::MatrixXd u_vector = Eigen::MatrixXd(5, 1);
     u_vector(0,0) = f[0]; u_vector(1,0) = f[1]; u_vector(2,0) = f[2]; u_vector(3,0) = 0; u_vector(4,0) = 0;
 
@@ -2775,7 +2781,7 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
     q_state_dot(2,0) = uav_state.velocity.linear.z; q_state_dot(3,0) = phi_dot_load_cable; 
     q_state_dot(4,0) = theta_dot_load_cable;
 
-    q_state_dot_dot = (M_matrix.inverse())*(u_vector - V_matrix*q_state_dot - G_vector);
+    q_state_dot_dot = (M_matrix.inverse())*(u_vector - (V_matrix)*q_state_dot - G_vector);
 
     Eigen::Vector3d acceleration_uav;
 
