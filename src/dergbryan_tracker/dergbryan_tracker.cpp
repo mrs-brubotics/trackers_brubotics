@@ -1803,6 +1803,7 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
     }
 
     //ROS_INFO_STREAM("load_position = \n" << Opl);
+    ROS_INFO_STREAM("ReferenceLoad = \n" << Rpl[2]);
     // | --------------------------------- |
 
   // Discrete trajectory prediction using the forward Euler formula's
@@ -2751,8 +2752,8 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
     // ROS_INFO_STREAM("G = \n" << G_vector);
 
     Eigen::MatrixXd D_matrix = Eigen::MatrixXd::Zero(5, 5); // Adding damping force created by air and non perfect joint.
-    D_matrix(3,3)=10;
-    D_matrix(4,4)=10;
+    D_matrix(3,3)=0.2;
+    D_matrix(4,4)=0.2;
 
     //ROS_INFO_STREAM("D = \n" << D_matrix);
 
@@ -2781,7 +2782,7 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
     q_state_dot(2,0) = uav_state.velocity.linear.z; q_state_dot(3,0) = phi_dot_load_cable; 
     q_state_dot(4,0) = theta_dot_load_cable;
 
-    q_state_dot_dot = (M_matrix.inverse())*(u_vector - (V_matrix)*q_state_dot - G_vector);
+    q_state_dot_dot = (M_matrix.inverse())*(u_vector - V_matrix*q_state_dot - G_vector - D_matrix*q_state_dot);
 
     Eigen::Vector3d acceleration_uav;
 
