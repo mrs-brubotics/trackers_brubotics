@@ -2752,8 +2752,8 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
     // ROS_INFO_STREAM("G = \n" << G_vector);
 
     Eigen::MatrixXd D_matrix = Eigen::MatrixXd::Zero(5, 5); // Adding damping force created by air and non perfect joint.
-    D_matrix(3,3)=0.2;
-    D_matrix(4,4)=0.2;
+    D_matrix(3,3)=0.15;
+    D_matrix(4,4)=0.15;
 
     //ROS_INFO_STREAM("D = \n" << D_matrix);
 
