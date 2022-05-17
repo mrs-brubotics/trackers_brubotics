@@ -1803,7 +1803,7 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
     }
 
     //ROS_INFO_STREAM("load_position = \n" << Opl);
-    ROS_INFO_STREAM("ReferenceLoad = \n" << Rpl[2]);
+    // ROS_INFO_STREAM("ReferenceLoad = \n" << Rpl[2]);
     // | --------------------------------- |
 
   // Discrete trajectory prediction using the forward Euler formula's
@@ -3054,7 +3054,7 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
 
         if (res) {
           Ev_fcu_untilted[0] = res.value().vector.x;
-          Ev_fcu_untilted[1] = res.value().vector.x;
+          Ev_fcu_untilted[1] = res.value().vector.x; // ?? why x and not y
         } else {
           ROS_ERROR_THROTTLE(1.0, "[DergbryanTracker]: could not transform the velocity error to fcu_untilted");
         }
