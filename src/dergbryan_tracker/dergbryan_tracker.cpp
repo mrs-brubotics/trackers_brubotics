@@ -1920,7 +1920,7 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
 
       // Thesis b: Test 06/08
       theta_load_cable = asin((load_pose_position.x - uav_state.pose.position.x)/cable_length); 
-      phi_load_cable = asin((load_pose_position.y - uav_state.pose.position.y)/cable_length);
+      phi_load_cable = asin((load_pose_position.y - uav_state.pose.position.y)/cable_length); 
 
       theta_dot_load_cable = pow(1.0 - pow((load_pose_position.x - uav_state.pose.position.x)/cable_length,2.0),-1.0/2.0) 
       * ((load_lin_vel[0] - uav_state.velocity.linear.x)/cable_length); 
@@ -2252,7 +2252,10 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
       Kdl[2] = 0;
     }
     // | ------------------------------------------ |
+// TODO Change the lines above, as useless if since it's redefined just after. Strange.
 
+    // ROS_INFO_STREAM("Kpl = \n" << Kpl);
+    // ROS_INFO_STREAM("Kdl = \n" << Kdl);
 
     // | --------------------- load the gains --------------------- |
     // NOTE: do not move the gains outside the for loop! Due to "Kp = Kp * (_uav_mass_ + uav_mass_difference_);"
@@ -2289,10 +2292,8 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
         Kv[0] = 0;
         Kv[1] = 0;
       }
-
-      if (position_cmd.use_velocity_vertical) {
-        Kv[2] = kvz_;
-      } else if (position_cmd.use_position_vertical) {  // special case: want to control z-pos but not the velocity => at least provide z dampening
+      // special case: want to control z-pos but not the velocity => at least provide z dampening
+      if (position_cmd.use_velocity_vertical || position_cmd.use_position_vertical) {
         Kv[2] = kvz_;
       } else {
         Kv[2] = 0;
@@ -2387,6 +2388,7 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
 
     // OLD Eigen::Vector3d feed_forward      = total_mass * (Eigen::Vector3d(0, 0, _g_) + Ra);
     Eigen::Vector3d feed_forward      = total_mass * (Eigen::Vector3d(0, 0, common_handlers_->g) + Ra);
+    // ROS_INFO_STREAM("Ra = \n" << Ra);
     Eigen::Vector3d position_feedback = -Kp * Ep.array();
     Eigen::Vector3d velocity_feedback = -Kv * Ev.array();
     Eigen::Vector3d integral_feedback;
@@ -2431,6 +2433,7 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
     
     // | --------------- Thesis B --------------- |
     //Thesis B: step 6: calculate f
+    
     Eigen::Vector3d f = position_load_feedback + velocity_load_feedback + position_feedback + velocity_feedback + feed_forward ;
     // ROS_INFO_STREAM("f = \n" << f);
     // ROS_INFO_STREAM("position_load_feedback = \n" << position_load_feedback);
@@ -2542,7 +2545,7 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
     f_norm[1] = sin(theta) * sin(phi);
     f_norm[2] = cos(theta);
 
-    // | ------------- construct the rotational matrix ------------ |
+    // | ------------- construct the (desired) rotational matrix ------------ |
 
     Eigen::Matrix3d Rd;
 
@@ -2628,6 +2631,13 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
     /* orientation error */
     Eigen::Matrix3d E = 0.5 * (Rd.transpose() * R - R.transpose() * Rd);
 
+  // | -----------------LOAD-------------------------------- |
+    // Eigen::Matrix3d E = Eigen::Matrix3d::Zero();
+
+    // if (!position_cmd.use_attitude_rate) {
+    //   E = 0.5 * (Rd.transpose() * R - R.transpose() * Rd);
+    // }
+
     Eigen::Vector3d Eq;
 
     // clang-format off
@@ -2698,54 +2708,54 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
     //-------------based on new EOM with angles----------------//
 
     Eigen::MatrixXd M_matrix = Eigen::MatrixXd(5, 5);
-    M_matrix(0,0) = _uav_mass_ + load_mass_; M_matrix(0,1) = 0; M_matrix(0,2) = 0; 
-    M_matrix(0,3) = 0; M_matrix(0,4) = cable_length*load_mass_*cos(theta_load_cable);
+    M_matrix(0,0) = _uav_mass_ + load_mass_; M_matrix(0,1) = 0.0; M_matrix(0,2) = 0.0; 
+    M_matrix(0,3) = 0.0; M_matrix(0,4) = cable_length*load_mass_*cos(theta_load_cable);
     
-    M_matrix(1,0) = 0; M_matrix(1,1) = _uav_mass_ + load_mass_; M_matrix(1,2) = 0; 
+    M_matrix(1,0) = 0.0; M_matrix(1,1) = _uav_mass_ + load_mass_; M_matrix(1,2) = 0.0; 
     M_matrix(1,3) = -cable_length*load_mass_*cos(phi_load_cable)*cos(theta_load_cable); 
     M_matrix(1,4) = cable_length*load_mass_*sin(phi_load_cable)*sin(theta_load_cable);
     
-    M_matrix(2,0) = 0; M_matrix(2,1) = 0; M_matrix(2,2) = _uav_mass_ + load_mass_; 
+    M_matrix(2,0) = 0.0; M_matrix(2,1) = 0.0; M_matrix(2,2) = _uav_mass_ + load_mass_; 
     M_matrix(2,3) = -cable_length*load_mass_*cos(theta_load_cable)*sin(phi_load_cable); 
     M_matrix(2,4) = -cable_length*load_mass_*cos(phi_load_cable)*sin(theta_load_cable);
     
-    M_matrix(3,0) = 0; M_matrix(3,1) = -cable_length*load_mass_*cos(phi_load_cable)*cos(theta_load_cable); 
+    M_matrix(3,0) = 0.0; M_matrix(3,1) = -cable_length*load_mass_*cos(phi_load_cable)*cos(theta_load_cable); 
     M_matrix(3,2) = -cable_length*load_mass_*sin(phi_load_cable)*cos(theta_load_cable); 
-    M_matrix(3,3) = pow(cable_length,2.0)*load_mass_*(cos(theta_load_cable))*(cos(theta_load_cable)); M_matrix(3,4) = 0;
+    M_matrix(3,3) = pow(cable_length,2.0)*load_mass_*(cos(theta_load_cable))*(cos(theta_load_cable)); M_matrix(3,4) = 0.0;
     
     M_matrix(4,0) = cable_length*load_mass_*cos(theta_load_cable); 
     M_matrix(4,1) = cable_length*load_mass_*sin(phi_load_cable)*sin(theta_load_cable); 
     M_matrix(4,2) = -cable_length*load_mass_*cos(phi_load_cable)*sin(theta_load_cable); 
-    M_matrix(4,3) = 0; M_matrix(4,4) = pow(cable_length,2.0)*load_mass_;
+    M_matrix(4,3) = 0.0; M_matrix(4,4) = pow(cable_length,2.0)*load_mass_;
     // ROS_INFO_STREAM("M_inverse = \n" << M_matrix.inverse());
 
     Eigen::MatrixXd V_matrix = Eigen::MatrixXd(5, 5);
-    V_matrix(0,0) = 0; V_matrix(0,1) = 0; V_matrix(0,2) = 0; V_matrix(0,3) = 0; 
+    V_matrix(0,0) = 0.0; V_matrix(0,1) = 0.0; V_matrix(0,2) = 0.0; V_matrix(0,3) = 0.0; 
     V_matrix(0,4) = -cable_length*theta_dot_load_cable*load_mass_*sin(theta_load_cable);
 
-    V_matrix(1,0) = 0; V_matrix(1,1) = 0; V_matrix(1,2) = 0; 
+    V_matrix(1,0) = 0.0; V_matrix(1,1) = 0.0; V_matrix(1,2) = 0.0; 
     V_matrix(1,3) = cable_length*load_mass_*(phi_dot_load_cable*sin(phi_load_cable)*cos(theta_load_cable) 
     + theta_dot_load_cable*cos(phi_load_cable)*sin(theta_load_cable)); 
     V_matrix(1,4) = cable_length*load_mass_*(phi_dot_load_cable*cos(phi_load_cable)*sin(theta_load_cable) 
     + theta_dot_load_cable*sin(phi_load_cable)*cos(theta_load_cable));
 
-    V_matrix(2,0) = 0; V_matrix(2,1) = 0; V_matrix(2,2) = 0; 
+    V_matrix(2,0) = 0.0; V_matrix(2,1) = 0.0; V_matrix(2,2) = 0.0; 
     V_matrix(2,3) = -cable_length*load_mass_*(phi_dot_load_cable*cos(phi_load_cable)*cos(theta_load_cable) 
     - theta_dot_load_cable*sin(phi_load_cable)*sin(theta_load_cable)); 
     V_matrix(2,4) = -cable_length*load_mass_*(theta_dot_load_cable*cos(phi_load_cable)*cos(theta_load_cable) 
     - phi_dot_load_cable*sin(phi_load_cable)*sin(theta_load_cable));
 
-    V_matrix(3,0) = 0; V_matrix(3,1) = 0; V_matrix(3,2) = 0; 
+    V_matrix(3,0) = 0.0; V_matrix(3,1) = 0.0; V_matrix(3,2) = 0.0; 
     V_matrix(3,3) = (-1.0/2.0)*pow(cable_length,2.0)*theta_dot_load_cable*load_mass_*sin(2.0*theta_load_cable); 
     V_matrix(3,4) = (-1.0/2.0)*pow(cable_length,2.0)*phi_dot_load_cable*load_mass_*sin(2.0*theta_load_cable);
     
-    V_matrix(4,0) = 0; V_matrix(4,1) = 0; V_matrix(4,2) = 0; 
-    V_matrix(4,3) = (1.0/2.0)*pow(cable_length,2.0)*phi_dot_load_cable*load_mass_*sin(2.0*theta_load_cable); V_matrix(4,4) = 0;
+    V_matrix(4,0) = 0.0; V_matrix(4,1) = 0.0; V_matrix(4,2) = 0.0; 
+    V_matrix(4,3) = (1.0/2.0)*pow(cable_length,2.0)*phi_dot_load_cable*load_mass_*sin(2.0*theta_load_cable); V_matrix(4,4) = 0.0;
 
     // ROS_INFO_STREAM("V = \n" << V_matrix);
 
     Eigen::MatrixXd G_vector = Eigen::MatrixXd(5, 1);
-    G_vector(0,0) = 0; G_vector(1,0) = 0; G_vector(2,0) = (load_mass_+_uav_mass_)*common_handlers_->g; //SHOULD BE - !!!!!
+    G_vector(0,0) = 0.0; G_vector(1,0) = 0.0; G_vector(2,0) = (load_mass_+_uav_mass_)*common_handlers_->g; //SHOULD BE - !!!!!
     G_vector(3,0) = cable_length*common_handlers_->g*load_mass_*cos(theta_load_cable)*sin(phi_load_cable); 
     G_vector(4,0) = cable_length*common_handlers_->g*load_mass_*cos(phi_load_cable)*sin(theta_load_cable);
 
@@ -2758,7 +2768,7 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
     //ROS_INFO_STREAM("D = \n" << D_matrix);
 
     Eigen::MatrixXd u_vector = Eigen::MatrixXd(5, 1);
-    u_vector(0,0) = f[0]; u_vector(1,0) = f[1]; u_vector(2,0) = f[2]; u_vector(3,0) = 0; u_vector(4,0) = 0;
+    u_vector(0,0) = f[0]; u_vector(1,0) = f[1]; u_vector(2,0) = f[2]; u_vector(3,0) = 0.0; u_vector(4,0) = 0.0;
 
     // ROS_INFO_STREAM("u = \n" << u_vector);
 
@@ -3140,10 +3150,10 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
     // |                 produce the control output                 |
     // --------------------------------------------------------------
 
-    // mrs_msgs::AttitudeCommand::Ptr output_command(new mrs_msgs::AttitudeCommand);
-    // output_command->header.stamp = ros::Time::now();
+    // // mrs_msgs::AttitudeCommand::Ptr output_command(new mrs_msgs::AttitudeCommand);
+    // // output_command->header.stamp = ros::Time::now();
 
-    // | ------------ compensated desired acceleration ------------ |
+    // // | ------------ compensated desired acceleration ------------ |
 
     double desired_x_accel = 0;
     double desired_y_accel = 0;
@@ -3176,10 +3186,10 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
       }
     }
 
-    // BRYAN: cancel terms for minimal controller
-    t = q_feedback;// + Rw + q_feedforward;
-    //_enable_repulsion_a_
-    // | --------------- saturate the attitude rate --------------- |
+    // // BRYAN: cancel terms for minimal controller
+    // t = q_feedback;// + Rw + q_feedforward;
+    // //_enable_repulsion_a_
+    // // | --------------- saturate the attitude rate --------------- |
 
     if (got_constraints_) {
 
