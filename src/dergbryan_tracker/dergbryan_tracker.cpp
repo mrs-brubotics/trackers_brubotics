@@ -858,6 +858,7 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   param_loader2.loadParam("navigation_field/repulsion/static_obstacle/obstacle_position_y", obs_position(1,0));
   param_loader2.loadParam("navigation_field/repulsion/static_obstacle/radius", R_o_);
   // Frank: Add same parameters for the navigation field of the wall and obstable - DONE HALF
+
   // create publishers
 
 
@@ -2124,7 +2125,7 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
     if (run_type == "simulation"){
       if(payload_spawned){
           if(remove_offset){
-            Epl = Rpl - Opl;
+            Epl = Rp - Opl;
             load_pose_position_offset = Epl;
             remove_offset = false;
           } 
@@ -2132,7 +2133,7 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
 
     //Thesis B: step 5: calculate the errors
       if (position_cmd.use_position_horizontal || position_cmd.use_position_vertical) {
-        Epl = Rpl - Opl - load_pose_position_offset; // remove offset because the load does not spawn perfectly under drone
+        Epl = Rp - Opl - load_pose_position_offset; // remove offset because the load does not spawn perfectly under drone
         //(position relative to base frame)
       }
 
@@ -2141,8 +2142,8 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
         Evl = Ov - Ovl;
         //(speed relative to base frame)
     }
-    Epl[2] = 0;
-    Evl[2] = 0;
+    // Epl[2] = 0;
+    // Evl[2] = 0;
     }else{
         
       load_pose_position.x = Op[0] + Difference_load_drone_position[0];
@@ -2223,7 +2224,7 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
 
     if (position_cmd.use_position_horizontal) {
         Kpl[0] = 7.0;
-        Kpl[1] = Kpl[0];
+        Kpl[1] = Kpl[0];// 2.0
     } else {
         Kpl[0] = 0;
         Kpl[1] = 0;
@@ -2348,6 +2349,7 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
 
     // | --------------- Thesis B --------------- |
     //2e method pandolfo
+
     Kpl = Kpl *total_mass;
     Kdl = Kdl *total_mass;
     //ROS_INFO_STREAM("RUN_TYPE \n" << getenv("RUN_TYPE") );
@@ -2434,8 +2436,16 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
     // | --------------- Thesis B --------------- |
     //Thesis B: step 6: calculate f
     
+    // ROS_INFO_THROTTLE(1,"velocity_load_feedback = '%2f' ", velocity_load_feedback[1]);
+    // ROS_INFO_THROTTLE(1,"position_load_feedback = '%2f' ", position_load_feedback[1]);
+
+    // ROS_INFO_THROTTLE(1,"Error pos load x = '%2f' ", Epl[0]);
+    // ROS_INFO_THROTTLE(1,"Error pos load y = '%2f' ", Epl[1]);
+
     Eigen::Vector3d f = position_load_feedback + velocity_load_feedback + position_feedback + velocity_feedback + feed_forward ;
-    // ROS_INFO_STREAM("f = \n" << f);
+
+    // ROS_INFO_THROTTLE(1,"Tracker : fx= %.2f,fy= %.2f, fz=%.2f ",f[0],f[1],f[2]);
+
     // ROS_INFO_STREAM("position_load_feedback = \n" << position_load_feedback);
     // ROS_INFO_STREAM("velocity_load_feedback = \n" << velocity_load_feedback);
     // ROS_INFO_STREAM("velocity_feedback = \n" << velocity_feedback);
@@ -2726,7 +2736,7 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
     M_matrix(4,0) = cable_length*load_mass_*cos(theta_load_cable); 
     M_matrix(4,1) = cable_length*load_mass_*sin(phi_load_cable)*sin(theta_load_cable); 
     M_matrix(4,2) = -cable_length*load_mass_*cos(phi_load_cable)*sin(theta_load_cable); 
-    M_matrix(4,3) = 0.0; M_matrix(4,4) = pow(cable_length,2.0)*load_mass_;
+    M_matrix(4,3) = 0.0; M_matrix(4,4) = pow(cable_length,2.0)*load_mass_ ;// *(cos(phi_load_cable))*(cos(phi_load_cable)); //*(cos(theta_load_cable))*(cos(theta_load_cable)) added
     // ROS_INFO_STREAM("M_inverse = \n" << M_matrix.inverse());
 
     Eigen::MatrixXd V_matrix = Eigen::MatrixXd(5, 5);
@@ -3064,7 +3074,7 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
 
         if (res) {
           Ev_fcu_untilted[0] = res.value().vector.x;
-          Ev_fcu_untilted[1] = res.value().vector.x; // ?? why x and not y
+          Ev_fcu_untilted[1] = res.value().vector.y; // ?? why x and not y
         } else {
           ROS_ERROR_THROTTLE(1.0, "[DergbryanTracker]: could not transform the velocity error to fcu_untilted");
         }
