@@ -1823,7 +1823,7 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
 
   // LOAD
   predicted_load_poses_out.header.stamp = uav_state_.header.stamp; //ros::Time::now();
-  //predicted_load_poses_out.header.frame_id = uav_state_.header.frame_id;
+  predicted_load_poses_out.header.frame_id = uav_state_.header.frame_id; //uncommented this
   predicted_load_velocities_out.header.stamp = uav_state_.header.stamp; //ros::Time::now();
   predicted_load_velocities_out.header.frame_id = uav_state_.header.frame_id;
   //predicted_load_accelerations_out.header.stamp = ros::Time::now();
@@ -2125,12 +2125,12 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
     if (run_type == "simulation"){
       if(payload_spawned){
           if(remove_offset){
-            Epl = Rp - Opl;
+            Epl = Rp - Opl; //Change Rp to Op
             load_pose_position_offset = Epl;
+            // ROS_INFO_STREAM("Load_position_offset = " << load_pose_position_offset);
             remove_offset = false;
           } 
       }
-
     //Thesis B: step 5: calculate the errors
       if (position_cmd.use_position_horizontal || position_cmd.use_position_vertical) {
         Epl = Rp - Opl - load_pose_position_offset; // remove offset because the load does not spawn perfectly under drone
@@ -2443,7 +2443,7 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
     // ROS_INFO_THROTTLE(1,"Error pos load y = '%2f' ", Epl[1]);
 
     Eigen::Vector3d f = position_load_feedback + velocity_load_feedback + position_feedback + velocity_feedback + feed_forward ;
-
+    // f[1]=0.8*f[1];
     // ROS_INFO_THROTTLE(1,"Tracker : fx= %.2f,fy= %.2f, fz=%.2f ",f[0],f[1],f[2]);
 
     // ROS_INFO_STREAM("position_load_feedback = \n" << position_load_feedback);
