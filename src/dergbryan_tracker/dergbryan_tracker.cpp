@@ -260,6 +260,9 @@ private:
   ros::Publisher predicted_theta_dot_publisher;
   ros::Publisher predicted_phi_dot_dot_publisher;
   ros::Publisher predicted_theta_dot_dot_publisher;
+
+  ros::Publisher predicted_output_force_publisher;
+
   ros::Publisher publisher_tracker_load_pose; // add _ on the following ?
   ros::Publisher publisher_tracker_load_vel;
   ros::Publisher publisher_tracker_uav_state;
@@ -345,6 +348,8 @@ private:
   geometry_msgs::PoseArray predicted_theta_dot_dot; // array of predicted tension forces
   geometry_msgs::PoseArray predicted_q_state_dot_dot_uav_out;
   geometry_msgs::PoseArray predicted_q_state_dot_dot_load_out; 
+ 
+  geometry_msgs::PoseArray predicted_output_force_out;
 
   geometry_msgs::Pose load_pose;
   geometry_msgs::Vector3 old_load_lin_vel;
@@ -892,6 +897,8 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   predicted_theta_dot_publisher = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_theta_dot", 10);
   predicted_phi_dot_dot_publisher = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_phi_dot_dot", 10);
   predicted_theta_dot_dot_publisher = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_theta_dot_dot", 10);
+
+  predicted_output_force_publisher = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_output_force", 10);
 
   predicted_q_state_dot_dot_uav_publisher = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_q_state_dot_dot_uav", 10);
   predicted_q_state_dot_dot_load_publisher = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_q_state_dot_dot_load", 10);
@@ -1457,6 +1464,8 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
   predicted_q_state_dot_dot_load_out.poses.clear();    
   predicted_phi_dot_dot.poses.clear();
   predicted_theta_dot_dot.poses.clear();
+
+  predicted_output_force_out.poses.clear();
   
   //  - DERG - collision avoidance:
   uav_applied_ref_out_.points.clear();
@@ -1838,6 +1847,8 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
   predicted_phi_dot_dot.header.stamp = ros::Time::now();
   predicted_theta_dot_dot.header.stamp = ros::Time::now();
 
+  predicted_output_force_out.header.stamp = ros::Time::now();
+
   geometry_msgs::Pose custom_pose;
   geometry_msgs::Pose custom_vel;
   geometry_msgs::Pose custom_acceleration;
@@ -1861,6 +1872,8 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
 
   geometry_msgs::Pose theta_dot_dot_load_to_publish;
   geometry_msgs::Pose phi_dot_dot_load_to_publish;
+  
+  geometry_msgs::Pose force_to_publish;
 
   // Thesis b: Test 06/08
 
@@ -2083,6 +2096,8 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
 
     predicted_phi_dot_dot.poses.push_back(phi_dot_dot_load_to_publish);
     predicted_theta_dot_dot.poses.push_back(theta_dot_dot_load_to_publish);
+
+    predicted_output_force_out.poses.push_back(force_to_publish);
 
     predicted_load_accelerations_out.poses.push_back(custom_load_acceleration);
     // predicted_accelerations_out.poses.push_back(custom_acceleration);
@@ -2446,6 +2461,10 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
     // ROS_INFO_THROTTLE(1,"Error pos load y = '%2f' ", Epl[1]);
 
     Eigen::Vector3d f = position_load_feedback + velocity_load_feedback + position_feedback + velocity_feedback + feed_forward ;
+
+    force_to_publish.position.x=f[0];
+    force_to_publish.position.y=f[1];
+    force_to_publish.position.z=f[2];
     // f[1]=0.8*f[1];
     // ROS_INFO_THROTTLE(1,"Tracker : fx= %.2f,fy= %.2f, fz=%.2f ",f[0],f[1],f[2]);
 
@@ -3443,6 +3462,13 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
   }
   catch (...) {
     ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_theta_dot_dot_publisher.getTopic().c_str());
+  }
+
+    try {
+    predicted_output_force_publisher.publish(predicted_output_force_out);
+  }
+  catch (...) {
+    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_output_force_publisher.getTopic().c_str());
   }
 
   }
