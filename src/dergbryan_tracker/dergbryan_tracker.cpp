@@ -251,15 +251,15 @@ private:
 
   ros::Publisher predicted_load_pose_publisher_;
   ros::Publisher predicted_load_vel_publisher_;
-  //ros::Publisher custom_predicted_load_acc_publisher; 
+  ros::Publisher predicted_load_acc_publisher_; 
   ros::Publisher predicted_tension_force_;
 
   ros::Publisher predicted_phi_publisher;
   ros::Publisher predicted_theta_publisher;
   ros::Publisher predicted_phi_dot_publisher;
   ros::Publisher predicted_theta_dot_publisher;
-  // ros::Publisher custom_predicted_phi_dot_dot_publisher;
-  // ros::Publisher custom_predicted_theta_dot_dot_publisher;
+  ros::Publisher predicted_phi_dot_dot_publisher;
+  ros::Publisher predicted_theta_dot_dot_publisher;
   ros::Publisher publisher_tracker_load_pose; // add _ on the following ?
   ros::Publisher publisher_tracker_load_vel;
   ros::Publisher publisher_tracker_uav_state;
@@ -334,15 +334,15 @@ private:
 //|-----------------------------LOAD------------------------|//
   geometry_msgs::PoseArray predicted_load_poses_out; // array of predicted load poses
   geometry_msgs::PoseArray predicted_load_velocities_out; // array of predicted load velocities
-  //geometry_msgs::PoseArray predicted_load_accelerations_out; // array of predicted load accelerations
+  geometry_msgs::PoseArray predicted_load_accelerations_out; // array of predicted load accelerations
   geometry_msgs::PoseArray predicted_tension_force_out; // array of predicted tension forces // Might add a _ after out.
 
   geometry_msgs::PoseArray predicted_phi; // array of predicted tension forces
   geometry_msgs::PoseArray predicted_theta; // array of predicted tension forces
   geometry_msgs::PoseArray predicted_phi_dot; // array of predicted tension forces
   geometry_msgs::PoseArray predicted_theta_dot; // array of predicted tension forces
-  // geometry_msgs::PoseArray predicted_phi_dot_dot; // array of predicted tension forces
-  // geometry_msgs::PoseArray predicted_theta_dot_dot; // array of predicted tension forces
+  geometry_msgs::PoseArray predicted_phi_dot_dot; // array of predicted tension forces
+  geometry_msgs::PoseArray predicted_theta_dot_dot; // array of predicted tension forces
   geometry_msgs::PoseArray predicted_q_state_dot_dot_uav_out;
   geometry_msgs::PoseArray predicted_q_state_dot_dot_load_out; 
 
@@ -883,15 +883,15 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   // | -------------------------------load--------------------------------|
   predicted_load_pose_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_load_poses", 10);
   predicted_load_vel_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_load_vels", 10);
-  //predicted_load_acc_publisher = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_load_accs", 10);
+  predicted_load_acc_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_load_accs", 10);
   predicted_tension_force_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_tension_force", 10);
 
   predicted_phi_publisher = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_phi", 10);
   predicted_theta_publisher = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_theta", 10);
   predicted_phi_dot_publisher = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_phi_dot", 10);
   predicted_theta_dot_publisher = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_theta_dot", 10);
-  // custom_predicted_phi_dot_dot_publisher = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_phi_dot_dot", 10);
-  // custom_predicted_theta_dot_dot_publisher = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_theta_dot_dot", 10);
+  predicted_phi_dot_dot_publisher = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_phi_dot_dot", 10);
+  predicted_theta_dot_dot_publisher = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_theta_dot_dot", 10);
 
   predicted_q_state_dot_dot_uav_publisher = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_q_state_dot_dot_uav", 10);
   predicted_q_state_dot_dot_load_publisher = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_q_state_dot_dot_load", 10);
@@ -901,7 +901,7 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   publisher_tracker_uav_state   = nh2_.advertise<mrs_msgs::UavState>("tracker_uav_state",10);
   publisher_tracker_load_old_vel   = nh2_.advertise<geometry_msgs::Vector3>("tracker_load_old_vel",10);
   //publisher_tension_force = nh2_.advertise<geometry_msgs::Pose>("tracker_custom_tension_force",10);
-  //publisher_tracker_load_acceleration = nh2_.advertise<geometry_msgs::Vector3>("tracker_custom_tracker_load_acceleration",10);
+  //publisher_tracker_load_acceleration = nh2_.advertise<geometry_msgs::Vector3>("tracker_custom_tracker_load_acceleration",10); 
   // custom_publisher_pos_difference_x   = nh2_.advertise<std_msgs::Float32>("pos_difference_x",10);
   // custom_publisher_pos_difference_y   = nh2_.advertise<std_msgs::Float32>("pos_difference_y",10);
 
@@ -1445,7 +1445,7 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
     //-------------LOAD-------------//
   predicted_load_poses_out.poses.clear();
   predicted_load_velocities_out.poses.clear();
-  //predicted_load_accelerations_out.poses.clear();
+  predicted_load_accelerations_out.poses.clear();
   predicted_tension_force_out.poses.clear();
 
   predicted_phi.poses.clear();
@@ -1455,8 +1455,8 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
 
   predicted_q_state_dot_dot_uav_out.poses.clear();
   predicted_q_state_dot_dot_load_out.poses.clear();    
-  // predicted_phi_dot_dot.poses.clear();
-  // predicted_theta_dot_dot.poses.clear();
+  predicted_phi_dot_dot.poses.clear();
+  predicted_theta_dot_dot.poses.clear();
   
   //  - DERG - collision avoidance:
   uav_applied_ref_out_.points.clear();
@@ -1826,8 +1826,8 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
   predicted_load_poses_out.header.frame_id = uav_state_.header.frame_id; //uncommented this
   predicted_load_velocities_out.header.stamp = uav_state_.header.stamp; //ros::Time::now();
   predicted_load_velocities_out.header.frame_id = uav_state_.header.frame_id;
-  //predicted_load_accelerations_out.header.stamp = ros::Time::now();
-  //predicted_load_accelerations_out.header.frame_id = uav_state_.header.frame_id;
+  predicted_load_accelerations_out.header.stamp = ros::Time::now();
+  predicted_load_accelerations_out.header.frame_id = uav_state_.header.frame_id;
   predicted_tension_force_out.header.stamp = uav_state_.header.stamp; //ros::Time::now();
   predicted_phi.header.stamp = uav_state_.header.stamp; //ros::Time::now();
   predicted_theta.header.stamp = uav_state_.header.stamp; //ros::Time::now();
@@ -1835,8 +1835,8 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
   predicted_theta_dot.header.stamp = uav_state_.header.stamp; //ros::Time::now();
   predicted_q_state_dot_dot_uav_out.header.stamp = uav_state_.header.stamp; //ros::Time::now();
   predicted_q_state_dot_dot_load_out.header.stamp = uav_state_.header.stamp; //ros::Time::now();
-  // predicted_phi_dot_dot.header.stamp = ros::Time::now();
-  // predicted_theta_dot_dot.header.stamp = ros::Time::now();
+  predicted_phi_dot_dot.header.stamp = ros::Time::now();
+  predicted_theta_dot_dot.header.stamp = ros::Time::now();
 
   geometry_msgs::Pose custom_pose;
   geometry_msgs::Pose custom_vel;
@@ -1859,8 +1859,8 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
   geometry_msgs::Pose predicted_attituderate;
   
 
-  // geometry_msgs::Pose theta_dot_dot_load_to_publish;
-  // geometry_msgs::Pose phi_dot_dot_load_to_publish;
+  geometry_msgs::Pose theta_dot_dot_load_to_publish;
+  geometry_msgs::Pose phi_dot_dot_load_to_publish;
 
   // Thesis b: Test 06/08
 
@@ -1974,8 +1974,8 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
       phi_load_to_publish.position.x = phi_load_cable;
       theta_dot_load_to_publish.position.x = theta_dot_load_cable;
       phi_dot_load_to_publish.position.x = phi_dot_load_cable;
-      // theta_dot_dot_load_to_publish.position.x = theta_dot_dot_load_cable;
-      // phi_dot_dot_load_to_publish.position.x = phi_dot_dot_load_cable;
+      theta_dot_dot_load_to_publish.position.x = theta_dot_dot_load_cable;
+      phi_dot_dot_load_to_publish.position.x = phi_dot_dot_load_cable;
 
       // ROS_INFO_STREAM("theta_dot_load_cable  = \n" << theta_dot_load_cable);
       // ROS_INFO_STREAM("phi_dot_load_cable  = \n" << phi_dot_load_cable);
@@ -2081,7 +2081,10 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
     predicted_phi_dot.poses.push_back(phi_dot_load_to_publish);
     predicted_theta_dot.poses.push_back(theta_dot_load_to_publish);
 
-    // predicted_load_accelerations_out.poses.push_back(custom_load_acceleration);
+    predicted_phi_dot_dot.poses.push_back(phi_dot_dot_load_to_publish);
+    predicted_theta_dot_dot.poses.push_back(theta_dot_dot_load_to_publish);
+
+    predicted_load_accelerations_out.poses.push_back(custom_load_acceleration);
     // predicted_accelerations_out.poses.push_back(custom_acceleration);
     
     // ROS_INFO_STREAM("custom_load_pose \n" << custom_load_pose);
@@ -3348,8 +3351,8 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
     ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_attrate_publisher_.getTopic().c_str());
   }
 
-  // Thesis B
-
+  // -------------LOAD-----------------------//
+  
   try {
     predicted_load_pose_publisher_.publish(predicted_load_poses_out);
   }
@@ -3362,12 +3365,12 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
   catch (...) {
     ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_load_vel_publisher_.getTopic().c_str());
   }
-  // try {
-  //   custom_predicted_load_acc_publisher.publish(predicted_load_accelerations_out);
-  // }
-  // catch (...) {
-  //   ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", custom_predicted_load_acc_publisher.getTopic().c_str());
-  // }
+  try {
+    predicted_load_acc_publisher_.publish(predicted_load_accelerations_out);
+  }
+  catch (...) {
+    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_load_acc_publisher_.getTopic().c_str());
+  }
   try {
     predicted_tension_force_.publish(predicted_tension_force_out);
   }
@@ -3429,18 +3432,18 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
     ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_q_state_dot_dot_load_publisher.getTopic().c_str());
   }
 
-  // try {
-  //   custom_predicted_phi_dot_dot_publisher.publish(predicted_phi_dot_dot);
-  // }
-  // catch (...) {
-  //   ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", custom_predicted_phi_dot_dot_publisher.getTopic().c_str());
-  // }
-  // try {
-  //   custom_predicted_theta_dot_dot_publisher.publish(predicted_theta_dot_dot);
-  // }
-  // catch (...) {
-  //   ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", custom_predicted_theta_dot_dot_publisher.getTopic().c_str());
-  // }
+  try {
+    predicted_phi_dot_dot_publisher.publish(predicted_phi_dot_dot);
+  }
+  catch (...) {
+    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_phi_dot_dot_publisher.getTopic().c_str());
+  }
+  try {
+    predicted_theta_dot_dot_publisher.publish(predicted_theta_dot_dot);
+  }
+  catch (...) {
+    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_theta_dot_dot_publisher.getTopic().c_str());
+  }
 
   }
 
