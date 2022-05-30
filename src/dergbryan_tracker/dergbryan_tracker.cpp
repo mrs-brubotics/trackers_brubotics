@@ -1835,7 +1835,7 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
   predicted_load_poses_out.header.frame_id = uav_state_.header.frame_id; //uncommented this
   predicted_load_velocities_out.header.stamp = uav_state_.header.stamp; //ros::Time::now();
   predicted_load_velocities_out.header.frame_id = uav_state_.header.frame_id;
-  predicted_load_accelerations_out.header.stamp = ros::Time::now();
+  predicted_load_accelerations_out.header.stamp = uav_state_.header.stamp;
   predicted_load_accelerations_out.header.frame_id = uav_state_.header.frame_id;
   predicted_tension_force_out.header.stamp = uav_state_.header.stamp; //ros::Time::now();
   predicted_phi.header.stamp = uav_state_.header.stamp; //ros::Time::now();
@@ -1844,10 +1844,10 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
   predicted_theta_dot.header.stamp = uav_state_.header.stamp; //ros::Time::now();
   predicted_q_state_dot_dot_uav_out.header.stamp = uav_state_.header.stamp; //ros::Time::now();
   predicted_q_state_dot_dot_load_out.header.stamp = uav_state_.header.stamp; //ros::Time::now();
-  predicted_phi_dot_dot.header.stamp = ros::Time::now();
-  predicted_theta_dot_dot.header.stamp = ros::Time::now();
+  predicted_phi_dot_dot.header.stamp = uav_state_.header.stamp;
+  predicted_theta_dot_dot.header.stamp = uav_state_.header.stamp;
 
-  predicted_output_force_out.header.stamp = ros::Time::now();
+  predicted_output_force_out.header.stamp = uav_state_.header.stamp;
 
   geometry_msgs::Pose custom_pose;
   geometry_msgs::Pose custom_vel;
@@ -2097,8 +2097,6 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
     predicted_phi_dot_dot.poses.push_back(phi_dot_dot_load_to_publish);
     predicted_theta_dot_dot.poses.push_back(theta_dot_dot_load_to_publish);
 
-    predicted_output_force_out.poses.push_back(force_to_publish);
-
     predicted_load_accelerations_out.poses.push_back(custom_load_acceleration);
     // predicted_accelerations_out.poses.push_back(custom_acceleration);
     
@@ -2240,36 +2238,20 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
       //ROS_INFO_STREAM("gains" << std::endl << "desactivated");
     }
 
-    if (position_cmd.use_position_horizontal) {
-        Kpl[0] = 7.0;
-        Kpl[1] = Kpl[0];// 2.0
-    } else {
-        Kpl[0] = 0;
-        Kpl[1] = 0;
-    }
 
-    if (position_cmd.use_position_vertical) {
-      Kpl[2] = 0;
-    } 
-    else {
-      Kpl[2] = 0;
-    }
+  if (position_cmd.use_velocity_vertical) {
+    Kpl[2] = 0;
+  } 
+  else {
+    Kpl[2] = 0;
+  }
 
-
-    if (position_cmd.use_velocity_horizontal) {
-        Kdl[0] = 0.5;
-        Kdl[1] = Kdl[0];
-    } else {
-        Kdl[0] = 0;
-        Kdl[1] = 0;
-    }
-
-    if (position_cmd.use_position_vertical) {
-      Kdl[2] = 0;
-    } 
-    else {
-      Kdl[2] = 0;
-    }
+  if (position_cmd.use_velocity_vertical) {
+    Kdl[2] = 0;
+  } 
+  else {
+    Kdl[2] = 0;
+  }
     // | ------------------------------------------ |
 // TODO Change the lines above, as useless if since it's redefined just after. Strange.
 
@@ -2465,6 +2447,10 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
     force_to_publish.position.x=f[0];
     force_to_publish.position.y=f[1];
     force_to_publish.position.z=f[2];
+
+
+    predicted_output_force_out.poses.push_back(force_to_publish);
+
     // f[1]=0.8*f[1];
     // ROS_INFO_THROTTLE(1,"Tracker : fx= %.2f,fy= %.2f, fz=%.2f ",f[0],f[1],f[2]);
 
