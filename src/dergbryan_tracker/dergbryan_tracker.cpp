@@ -262,6 +262,7 @@ private:
   ros::Publisher predicted_theta_dot_dot_publisher;
 
   ros::Publisher predicted_output_force_publisher;
+  ros::Publisher predicted_load_position_errors_publisher;
 
   ros::Publisher publisher_tracker_load_pose; // add _ on the following ?
   ros::Publisher publisher_tracker_load_vel;
@@ -350,7 +351,7 @@ private:
   geometry_msgs::PoseArray predicted_q_state_dot_dot_load_out; 
  
   geometry_msgs::PoseArray predicted_output_force_out;
-
+  geometry_msgs::PoseArray predicted_load__position_errors_out;
   geometry_msgs::Pose load_pose;
   geometry_msgs::Vector3 old_load_lin_vel;
 
@@ -899,6 +900,7 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   predicted_theta_dot_dot_publisher = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_theta_dot_dot", 10);
 
   predicted_output_force_publisher = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_output_force", 10);
+  predicted_load_position_errors_publisher = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_load__position_errors", 10);
 
   predicted_q_state_dot_dot_uav_publisher = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_q_state_dot_dot_uav", 10);
   predicted_q_state_dot_dot_load_publisher = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_q_state_dot_dot_load", 10);
@@ -1466,7 +1468,8 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
   predicted_theta_dot_dot.poses.clear();
 
   predicted_output_force_out.poses.clear();
-  
+  predicted_load__position_errors_out.poses.clear();
+
   //  - DERG - collision avoidance:
   uav_applied_ref_out_.points.clear();
   uav_posistion_out_.points.clear();
@@ -1848,6 +1851,7 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
   predicted_theta_dot_dot.header.stamp = uav_state_.header.stamp;
 
   predicted_output_force_out.header.stamp = uav_state_.header.stamp;
+  predicted_load__position_errors_out.header.stamp=uav_state.header.stamp;
 
   geometry_msgs::Pose custom_pose;
   geometry_msgs::Pose custom_vel;
@@ -1874,6 +1878,7 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
   geometry_msgs::Pose phi_dot_dot_load_to_publish;
   
   geometry_msgs::Pose force_to_publish;
+  geometry_msgs::Pose predicted_load_position_errors_to_publish;
 
   // Thesis b: Test 06/08
 
@@ -2192,6 +2197,8 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
       //ROS_INFO_STREAM("Se3BruboticsLoadController: Epl (Rpl-load_pose)= \n" << Epl);
       Epl[2] = 0;
     }
+
+
     // 2e method pandolfo
     Eigen::Array3d  Kpl = Eigen::Array3d::Zero(3); 
     Eigen::Array3d  Kdl = Eigen::Array3d::Zero(3); 
@@ -2417,6 +2424,16 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
     }
     // ROS_INFO_STREAM("Epl = \n" << Epl);
     // ROS_INFO_STREAM("payload_spawned = \n" << payload_spawned);
+
+
+    // publish errors
+    predicted_load_position_errors_to_publish.position.x=Epl[0];
+    predicted_load_position_errors_to_publish.position.y=Epl[1];
+    predicted_load_position_errors_to_publish.position.z=Epl[2];
+    
+    predicted_load__position_errors_out.poses.push_back(predicted_load_position_errors_to_publish);
+
+
     
     Eigen::Vector3d position_load_feedback = -Kpl * Epl.array();
     Eigen::Vector3d velocity_load_feedback = -Kdl * Evl.array();
@@ -3450,11 +3467,18 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
     ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_theta_dot_dot_publisher.getTopic().c_str());
   }
 
-    try {
+  try {
     predicted_output_force_publisher.publish(predicted_output_force_out);
   }
   catch (...) {
     ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_output_force_publisher.getTopic().c_str());
+  }
+
+  try {
+    predicted_load_position_errors_publisher.publish(predicted_load__position_errors_out);
+  }
+  catch (...) {
+    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_load_position_errors_publisher.getTopic().c_str());
   }
 
   }
