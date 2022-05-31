@@ -900,7 +900,7 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   predicted_theta_dot_dot_publisher = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_theta_dot_dot", 10);
 
   predicted_output_force_publisher = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_output_force", 10);
-  predicted_load_position_errors_publisher = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_load__position_errors", 10);
+  predicted_load_position_errors_publisher = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_load_position_errors", 10);
 
   predicted_q_state_dot_dot_uav_publisher = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_q_state_dot_dot_uav", 10);
   predicted_q_state_dot_dot_load_publisher = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_q_state_dot_dot_load", 10);
