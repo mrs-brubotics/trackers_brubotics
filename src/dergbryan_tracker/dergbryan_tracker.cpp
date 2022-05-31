@@ -1915,7 +1915,7 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
       //R = Eigen::Matrix3d::Identity(3, 3); // fake attitude
       // Ow - UAV angular rate
       Eigen::Vector3d Ow(uav_state.velocity.angular.x, uav_state.velocity.angular.y, uav_state.velocity.angular.z);
-
+      attitude_rate_pred = Ow; 
       // ROS_INFO_STREAM("R (i=0)  = \n" << R);
       // ROS_INFO_STREAM("attitude_rate_pred (i=0)  = \n" << attitude_rate_pred);
       // ROS_INFO_STREAM("Ow (i=0) = \n" << Ow);
@@ -1988,6 +1988,7 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
       // ROS_INFO_STREAM("theta_dot_dot_load_cable  = \n" << theta_dot_dot_load_cable);
       // ROS_INFO_STREAM("phi_dot_dot_load_cable  = \n" << phi_dot_dot_load_cable);
 
+
       theta_load_to_publish.position.x = theta_load_cable;
       phi_load_to_publish.position.x = phi_load_cable;
       theta_dot_load_to_publish.position.x = theta_dot_load_cable;
@@ -2055,6 +2056,7 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
       // ROS_INFO_STREAM("acceleration_load  = \n" << acceleration_load);
 
         //t = q_feedback + other terms
+      // attitude_rate_pred = attitude_rate_pred + attitude_acceleration_pred*_prediction_dt_;
       skew_Ow << 0     , -attitude_rate_pred(2), attitude_rate_pred(1),
                 attitude_rate_pred(2) , 0,       -attitude_rate_pred(0),
                 -attitude_rate_pred(1), attitude_rate_pred(0),  0;// assume omega is omega desired
@@ -2354,13 +2356,63 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
     Kp = Kp * total_mass;
     Kv = Kv * total_mass;
 
+    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Ka_x = %f", Ka(0));
+    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Ka_y = %f", Ka(1));
+    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Ka_z = %f", Ka(2));
+    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kq_x = %f", Kq(0));
+    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kq_y = %f", Kq(1));
+    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kq_z = %f", Kq(2));
+    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kp_x = %f", Kp(0));
+    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kp_y = %f", Kp(1));
+    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kp_z = %f", Kp(2));
+    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kv_x = %f", Kv(0));
+    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kv_y = %f", Kv(1));
+    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kv_z = %f", Kv(2));
+// after mutiplied with mass
+    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kp_x*m = %f", Kp(0));
+    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kp_y*m = %f", Kp(1));
+    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kp_z*m = %f", Kp(2));
+    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kv_x*m = %f", Kv(0));
+    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kv_y*m = %f", Kv(1));
+    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kv_z*m = %f", Kv(2));
+
+
+
+
     // | --------------- Thesis B --------------- |
+    
+    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kpl_x = %f", Kpl(0));
+    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kpl_y = %f", Kpl(1));
+    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kpl_z = %f", Kpl(2));
+    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kvl_x = %f", Kdl(0));
+    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kvl_y = %f", Kdl(1));
+    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kvl_z = %f", Kdl(2));
+    
     //2e method pandolfo
 
     Kpl = Kpl *total_mass;
     Kdl = Kdl *total_mass;
-    //ROS_INFO_STREAM("RUN_TYPE \n" << getenv("RUN_TYPE") );
+
+    // after mutiplied with mass
+    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kpl_x = %f", Kpl(0));
+    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kpl_y = %f", Kpl(1));
+    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kpl_z = %f", Kpl(2));
+    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kvl_x = %f", Kdl(0));
+    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kvl_y = %f", Kdl(1));
+    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kvl_z = %f", Kdl(2));
+
+
+
     // | ------------------------------ |
+
+
+    // QUESTION: some gains printed above do not correspond to the gains set in the yaml file (e.G. Kpz). Why is that?
+
+    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: estimated total_mass = %f", common_handlers_->getMass());
+    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: n_motors = %d", common_handlers_->motor_params.n_motors);
+    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: motor_params.A = %f", common_handlers_->motor_params.A);
+    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: motor_params.B = %f", common_handlers_->motor_params.B);
+
 
     // a print to test if the gains change so you know where to change:
     // ROS_INFO_STREAM("DergbryanTracker: Kp = \n" << Kp);
@@ -2370,7 +2422,7 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
     // QUESTION: some gains printed above do not correspond to the gains set in the yaml file (e.G. Kpz). Why is that?
 
 
-    // | --------------- desired orientation matrix --------------- |
+    // | --------------- desired orientation matrix --------------- | Commented out as tracker do not predict inner loop.
     // get body integral in the world frame
     Eigen::Vector2d Ib_w = Eigen::Vector2d(0, 0);
     {
@@ -2400,7 +2452,7 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
     // ROS_INFO_STREAM("Ra = \n" << Ra);
     Eigen::Vector3d position_feedback = -Kp * Ep.array();
     Eigen::Vector3d velocity_feedback = -Kv * Ev.array();
-    Eigen::Vector3d integral_feedback;
+    Eigen::Vector3d integral_feedback; //No integral feedback as horizon too short
     {
       std::scoped_lock lock(mutex_integrals_);
 
@@ -2761,7 +2813,7 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
     M_matrix(4,0) = cable_length*load_mass_*cos(theta_load_cable); 
     M_matrix(4,1) = cable_length*load_mass_*sin(phi_load_cable)*sin(theta_load_cable); 
     M_matrix(4,2) = -cable_length*load_mass_*cos(phi_load_cable)*sin(theta_load_cable); 
-    M_matrix(4,3) = 0.0; M_matrix(4,4) = pow(cable_length,2.0)*load_mass_ ;// *(cos(phi_load_cable))*(cos(phi_load_cable)); //*(cos(theta_load_cable))*(cos(theta_load_cable)) added
+    M_matrix(4,3) = 0.0; M_matrix(4,4) = pow(cable_length,2.0)*load_mass_ ;
     // ROS_INFO_STREAM("M_inverse = \n" << M_matrix.inverse());
 
     Eigen::MatrixXd V_matrix = Eigen::MatrixXd(5, 5);
@@ -2827,6 +2879,9 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
     q_state_dot(2,0) = uav_state.velocity.linear.z; q_state_dot(3,0) = phi_dot_load_cable; 
     q_state_dot(4,0) = theta_dot_load_cable;
 
+    //debug//
+    M_matrix(3,1)=-M_matrix(3,1);
+    //
     q_state_dot_dot = (M_matrix.inverse())*(u_vector - V_matrix*q_state_dot - G_vector - D_matrix*q_state_dot);
 
     Eigen::Vector3d acceleration_uav;
