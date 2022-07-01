@@ -1704,7 +1704,7 @@ void MpcCopyTracker::callbackOtherMavTrajectory(mrs_lib::SubscribeHandler<mrs_ms
   trajectory.stamp = ros::Time::now();
 
   // transform it from the utm origin to the currently used frame
-  auto res = common_handlers_->transformer->getTransform("utm_origin", uav_state.header.frame_id, ros::Time::now(), true);
+  auto res = common_handlers_->transformer->getTransform("utm_origin", uav_state.header.frame_id, ros::Time::now());
 
   if (!res) {
 
@@ -1715,7 +1715,7 @@ void MpcCopyTracker::callbackOtherMavTrajectory(mrs_lib::SubscribeHandler<mrs_ms
     return;
   }
 
-  mrs_lib::TransformStamped tf = res.value();
+  geometry_msgs::TransformStamped tf = res.value();
 
   for (int i = 0; i < int(trajectory.points.size()); i++) {
 
@@ -1727,7 +1727,7 @@ void MpcCopyTracker::callbackOtherMavTrajectory(mrs_lib::SubscribeHandler<mrs_ms
 
     original_pose.pose.orientation = mrs_lib::AttitudeConverter(0, 0, 0);
 
-    auto res = common_handlers_->transformer->transform(tf, original_pose);
+    auto res = common_handlers_->transformer->transform(original_pose, tf);
 
     if (res) {
       trajectory.points[i].x = res.value().pose.position.x;
@@ -2871,7 +2871,7 @@ std::tuple<bool, std::string, bool> MpcCopyTracker::loadTrajectory(const mrs_msg
 
     geometry_msgs::PoseArray debug_trajectory_out;
     debug_trajectory_out.header.stamp    = ros::Time::now();
-    debug_trajectory_out.header.frame_id = common_handlers_->transformer->resolveFrameName(msg.header.frame_id);
+    debug_trajectory_out.header.frame_id = common_handlers_->transformer->resolveFrame(msg.header.frame_id);
 
     {
       std::scoped_lock lock(mutex_des_whole_trajectory_);
@@ -2902,7 +2902,7 @@ std::tuple<bool, std::string, bool> MpcCopyTracker::loadTrajectory(const mrs_msg
     visualization_msgs::Marker marker;
 
     marker.header.stamp     = ros::Time::now();
-    marker.header.frame_id  = common_handlers_->transformer->resolveFrameName(msg.header.frame_id);
+    marker.header.frame_id  = common_handlers_->transformer->resolveFrame(msg.header.frame_id);
     marker.type             = visualization_msgs::Marker::LINE_LIST;
     marker.color.a          = 1;
     marker.scale.x          = 0.05;
@@ -3797,7 +3797,7 @@ void MpcCopyTracker::timerAvoidanceTrajectory(const ros::TimerEvent& event) {
     avoidance_trajectory.collision_avoidance = collision_avoidance_enabled_;
 
     // transform it from utm_origin to the currently used frame
-    auto res = common_handlers_->transformer->getTransform(uav_state.header.frame_id, "utm_origin", ros::Time::now(), true);
+    auto res = common_handlers_->transformer->getTransform(uav_state.header.frame_id, "utm_origin", ros::Time::now());
 
     if (!res) {
 
@@ -3808,7 +3808,7 @@ void MpcCopyTracker::timerAvoidanceTrajectory(const ros::TimerEvent& event) {
 
     } else {
 
-      mrs_lib::TransformStamped tf = res.value();
+      geometry_msgs::TransformStamped tf = res.value();
 
       for (int i = 0; i < _mpc_horizon_len_; i++) {
 
@@ -3824,7 +3824,7 @@ void MpcCopyTracker::timerAvoidanceTrajectory(const ros::TimerEvent& event) {
 
         original_point.pose.orientation = mrs_lib::AttitudeConverter(0, 0, 0);
 
-        auto res = common_handlers_->transformer->transform(tf, original_point);
+        auto res = common_handlers_->transformer->transform(original_point, tf);
 
         if (res) {
 

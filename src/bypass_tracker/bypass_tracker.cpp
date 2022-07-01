@@ -5,7 +5,7 @@
 #include <mrs_uav_managers/tracker.h>
 #include <mrs_lib/profiler.h>
 #include <mrs_lib/mutex.h>
-
+#include <mrs_lib/attitude_converter.h>
 #include <mrs_msgs/FuturePoint.h>
 //}
 
