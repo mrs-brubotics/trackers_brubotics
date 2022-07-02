@@ -93,7 +93,7 @@ private:
   ros::NodeHandle                                     nh_;
   std::shared_ptr<mrs_uav_managers::CommonHandlers_t> common_handlers_;
 
-  bool callbacks_enabled_ = true;
+  std::atomic<bool> callbacks_enabled_ = true;
 
   std::string _version_;
   std::string _uav_name_;
@@ -138,12 +138,12 @@ private:
   double _dt1_;
   double _dt2_;
 
-  MatrixXd  _A_;  // system matrix for virtual UAV
-  MatrixXd  _B_;  // input matrix for virtual UAV
-  MatrixXd  A_;   // system matrix for virtual UAV
-  MatrixXd  B_;   // input matrix for virtual UAV
-  bool      model_first_iteration_ = true;
-  ros::Time model_iteration_last_time_;
+  MatrixXd          _A_;  // system matrix for virtual UAV
+  MatrixXd          _B_;  // input matrix for virtual UAV
+  MatrixXd          A_;   // system matrix for virtual UAV
+  MatrixXd          B_;   // input matrix for virtual UAV
+  std::atomic<bool> model_first_iteration_ = true;
+  ros::Time         model_iteration_last_time_;
 
   MatrixXd _A_heading_;  // system matrix for heading
   MatrixXd _B_heading_;  // input matrix for heading
@@ -168,10 +168,10 @@ private:
   std::mutex                mutex_des_whole_trajectory_;
 
   // trajectory tracking
-  bool       trajectory_tracking_in_progress_ = false;
-  int        trajectory_tracking_sub_idx_     = 0;  // increases with every iteration of the simulated model
-  int        trajectory_tracking_idx_         = 0;  // while tracking, this is the current index in the des_*_whole trajectory
-  std::mutex mutex_trajectory_tracking_states_;
+  std::atomic<bool> trajectory_tracking_in_progress_ = false;
+  int               trajectory_tracking_sub_idx_     = 0;  // increases with every iteration of the simulated model
+  int               trajectory_tracking_idx_         = 0;  // while tracking, this is the current index in the des_*_whole trajectory
+  std::mutex        mutex_trajectory_tracking_states_;
 
   // params of the loaded trajectory
   int    trajectory_size_ = 0;
@@ -192,8 +192,8 @@ private:
   std::mutex mutex_mpc_x_;
 
   // odometry reset
-  bool odometry_reset_in_progress_ = false;
-  bool mpc_result_invalid_         = false;
+  std::atomic<bool> odometry_reset_in_progress_ = false;
+  std::atomic<bool> mpc_result_invalid_         = false;
 
   // predicting the future
   MatrixXd   predicted_trajectory_;
@@ -205,7 +205,7 @@ private:
   ros::Publisher publisher_current_trajectory_point_;
   ros::Publisher publisher_prediction_full_state_;
 
-  bool mpc_computed_ = false;
+  std::atomic<bool> mpc_computed_ = false;
 
   bool brake_ = false;
 
@@ -264,11 +264,11 @@ private:
   int avoidance_this_uav_number_;
   int avoidance_this_uav_priority_;
 
-  double collision_free_altitude_;
-  bool   avoiding_collision_ = false;
+  double            collision_free_altitude_;
+  std::atomic<bool> avoiding_collision_ = false;
 
   // avoidance trajectory will not be published unless we computed it at least once
-  bool future_was_predicted_ = false;
+  std::atomic<bool> future_was_predicted_ = false;
 
   // subscribing to the other UAV future trajectories
   void callbackOtherMavTrajectory(mrs_lib::SubscribeHandler<mrs_msgs::FutureTrajectory>& sh_ptr);
@@ -316,11 +316,11 @@ private:
 
   // | ------------------------ hovering ------------------------ |
 
-  ros::Timer timer_hover_;
-  void       timerHover(const ros::TimerEvent& event);
-  bool       hover_timer_runnning_ = false;
-  bool       hovering_in_progress_ = false;
-  void       toggleHover(bool in);
+  ros::Timer        timer_hover_;
+  void              timerHover(const ros::TimerEvent& event);
+  std::atomic<bool> hover_timer_runnning_ = false;
+  std::atomic<bool> hovering_in_progress_ = false;
+  void              toggleHover(bool in);
 
   // | ------------------- trajectory tracking ------------------ |
 
@@ -1388,9 +1388,13 @@ const std_srvs::TriggerResponse::ConstPtr MpcCopyTracker::switchOdometrySource(c
 
   while (mpc_timer_running_) {
 
-    ROS_DEBUG("[MpcCopyTracker]: the model is in the middle of an iteration, waiting for it to finish");
-    ros::Duration wait(0.01);
+    ROS_DEBUG("[MpcCopyTracker]: the mpc is in the middle of an iteration, waiting for it to finish");
+    ros::Duration wait(0.001);
     wait.sleep();
+    if (!mpc_timer_running_) {
+      ROS_DEBUG("[ControlManager]: mpc timer finished");
+      break;
+    }
   }
 
   // | --------- recalculate the goal to new coordinates -------- |
@@ -3039,8 +3043,12 @@ void MpcCopyTracker::toggleHover(bool in) {
     while (hover_timer_runnning_) {
 
       ROS_DEBUG("[MpcCopyTracker]: the hover is in the middle of an iteration, waiting for it to finish");
-      ros::Duration wait(0.01);
+      ros::Duration wait(0.001);
       wait.sleep();
+      if (!hover_timer_runnning_) {
+        ROS_DEBUG("[ControlManager]: hover timer finished");
+        break;
+      }
     }
 
     timer_hover_.stop();
