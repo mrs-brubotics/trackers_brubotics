@@ -1938,13 +1938,22 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
       // custom_publisher_pos_difference_y.publish(pos_difference_y);
 
       // Thesis b: Test 06/08
-      theta_load_cable = asin((load_pose_position.x - uav_state.pose.position.x)/cable_length); 
-      phi_load_cable = asin((load_pose_position.y - uav_state.pose.position.y)/cable_length); 
+      // theta_load_cable = asin((load_pose_position.x - uav_state.pose.position.x)/cable_length); 
+      // phi_load_cable = asin((load_pose_position.y - uav_state.pose.position.y)/cable_length); 
+
+      // theta_dot_load_cable = pow(1.0 - pow((load_pose_position.x - uav_state.pose.position.x)/cable_length,2.0),-1.0/2.0) 
+      // * ((load_lin_vel[0] - uav_state.velocity.linear.x)/cable_length); 
+      // phi_dot_load_cable = pow(1.0 - pow((load_pose_position.y - uav_state.pose.position.y)/cable_length,2.0),-1.0/2.0) 
+      // * ((load_lin_vel[1] - uav_state.velocity.linear.y)/cable_length); 
+
+      // Corrected IK, Raphael:
+      theta_load_cable = asin((load_pose_position.x - uav_state.pose.position.x)/cable_length); //was already good
+      phi_load_cable = asin((load_pose_position.y - uav_state.pose.position.y)/(cable_length*cos(theta_load_cable)));
+
 
       theta_dot_load_cable = pow(1.0 - pow((load_pose_position.x - uav_state.pose.position.x)/cable_length,2.0),-1.0/2.0) 
-      * ((load_lin_vel[0] - uav_state.velocity.linear.x)/cable_length); 
-      phi_dot_load_cable = pow(1.0 - pow((load_pose_position.y - uav_state.pose.position.y)/cable_length,2.0),-1.0/2.0) 
-      * ((load_lin_vel[1] - uav_state.velocity.linear.y)/cable_length); 
+      * ((load_lin_vel[0] - uav_state.velocity.linear.x)/cable_length); //was already good
+      phi_dot_load_cable = ((load_lin_vel[1] - uav_state.velocity.linear.y)*cos(theta_load_cable) + (load_pose_position.y - uav_state.pose.position.y)*theta_dot_load_cable*sin(theta_load_cable))/(cable_length*pow(cos(theta_load_cable),2.0)*pow(1.0-pow((load_pose_position.y - uav_state.pose.position.y)/(cable_length*cos(theta_load_cable)),2),0.5));
 
       // Thesis b: Test 06/08
       theta_load_to_publish.position.x = theta_load_cable;
@@ -2001,32 +2010,37 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
       // ROS_INFO_STREAM("theta_load_cable  = \n" << theta_load_cable);
       // ROS_INFO_STREAM("phi_load_cable  = \n" << phi_load_cable);
 
+      // Thesis B, incorrect eq :
+      // load_pose_position.x = sin(theta_load_cable)*cable_length + uav_state.pose.position.x; 
+      // load_pose_position.y = sin(phi_load_cable)*cable_length + uav_state.pose.position.y; 
+      // load_pose_position.z = uav_state.pose.position.z - cable_length*cos(phi_load_cable)*cos(theta_load_cable);
+
+      // load_lin_vel[0] = cos(theta_load_cable)*cable_length*theta_dot_load_cable + uav_state.velocity.linear.x;  
+      // load_lin_vel[1] = cos(phi_load_cable)*cable_length*phi_dot_load_cable + uav_state.velocity.linear.y; 
+      // load_lin_vel[2] = uav_state.velocity.linear.z + cable_length*(sin(phi_load_cable)*phi_dot_load_cable*cos(theta_load_cable) 
+      // + cos(phi_load_cable)*sin(theta_load_cable)*theta_dot_load_cable);
+
+
+      // Corrected FK, Raphael :
+
       load_pose_position.x = sin(theta_load_cable)*cable_length + uav_state.pose.position.x; 
-      load_pose_position.y = sin(phi_load_cable)*cable_length + uav_state.pose.position.y; 
+      load_pose_position.y = sin(phi_load_cable)*cos(theta_load_cable)*cable_length + uav_state.pose.position.y; 
       load_pose_position.z = uav_state.pose.position.z - cable_length*cos(phi_load_cable)*cos(theta_load_cable);
-      // load_pose_position.z = -sqrt(pow(cable_length,2.0)-pow(load_pose_position.x-uav_state.pose.position.x,2.0)
-      // -pow(load_pose_position.y-uav_state.pose.position.y,2.0)) + uav_state.pose.position.z; 
-      // ROS_INFO_STREAM("load_pose_position  = \n" << load_pose_position);
 
       custom_load_pose.position.x = load_pose_position.x;
       custom_load_pose.position.y = load_pose_position.y;
       custom_load_pose.position.z = load_pose_position.z;
 
       load_lin_vel[0] = cos(theta_load_cable)*cable_length*theta_dot_load_cable + uav_state.velocity.linear.x;  
-      load_lin_vel[1] = cos(phi_load_cable)*cable_length*phi_dot_load_cable + uav_state.velocity.linear.y; 
+      load_lin_vel[1] = cos(phi_load_cable)*cos(theta_load_cable)*cable_length*phi_dot_load_cable -cable_length*sin(phi_load_cable)*sin(theta_load_cable) * theta_dot_load_cable
+      + uav_state.velocity.linear.y; 
       load_lin_vel[2] = uav_state.velocity.linear.z + cable_length*(sin(phi_load_cable)*phi_dot_load_cable*cos(theta_load_cable) 
       + cos(phi_load_cable)*sin(theta_load_cable)*theta_dot_load_cable);
       
-      // load_lin_vel[2] = -(1.0/2.0)*pow(pow(cable_length,2.0)-pow(load_pose_position.x-uav_state.pose.position.x,2.0)
-      // -pow(load_pose_position.y-uav_state.pose.position.y,2.0),-1.0/2.0)
-      // *(-2.0*(load_pose_position.x-uav_state.pose.position.x)*(load_lin_vel[0]-uav_state.velocity.linear.x) 
-      // - 2.0*(load_pose_position.y-uav_state.pose.position.y)*(load_lin_vel[1]-uav_state.velocity.linear.y)) 
-      // + uav_state.velocity.linear.z; 
-
       custom_load_vel.position.x = load_lin_vel[0];
       custom_load_vel.position.y = load_lin_vel[1];
       custom_load_vel.position.z = load_lin_vel[2];
-
+      // not corrected yet :
       acceleration_load[0] = -sin(theta_load_cable)*cable_length*pow(theta_dot_load_cable,2.0) 
       + cos(theta_load_cable)*cable_length*theta_dot_dot_load_cable + custom_acceleration.position.x;
 
@@ -2165,8 +2179,8 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
         Evl = Ov - Ovl;
         //(speed relative to base frame)
     }
-    // Epl[2] = 0;
-    // Evl[2] = 0;
+    Epl[2] = 0;
+    Evl[2] = 0;
     }else{
         
       load_pose_position.x = Op[0] + Difference_load_drone_position[0];
@@ -2791,7 +2805,8 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
     //Thesis B: step 7: calculating the predicted uav acceleration
     //Eigen::Vector3d acceleration_uav = (1/_uav_mass_ )* ((thrust_force*R.col(2)  + _uav_mass_ * (Eigen::Vector3d(0, 0, -common_handlers_->g))) - load_mass_*(acceleration_load + (Eigen::Vector3d(0, 0, common_handlers_->g))));
 
-    // Thesis b: Test 06/08
+    // Thesis b: Test 06/08. 
+    //Corrected model see thesis Raphael
     //-------------based on new EOM with angles----------------//
 
     Eigen::MatrixXd M_matrix = Eigen::MatrixXd(5, 5);
@@ -2799,20 +2814,20 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
     M_matrix(0,3) = 0.0; M_matrix(0,4) = cable_length*load_mass_*cos(theta_load_cable);
     
     M_matrix(1,0) = 0.0; M_matrix(1,1) = _uav_mass_ + load_mass_; M_matrix(1,2) = 0.0; 
-    M_matrix(1,3) = -cable_length*load_mass_*cos(phi_load_cable)*cos(theta_load_cable); 
-    M_matrix(1,4) = cable_length*load_mass_*sin(phi_load_cable)*sin(theta_load_cable);
+    M_matrix(1,3) = cable_length*load_mass_*cos(phi_load_cable)*cos(theta_load_cable); 
+    M_matrix(1,4) = -cable_length*load_mass_*sin(phi_load_cable)*sin(theta_load_cable);
     
     M_matrix(2,0) = 0.0; M_matrix(2,1) = 0.0; M_matrix(2,2) = _uav_mass_ + load_mass_; 
-    M_matrix(2,3) = -cable_length*load_mass_*cos(theta_load_cable)*sin(phi_load_cable); 
-    M_matrix(2,4) = -cable_length*load_mass_*cos(phi_load_cable)*sin(theta_load_cable);
+    M_matrix(2,3) = cable_length*load_mass_*cos(theta_load_cable)*sin(phi_load_cable); 
+    M_matrix(2,4) = cable_length*load_mass_*cos(phi_load_cable)*sin(theta_load_cable);
     
-    M_matrix(3,0) = 0.0; M_matrix(3,1) = -cable_length*load_mass_*cos(phi_load_cable)*cos(theta_load_cable); 
-    M_matrix(3,2) = -cable_length*load_mass_*sin(phi_load_cable)*cos(theta_load_cable); 
+    M_matrix(3,0) = 0.0; M_matrix(3,1) = cable_length*load_mass_*cos(phi_load_cable)*cos(theta_load_cable); 
+    M_matrix(3,2) = cable_length*load_mass_*sin(phi_load_cable)*cos(theta_load_cable); 
     M_matrix(3,3) = pow(cable_length,2.0)*load_mass_*(cos(theta_load_cable))*(cos(theta_load_cable)); M_matrix(3,4) = 0.0;
     
     M_matrix(4,0) = cable_length*load_mass_*cos(theta_load_cable); 
-    M_matrix(4,1) = cable_length*load_mass_*sin(phi_load_cable)*sin(theta_load_cable); 
-    M_matrix(4,2) = -cable_length*load_mass_*cos(phi_load_cable)*sin(theta_load_cable); 
+    M_matrix(4,1) = -cable_length*load_mass_*sin(phi_load_cable)*sin(theta_load_cable); 
+    M_matrix(4,2) = cable_length*load_mass_*cos(phi_load_cable)*sin(theta_load_cable); 
     M_matrix(4,3) = 0.0; M_matrix(4,4) = pow(cable_length,2.0)*load_mass_ ;
     // ROS_INFO_STREAM("M_inverse = \n" << M_matrix.inverse());
 
@@ -2821,15 +2836,15 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
     V_matrix(0,4) = -cable_length*theta_dot_load_cable*load_mass_*sin(theta_load_cable);
 
     V_matrix(1,0) = 0.0; V_matrix(1,1) = 0.0; V_matrix(1,2) = 0.0; 
-    V_matrix(1,3) = cable_length*load_mass_*(phi_dot_load_cable*sin(phi_load_cable)*cos(theta_load_cable) 
+    V_matrix(1,3) = -cable_length*load_mass_*(phi_dot_load_cable*sin(phi_load_cable)*cos(theta_load_cable) 
     + theta_dot_load_cable*cos(phi_load_cable)*sin(theta_load_cable)); 
-    V_matrix(1,4) = cable_length*load_mass_*(phi_dot_load_cable*cos(phi_load_cable)*sin(theta_load_cable) 
+    V_matrix(1,4) = -cable_length*load_mass_*(phi_dot_load_cable*cos(phi_load_cable)*sin(theta_load_cable) 
     + theta_dot_load_cable*sin(phi_load_cable)*cos(theta_load_cable));
 
     V_matrix(2,0) = 0.0; V_matrix(2,1) = 0.0; V_matrix(2,2) = 0.0; 
-    V_matrix(2,3) = -cable_length*load_mass_*(phi_dot_load_cable*cos(phi_load_cable)*cos(theta_load_cable) 
+    V_matrix(2,3) = cable_length*load_mass_*(phi_dot_load_cable*cos(phi_load_cable)*cos(theta_load_cable) 
     - theta_dot_load_cable*sin(phi_load_cable)*sin(theta_load_cable)); 
-    V_matrix(2,4) = -cable_length*load_mass_*(theta_dot_load_cable*cos(phi_load_cable)*cos(theta_load_cable) 
+    V_matrix(2,4) = cable_length*load_mass_*(theta_dot_load_cable*cos(phi_load_cable)*cos(theta_load_cable) 
     - phi_dot_load_cable*sin(phi_load_cable)*sin(theta_load_cable));
 
     V_matrix(3,0) = 0.0; V_matrix(3,1) = 0.0; V_matrix(3,2) = 0.0; 
@@ -2842,15 +2857,15 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
     // ROS_INFO_STREAM("V = \n" << V_matrix);
 
     Eigen::MatrixXd G_vector = Eigen::MatrixXd(5, 1);
-    G_vector(0,0) = 0.0; G_vector(1,0) = 0.0; G_vector(2,0) = (load_mass_+_uav_mass_)*common_handlers_->g; //SHOULD BE - !!!!!
+    G_vector(0,0) = 0.0; G_vector(1,0) = 0.0; G_vector(2,0) = (load_mass_+_uav_mass_)*common_handlers_->g; // g here is positif
     G_vector(3,0) = cable_length*common_handlers_->g*load_mass_*cos(theta_load_cable)*sin(phi_load_cable); 
     G_vector(4,0) = cable_length*common_handlers_->g*load_mass_*cos(phi_load_cable)*sin(theta_load_cable);
 
     // ROS_INFO_STREAM("G = \n" << G_vector);
 
     Eigen::MatrixXd D_matrix = Eigen::MatrixXd::Zero(5, 5); // Adding damping force created by air and non perfect joint.
-    D_matrix(3,3)=0.15;
-    D_matrix(4,4)=0.15;
+    D_matrix(3,3)=0.0;//0.15;
+    D_matrix(4,4)=0.0;//0.15;
 
     //ROS_INFO_STREAM("D = \n" << D_matrix);
 
@@ -2878,10 +2893,7 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
     q_state_dot(0,0) = uav_state.velocity.linear.x; q_state_dot(1,0) = uav_state.velocity.linear.y; 
     q_state_dot(2,0) = uav_state.velocity.linear.z; q_state_dot(3,0) = phi_dot_load_cable; 
     q_state_dot(4,0) = theta_dot_load_cable;
-
-    //debug//
-    M_matrix(3,1)=-M_matrix(3,1);
-    //
+    
     q_state_dot_dot = (M_matrix.inverse())*(u_vector - V_matrix*q_state_dot - G_vector - D_matrix*q_state_dot);
 
     Eigen::Vector3d acceleration_uav;
