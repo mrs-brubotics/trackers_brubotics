@@ -294,6 +294,8 @@ private:
  //ros::Publisher custom_predicted_pose_publisher;
  // ros::Publisher custom_predicted_vel_publisher;
 
+  ros::Publisher uav2_state_pub;
+
 //|--------------------------------------------------------------------|//
 
 
@@ -359,6 +361,10 @@ private:
   geometry_msgs::Vector3 load_pose_error;
   geometry_msgs::Vector3 load_velocity_error;
   geometry_msgs::Vector3 load_pose_position_;
+
+  mrs_msgs::UavState uav2_state_msg;
+
+
 //|-----------------------------------------------------|//
 
   //  - D-ERG 
@@ -379,6 +385,7 @@ private:
 //|------------------------LOAD-----------------------------|//
   ros::Subscriber load_state_sub;
   ros::Subscriber data_payload_sub;
+  ros::Subscriber uav2_state_sub;//for 2UAV model
   //|-----------------------------------------------------|//
   
   
@@ -407,6 +414,8 @@ private:
   //|------------------------LOAD callbacks-----------------------------|//
   void loadStatesCallback(const gazebo_msgs::LinkStatesConstPtr& loadmsg);
   void BacaCallback(const mrs_msgs::BacaProtocolConstPtr& msg);
+  void uav2_state_callback(const mrs_msgs::UavState::ConstPtr& msg);
+
   //|-------------------------------------------------------------------|//
 
 
@@ -563,6 +572,8 @@ private:
     std::string number_of_uav;
 
     std::array<uint8_t, 3> data_payload;
+
+    Eigen::Vector3d uav2_state=Eigen::Vector3d::Zero(3);
   //|-----------------------------------------------------|//
 
 
@@ -926,6 +937,17 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   publisher_load_acceleration_init   = nh2_.advertise<geometry_msgs::Pose>("load_acceleration_init",10);
 
   run_type = getenv("RUN_TYPE");
+  number_of_uav = getenv("NUMBER_OF_UAV"); // is exported in the session.yaml
+  if (number_of_uav == "2"){
+    if (uav_name == "uav1"){  // to see which UAV it is
+        uav_id = true; //uav 1
+        uav2_state_sub=nh_.subscribe("/uav2/control_manager/dergbryan_tracker/uav2_state", 1, &DergbryanTracker::uav2_state_callback, this, ros::TransportHints().tcpNoDelay());// get uav2 states
+      }else{
+        uav_id = false; //uav 2
+        uav2_state_pub = nh2_.advertise<mrs_msgs::UavState>("uav2_state", 1);
+      }
+  }
+
   // | ------------------------------------------------------------|
 
 
@@ -1280,7 +1302,7 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
 
 //|---------------------LOAD------------------------------ |//
     uav_name = getenv("UAV_NAME");
-    
+    //maybe redondant
   if (run_type == "simulation"){
     // to see how many UAVs there are
     number_of_uav = getenv("NUMBER_OF_UAV"); // is exported in the session.yaml
@@ -1289,6 +1311,13 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
         uav_id = true; //uav 1
       }else{
         uav_id = false; //uav 2
+        uav2_state_msg=uav_state_;
+          try {
+          uav2_state_pub.publish(uav2_state_msg);
+          }
+          catch (...) {
+          ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", uav2_state_pub.getTopic().c_str());
+          }
       }
     }
   }
@@ -6823,6 +6852,15 @@ std::tuple< Eigen::Vector3d, Eigen::Vector3d> DergbryanTracker::getMinDistDirLin
     load_lin_vel_[2]= 0;
     
   }
+  void DergbryanTracker::uav2_state_callback(const mrs_msgs::UavState::ConstPtr& msg){
+        // load_pose_position_.x = load_pose.position.x;
+    uav2_state[0]=msg->pose.position.x;
+    uav2_state[1]=msg->pose.position.y;
+    uav2_state[2]=msg->pose.position.z;
+    ROS_INFO_STREAM("Received uav2 position \n"<< uav2_state);
+  }
+
+
   // | --------------------------------------------------------------------------------| 
 
 void DergbryanTracker::callbackOtherUavAppliedRef(const mrs_msgs::FutureTrajectoryConstPtr& msg) {
