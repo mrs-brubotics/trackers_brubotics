@@ -97,6 +97,7 @@ public:
 
   void trajectory_prediction_general(mrs_msgs::PositionCommand position_cmd, double uav_heading, const mrs_msgs::AttitudeCommand::ConstPtr &last_attitude_cmd);
   void trajectory_prediction_general_load(mrs_msgs::PositionCommand position_cmd, double uav_heading, const mrs_msgs::AttitudeCommand::ConstPtr &last_attitude_cmd);
+  void trajectory_prediction_general_load_2UAV(mrs_msgs::PositionCommand position_cmd, double uav_heading, const mrs_msgs::AttitudeCommand::ConstPtr &last_attitude_cmd);
   void DERG_computation();
   // Eigen::Matrix<double, 2, 2>
   Eigen::Vector3d calcCirculationField(std::string type, double dist_x, double dist_y, double dist_z, double dist);
@@ -295,7 +296,8 @@ private:
  // ros::Publisher custom_predicted_vel_publisher;
 
   ros::Publisher uav2_state_pub;
-
+  ros::Publisher uav2_anchoring_point_pub;
+  ros::Publisher uav2_position_cmd_pub;
 //|--------------------------------------------------------------------|//
 
 
@@ -363,6 +365,9 @@ private:
   geometry_msgs::Vector3 load_pose_position_;
 
   mrs_msgs::UavState uav2_state_msg;
+  mrs_msgs::UavState uav2_anchoring_point_msg;
+  mrs_msgs::PositionCommand uav2_position_cmd;//to send to uav1
+  mrs_msgs::PositionCommand uav2_position_cmd_received;//received, to store in uav1 tracker 
 
 
 //|-----------------------------------------------------|//
@@ -385,7 +390,11 @@ private:
 //|------------------------LOAD-----------------------------|//
   ros::Subscriber load_state_sub;
   ros::Subscriber data_payload_sub;
-  ros::Subscriber uav2_state_sub;//for 2UAV model
+
+//for 2UAV model
+  ros::Subscriber uav2_state_sub;
+  ros::Subscriber uav2_anchoring_point_sub;
+  ros::Subscriber uav2_position_cmd_sub; 
   //|-----------------------------------------------------|//
   
   
@@ -414,8 +423,10 @@ private:
   //|------------------------LOAD callbacks-----------------------------|//
   void loadStatesCallback(const gazebo_msgs::LinkStatesConstPtr& loadmsg);
   void BacaCallback(const mrs_msgs::BacaProtocolConstPtr& msg);
-  void uav2_state_callback(const mrs_msgs::UavState::ConstPtr& msg);
 
+  void uav2_state_callback(const mrs_msgs::UavState::ConstPtr& msg);
+  void uav2_anchoring_point_callback(const mrs_msgs::UavState::ConstPtr& msg);
+  void uav2_position_cmd_callback(const mrs_msgs::PositionCommand::ConstPtr& msg);
   //|-------------------------------------------------------------------|//
 
 
@@ -573,7 +584,11 @@ private:
 
     std::array<uint8_t, 3> data_payload;
 
-    Eigen::Vector3d uav2_state=Eigen::Vector3d::Zero(3);
+    Eigen::Vector3d uav2_position_=Eigen::Vector3d::Zero(3);
+    Eigen::Vector3d uav2_velocity_=Eigen::Vector3d::Zero(3);
+    Eigen::Vector3d uav2_anchoring_point_position_=Eigen::Vector3d::Zero(3);
+    Eigen::Vector3d uav2_anchoring_point_velocity_=Eigen::Vector3d::Zero(3);
+    
   //|-----------------------------------------------------|//
 
 
@@ -942,9 +957,13 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
     if (uav_name == "uav1"){  // to see which UAV it is
         uav_id = true; //uav 1
         uav2_state_sub=nh_.subscribe("/uav2/control_manager/dergbryan_tracker/uav2_state", 1, &DergbryanTracker::uav2_state_callback, this, ros::TransportHints().tcpNoDelay());// get uav2 states
+        uav2_anchoring_point_sub=nh_.subscribe("/uav2/control_manager/dergbryan_tracker/uav2_anchoring_point_state", 1, &DergbryanTracker::uav2_anchoring_point_callback, this, ros::TransportHints().tcpNoDelay());
+        uav2_position_cmd_sub=nh_.subscribe("/uav2/control_manager/dergbryan_tracker/uav2_position_cmd", 1, &DergbryanTracker::uav2_position_cmd_callback, this, ros::TransportHints().tcpNoDelay());
       }else{
         uav_id = false; //uav 2
         uav2_state_pub = nh2_.advertise<mrs_msgs::UavState>("uav2_state", 1);
+        uav2_anchoring_point_pub = nh2_.advertise<mrs_msgs::UavState>("uav2_anchoring_point_state", 1);
+        uav2_position_cmd_pub = nh2_.advertise<mrs_msgs::PositionCommand>("uav2_position_cmd", 1);
       }
   }
 
@@ -1312,26 +1331,57 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
       }else{
         uav_id = false; //uav 2
         uav2_state_msg=uav_state_;
+        //publish uav2 state
+        try {
+        uav2_state_pub.publish(uav2_state_msg);
+        }
+        catch (...) {
+        ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", uav2_state_pub.getTopic().c_str());
+        }
+
+        // fill msg with reference goal
+        uav2_position_cmd.position.x=applied_ref_x_;
+        uav2_position_cmd.position.y=applied_ref_y_;
+        uav2_position_cmd.position.z=applied_ref_z_;
+        uav2_position_cmd.heading = goal_heading_;
+
+        //publish uav2 reference goal
+        try {
+        uav2_position_cmd_pub.publish(uav2_position_cmd);
+        }
+        catch (...) {
+        ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", uav2_state_pub.getTopic().c_str());
+        }
+
+        if(payload_spawned){
+          // fill msg with anchoringpoint states
+          uav2_anchoring_point_msg.pose.position.x=load_pose_position_.x;
+          uav2_anchoring_point_msg.pose.position.y=load_pose_position_.y;
+          uav2_anchoring_point_msg.pose.position.z=load_pose_position_.z;
+
+          uav2_anchoring_point_msg.velocity.linear.x=load_lin_vel_[0];
+          uav2_anchoring_point_msg.velocity.linear.y=load_lin_vel_[1];
+          uav2_anchoring_point_msg.velocity.linear.z=load_lin_vel_[2];
+
           try {
-          uav2_state_pub.publish(uav2_state_msg);
+          uav2_anchoring_point_pub.publish(uav2_anchoring_point_msg);
           }
           catch (...) {
-          ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", uav2_state_pub.getTopic().c_str());
+          ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", uav2_anchoring_point_pub.getTopic().c_str());
           }
+        }
+
       }
     }
   }
 
-    //ROS_INFO_STREAM("RUN_TYPE \n" << run_type );
+
     std::string slash = "/";
-    //ROS_INFO_STREAM("UAV_NAME \n" << run_type  );
-    //ROS_INFO_STREAM("old load velocity = \n" << old_load_lin_vel);
+// subscribe to load states, depending if hardware or simulation
     if (run_type == "simulation")
     {
       // subscriber of the simulation
-      //ROS_INFO_STREAM("load velocity 1 = \n" << load_lin_vel_);
       load_state_sub =  nh_.subscribe("/gazebo/link_states", 1, &DergbryanTracker::loadStatesCallback, this, ros::TransportHints().tcpNoDelay());
-      //ROS_INFO_STREAM("load velocity 2 = \n" << load_lin_vel_);
     }else{
       // subscriber of the encoder
       data_payload_sub = nh_.subscribe(slash.append(uav_name.append("/serial/received_message")), 1, &DergbryanTracker::BacaCallback, this, ros::TransportHints().tcpNoDelay());
@@ -3579,7 +3629,9 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
 
   }
 
-//---------------------------------------LOAD-----------------------------------//
+//---------------------------------LOAD 2UAV---------------------------------//
+ 
+//--------------------------------------------------------------------------//
 void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand position_cmd, double uav_heading, const mrs_msgs::AttitudeCommand::ConstPtr &last_attitude_cmd){
   
   // Computational time:
@@ -6847,20 +6899,43 @@ std::tuple< Eigen::Vector3d, Eigen::Vector3d> DergbryanTracker::getMinDistDirLin
     //load_pose.position.z = load_pose_position_[2];
     
     //ROS_INFO_STREAM("Load Pose \n" << load_pose );
-    load_lin_vel_[0]= encoder_velocity_1*cable_length;
+    load_lin_vel_[0]= encoder_velocity_1*cable_length;//WWRONG TO CORRECT
     load_lin_vel_[1]= encoder_velocity_2*cable_length;
     load_lin_vel_[2]= 0;
     
   }
   void DergbryanTracker::uav2_state_callback(const mrs_msgs::UavState::ConstPtr& msg){
         // load_pose_position_.x = load_pose.position.x;
-    uav2_state[0]=msg->pose.position.x;
-    uav2_state[1]=msg->pose.position.y;
-    uav2_state[2]=msg->pose.position.z;
-    ROS_INFO_STREAM("Received uav2 position \n"<< uav2_state);
+    uav2_position_[0]=msg->pose.position.x;
+    uav2_position_[1]=msg->pose.position.y;
+    uav2_position_[2]=msg->pose.position.z;
+    // ROS_INFO_STREAM("Received uav2 position \n"<< uav2_position);
+    uav2_velocity_[0]=msg->velocity.linear.x;
+    uav2_velocity_[1]=msg->velocity.linear.y;
+    uav2_velocity_[2]=msg->velocity.linear.z;
+    // ROS_INFO_STREAM("Received uav2 velocity \n"<< uav2_velocity);
   }
 
+  void DergbryanTracker::uav2_anchoring_point_callback(const mrs_msgs::UavState::ConstPtr& msg){
+        // load_pose_position_.x = load_pose.position.x;
+    uav2_anchoring_point_position_[0]=msg->pose.position.x;
+    uav2_anchoring_point_position_[1]=msg->pose.position.y;
+    uav2_anchoring_point_position_[2]=msg->pose.position.z;
+    // ROS_INFO_STREAM("Received uav2 anchoring point position \n"<< uav2_anchoring_point_position);
+    uav2_anchoring_point_velocity_[0]=msg->velocity.linear.x;
+    uav2_anchoring_point_velocity_[1]=msg->velocity.linear.y;
+    uav2_anchoring_point_velocity_[2]=msg->velocity.linear.z;
+    // ROS_INFO_STREAM("Received uav2 anchoring point velocity \n"<< uav2_anchoring_point_velocity);
+  }
 
+  void DergbryanTracker::uav2_position_cmd_callback(const mrs_msgs::PositionCommand::ConstPtr& msg){
+        // load_pose_position_.x = load_pose.position.x;
+    uav2_position_cmd_received.position.x=msg->position.x;
+    uav2_position_cmd_received.position.y=msg->position.y;
+    uav2_position_cmd_received.position.z=msg->position.z;
+    uav2_position_cmd_received.heading=msg->heading;
+    // ROS_INFO_STREAM("Received uav2 position cmd \n"<< uav2_position_cmd_received);
+   }
   // | --------------------------------------------------------------------------------| 
 
 void DergbryanTracker::callbackOtherUavAppliedRef(const mrs_msgs::FutureTrajectoryConstPtr& msg) {
