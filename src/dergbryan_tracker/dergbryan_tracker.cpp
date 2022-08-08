@@ -4078,9 +4078,9 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
   Eigen::Matrix3d uav2_skew_Ow;
   Eigen::Vector3d uav2_attitude_rate_pred;
 
-  // R - current uav attitude
-  uav1_R = mrs_lib::AttitudeConverter(uav1_state.pose.orientation);
-  uav2_R = mrs_lib::AttitudeConverter(uav2_state.pose.orientation);
+  // // R - current uav attitude
+  // uav1_R = mrs_lib::AttitudeConverter(uav1_state.pose.orientation);
+  // uav2_R = mrs_lib::AttitudeConverter(uav2_state.pose.orientation);
 
   double m1=_uav_mass_;
   double m2=_uav_mass_;
@@ -4150,8 +4150,8 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
       // custom_load_vel.position.z = load_lin_vel[2];
 
       // FK : Beam payload center of mass position and velocity - Raphael
-      Payload_position=(uav1_anchoring_point_position+uav2_anchoring_point_position)/2; // vector 3d.
-      Payload_velocity=(uav1_anchoring_point_velocity+uav2_anchoring_point_velocity)/2;
+      Payload_position=(uav1_anchoring_point_position+uav2_anchoring_point_position)/2.0; // vector 3d.
+      Payload_velocity=(uav1_anchoring_point_velocity+uav2_anchoring_point_velocity)/2.0;
 
       custom_Payload_position.position.x=Payload_position[0];// poses to publish
       custom_Payload_position.position.y=Payload_position[1];
@@ -4278,6 +4278,39 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
       custom_uav2_anchoring_point_vel.position.x=uav2_anchoring_point_velocity[0];
       custom_uav2_anchoring_point_vel.position.y=uav2_anchoring_point_velocity[1];
       custom_uav2_anchoring_point_vel.position.z=uav2_anchoring_point_velocity[2];
+      // ROS_INFO_STREAM("uav1_velocity \n"<<uav1_velocity);
+      // ROS_INFO_STREAM("uav2_velocity\n"<<uav2_velocity);
+      // ROS_INFO_STREAM("uav1_position\n"<<uav1_position);
+      // ROS_INFO_STREAM("uav2_position\n"<<uav2_position);
+      // ROS_INFO_STREAM("uav1_anchoring_point_position\n"<<uav1_anchoring_point_position);
+      // ROS_INFO_STREAM("uav2_anchoring_point_position\n"<<uav2_anchoring_point_position);
+      // ROS_INFO_STREAM("uav1_anchoring_point_velocity\n"<<uav1_anchoring_point_velocity); //looks okay
+      // ROS_INFO_STREAM("uav2_anchoring_point_velocity\n"<<uav2_anchoring_point_velocity);
+
+      //Get UAV1 attitude
+      uav1_skew_Ow << 0     , -uav1_attitude_rate_pred(2), uav1_attitude_rate_pred(1),
+                uav1_attitude_rate_pred(2) , 0,       -uav1_attitude_rate_pred(0),
+                -uav1_attitude_rate_pred(1), uav1_attitude_rate_pred(0),  0;// assume omega is omega desired
+      // ensure Ow is updated correctly in predictions....
+      uav1_Rdot = uav1_skew_Ow*uav1_R; // or add - (equivalent to transpose?) UNUSED
+
+      double custom_dt2 = _prediction_dt_;//   /10.0;
+      Eigen::Matrix3d I = Eigen::Matrix3d::Identity(3, 3);
+
+      uav1_R = (I + uav1_skew_Ow*custom_dt2 + (0.5)*uav1_skew_Ow*custom_dt2*uav1_skew_Ow*custom_dt2 + (1.0/6.0)*uav1_skew_Ow*custom_dt2*uav1_skew_Ow*custom_dt2*uav1_skew_Ow*custom_dt2)*uav1_R;
+      //Get UAV2 attitude
+      uav2_skew_Ow << 0.0     , -uav2_attitude_rate_pred(2), uav2_attitude_rate_pred(1),
+                uav2_attitude_rate_pred(2) , 0.0,       -uav2_attitude_rate_pred(0),
+                -uav2_attitude_rate_pred(1), uav2_attitude_rate_pred(0),  0.0;// assume omega is omega desired
+      // ensure Ow is updated correctly in predictions....
+      uav2_Rdot = uav2_skew_Ow*uav2_R; 
+      uav2_R = (I + uav2_skew_Ow*custom_dt2 + (0.5)*uav2_skew_Ow*custom_dt2*uav2_skew_Ow*custom_dt2 + (1.0/6.0)*uav2_skew_Ow*custom_dt2*uav2_skew_Ow*custom_dt2*uav2_skew_Ow*custom_dt2)*uav2_R;
+
+
+      // predicted_attituderate.position.x = attitude_rate_pred(0,0);
+      // predicted_attituderate.position.y = attitude_rate_pred(1,0);
+      // predicted_attituderate.position.z = attitude_rate_pred(2,0);
+      // predicted_attituderate_out_.poses.push_back(predicted_attituderate);
     } 
     // pushback all the predicted quantity in their pose array vector
     predicted_uav1_poses_out_.poses.push_back(custom_uav1_pose);
@@ -4336,18 +4369,18 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
     uav2_state.velocity.linear.z=uav2_velocity[2];
     
 
-    // ROS_INFO_STREAM("uav1_state = \n" << uav1_state);
-    //Print input of UAV1 controller.
+    
+    // Print input of UAV1 controller.
     // ROS_INFO_STREAM("uav1_state = \n" << uav1_state);
     // ROS_INFO_STREAM("uav1_anchoring_point_position = \n" << uav1_anchoring_point_position);
     // ROS_INFO_STREAM("uav1_anchoring_point_velocity = \n" << uav1_anchoring_point_velocity);
     // ROS_INFO_STREAM("position_cmd = \n" << position_cmd);
 
     // // //Print input of UAV2 controller.
-    //   ROS_INFO_STREAM("uav1_state = \n" << uav2_state);
-    //   ROS_INFO_STREAM("uav1_anchoring_point_position = \n" << uav2_anchoring_point_position);
-    //   ROS_INFO_STREAM("uav1_anchoring_point_velocity = \n" << uav2_anchoring_point_velocity);
-    //   ROS_INFO_STREAM("position_cmd = \n" << uav2_position_cmd_received_);
+    //   ROS_INFO_STREAM("uav2_state = \n" << uav2_state);
+    //   ROS_INFO_STREAM("uav2_anchoring_point_position = \n" << uav2_anchoring_point_position);
+    //   ROS_INFO_STREAM("uav2_anchoring_point_velocity = \n" << uav2_anchoring_point_velocity);
+    //   ROS_INFO_STREAM("uav2_position_cmd = \n" << uav2_position_cmd_received_);
 
    //std::tie to create tuple from the two variables and stock the data that is returned by SimulateController fct.
     Eigen::Vector3d f1;
@@ -4422,11 +4455,11 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
         // EOM to get the accelerations.
     Eigen::Vector3d zw(0,0,1.0);
 
-    Payload_acc=(1/ml)*T1*mu1+(1/ml)*T2*mu2-9.81*zw;
+    Payload_acc=(1.0/ml)*T1*mu1+(1.0/ml)*T2*mu2-9.81*zw;
     dotnl = wl.cross(nl);
     dotwl=(d1/J_l)*T1*nl.cross(mu1)+(d2/J_l)*T2*nl.cross(mu2);
-    uav1_acc=(1/m1)*f1-(1/m1)*T1*mu1-9.81*zw;
-    uav2_acc=(1/m2)*f2-(1/m2)*T2*mu2-9.81*zw;
+    uav1_acc=(1.0/m1)*f1-(1.0/m1)*T1*mu1-9.81*zw;
+    uav2_acc=(1.0/m2)*f2-(1.0/m2)*T2*mu2-9.81*zw;
     // ROS_INFO_STREAM("Payload_acc   = \n" << Payload_acc);
     // ROS_INFO_STREAM("dotnl   = \n" << dotnl);
     // ROS_INFO_STREAM("uav1_acc   = \n" << uav1_acc);
