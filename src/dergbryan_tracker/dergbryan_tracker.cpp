@@ -46,7 +46,7 @@
 #include <std_msgs/UInt8.h>
 #include <stdlib.h> 
 // | ----------------2UAV LOAD model----------------- |
-#include <Eigen/Geometry>
+// #include <Eigen/Geometry>
 
 
 
@@ -105,7 +105,7 @@ public:
   double getLambda(Eigen::Vector3d &point_link_0, Eigen::Vector3d &point_link_1, Eigen::Vector3d &point_sphere);
   std::tuple< Eigen::Vector3d, Eigen::Vector3d> getMinDistDirLineSegments(Eigen::Vector3d &point0_link0, Eigen::Vector3d &point1_link0, Eigen::Vector3d &point0_link1, Eigen::Vector3d &point1_link1);
  
-  std::tuple< Eigen::Vector3d, Eigen::Vector3d>  SimulateSe3CopyController(const mrs_msgs::UavState uavi_state, Eigen::Matrix3d uavi_R, Eigen::Vector3d Payloadposition_vector, Eigen::Vector3d Payloadvelocity_vector,mrs_msgs::PositionCommand uavi_position_cmd ,Eigen::Vector3d uavi_Rp,Eigen::Vector3d uavi_Rv,Eigen::Vector3d uavi_Rpl,Eigen::Vector3d uavi_Ra);
+  std::tuple< Eigen::Vector3d, Eigen::Vector3d> SimulateSe3CopyController(const mrs_msgs::UavState uavi_state, Eigen::Matrix3d uavi_R, Eigen::Vector3d Payloadposition_vector, Eigen::Vector3d Payloadvelocity_vector,mrs_msgs::PositionCommand uavi_position_cmd ,Eigen::Vector3d uavi_Rp,Eigen::Vector3d uavi_Rv,Eigen::Vector3d uavi_Rpl,Eigen::Vector3d uavi_Ra);
 private:
   ros::NodeHandle                                     nh_;
   ros::NodeHandle                                     nh2_;
@@ -860,7 +860,7 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   // param_loader2.loadParam("use_agents_avoidance", use_agents_avoidance_);
   param_loader2.loadParam("network/robot_names", _avoidance_other_uav_names_);
 
-// should we change all nh_ to nh2_?????? do we need both? (see begin init params from controller en derg. can it be done with just 1?)
+  // should we change all nh_ to nh2_?????? do we need both? (see begin init params from controller en derg. can it be done with just 1?)
   // extract the numerical name
   sscanf(_uav_name_.c_str(), "uav%d", &avoidance_this_uav_number_);
   ROS_INFO("[DergbryanTracker]: Numerical ID of this UAV is %d", avoidance_this_uav_number_);
@@ -1079,7 +1079,7 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
 
 
   
-// TODO !!! see mpc tracker for other options
+  // TODO !!! see mpc tracker for other options
   // Subsciber on chatter topic
   // mrs_lib::SubscribeHandlerOptions shopts;
   // shopts.nh              = nh_;
@@ -1486,6 +1486,7 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
 
 //|---------------------LOAD--------------------- |//
   load_gains_switch = getenv("LOAD_GAIN_SWITCH");
+  number_of_uav=getenv("NUMBER_OF_UAV"); 
 //|---------------------------------------------- |//
 
   if (_use_derg_){
@@ -1497,11 +1498,11 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
     //tictoc_stack.push(clock());
     if (load_gains_switch == "true" && payload_spawned){ 
       //ROS_INFO_STREAM("if loadgainswitch and payload_spawned = \n" << true);
-      if(number_of_uav=="2"){
+      if (number_of_uav == "2"){
         trajectory_prediction_general_load_2UAV(position_cmd, uav_heading, last_attitude_cmd);
       }
       else{
-        trajectory_prediction_general_load(position_cmd, uav_heading, last_attitude_cmd);
+        // trajectory_prediction_general_load(position_cmd, uav_heading, last_attitude_cmd);
       }
     }
     else{
@@ -1524,7 +1525,7 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
     position_cmd.heading        = goal_heading_;
     ROS_INFO_STREAM("Position cmd \n"<< position_cmd);
     if ((load_gains_switch == "true") && (payload_spawned)){  
-      if(number_of_uav=="2"){
+      if (number_of_uav=="2"){
         trajectory_prediction_general_load_2UAV(position_cmd, uav_heading, last_attitude_cmd);
       }
       else{
@@ -4080,13 +4081,16 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
   double ml= load_mass_*2; //As the load_mass_ value exported in session file is half of the payload. As this is the value used in controller to control the anchoring point position.
   double d1=0.75;
   double d2=-0.75; //todo make these two modified in session file as for the load mass and other parameters that might vary.
-
+  Eigen::Vector3d zw;
+  zw[0]=0.0;
+  zw[1]=0.0;
+  zw[2]=1.0;
 
   // Eigen::MatrixXd x_full_state = Eigen::MatrixXd(5, 5);
 
 // Prediction loop
   for (int i = 0; i < num_pred_samples_; i++) {
-    if(i==0){
+    if (i==0){
       //Initial conditions for first iteration
 
       //uav1
@@ -4379,7 +4383,6 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
     double T2=T_matrix(1);
 
     // EOM to get the accelerations.
-    Eigen::Vector3d zw(0,0,1);
     Payload_acc=(1/ml)*T1*mu1+(1/ml)*T2*mu2-9.81*zw;
     dotnl = wl.cross(nl);
     dotwl=(d1/J_l)*T1*nl.cross(mu1)+(d2/J_l)*T2*nl.cross(mu2);
@@ -4573,10 +4576,10 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
   // catch (...) {
   //   ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_load_position_errors_publisher.getTopic().c_str());
   // }
-
   }
+  
 
-std::tuple< Eigen::Vector3d, Eigen::Vector3d> DergbryanTracker::SimulateSe3CopyController(const mrs_msgs::UavState uavi_state, Eigen::Matrix3d uavi_R, Eigen::Vector3d Payloadposition_vector, Eigen::Vector3d Payloadvelocity_vector,mrs_msgs::PositionCommand uavi_position_cmd ,Eigen::Vector3d uavi_Rp,Eigen::Vector3d uavi_Rv,Eigen::Vector3d uavi_Rpl,Eigen::Vector3d uavi_Ra){
+std::tuple<Eigen::Vector3d, Eigen::Vector3d> DergbryanTracker::SimulateSe3CopyController(const mrs_msgs::UavState uavi_state, Eigen::Matrix3d uavi_R, Eigen::Vector3d Payloadposition_vector, Eigen::Vector3d Payloadvelocity_vector,mrs_msgs::PositionCommand uavi_position_cmd ,Eigen::Vector3d uavi_Rp,Eigen::Vector3d uavi_Rv,Eigen::Vector3d uavi_Rpl,Eigen::Vector3d uavi_Ra){
     // init arguments to correct type and name.
     mrs_msgs::UavState uav_state=uavi_state; // init the state of the UAV number i to a local var, from its pointer in the arguments.
     // Eigen::Vector3d payload_pos= *Payloadposition_vector;
@@ -4748,7 +4751,7 @@ std::tuple< Eigen::Vector3d, Eigen::Vector3d> DergbryanTracker::SimulateSe3CopyC
     Kdl[2] = 0;
   }
     // | ------------------------------------------ |
-// TODO Change the lines above, as useless if since it's redefined just after. Strange.
+  // TODO Change the lines above, as useless if since it's redefined just after. Strange.
 
     // ROS_INFO_STREAM("Kpl = \n" << Kpl);
     // ROS_INFO_STREAM("Kdl = \n" << Kdl);
@@ -4839,7 +4842,7 @@ std::tuple< Eigen::Vector3d, Eigen::Vector3d> DergbryanTracker::SimulateSe3CopyC
     ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kv_x = %f", Kv(0));
     ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kv_y = %f", Kv(1));
     ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kv_z = %f", Kv(2));
-// after mutiplied with mass
+  // after mutiplied with mass
     ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kp_x*m = %f", Kp(0));
     ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kp_y*m = %f", Kp(1));
     ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kp_z*m = %f", Kp(2));
