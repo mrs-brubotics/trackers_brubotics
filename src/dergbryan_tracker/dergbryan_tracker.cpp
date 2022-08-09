@@ -615,6 +615,7 @@ private:
     Eigen::Vector3d Difference_load_drone_position = Eigen::Vector3d::Zero(3);
     
     bool payload_spawned = false;
+    bool uav2_payload_spawned = false;
     bool remove_offset = true;
     std::string load_gains_switch;
     Eigen::Vector3d load_pose_position_offset = Eigen::Vector3d::Zero(3);
@@ -1474,6 +1475,8 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
   uav_name = getenv("UAV_NAME");
   number_of_uav = getenv("NUMBER_OF_UAV"); // is exported in the session.yaml
     //maybe redondant
+
+  // If I am uav2 => publish relevant data for the predictions made on uav1.   
   if (run_type == "simulation"){
     // to see how many UAVs there are
 
@@ -1529,7 +1532,7 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
 
     // ROS_INFO_STREAM("Position cmd \n"<< position_cmd);
     if ((load_gains_switch == "true") && (payload_spawned)){  
-      if((number_of_uav=="2") && (uav_name == "uav1")){
+      if((number_of_uav=="2") && (uav_name == "uav1") && (uav2_payload_spawned == true) ){
         trajectory_prediction_general_load_2UAV(position_cmd, uav_heading, last_attitude_cmd);
       }
       else if (number_of_uav=="1"){
@@ -9000,6 +9003,10 @@ std::tuple< Eigen::Vector3d, Eigen::Vector3d> DergbryanTracker::getMinDistDirLin
     uav2_anchoring_point_velocity_[1]=msg->velocity.linear.y;
     uav2_anchoring_point_velocity_[2]=msg->velocity.linear.z;
     // ROS_INFO_STREAM("Received uav2 anchoring point velocity \n"<< uav2_anchoring_point_velocity);
+
+    if (uav2_payload_spawned==false){
+      uav2_payload_spawned=true;
+    }
   }
 
   void DergbryanTracker::uav2_position_cmd_callback(const mrs_msgs::PositionCommand::ConstPtr& msg){
