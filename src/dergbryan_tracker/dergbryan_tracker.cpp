@@ -1022,14 +1022,14 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   if (number_of_uav == "2"){
     if (uav_name == "uav1"){  // to see which UAV it is
         uav_id = true; //uav 1
-        uav2_state_sub=nh_.subscribe("/uav2/control_manager/dergbryan_tracker/uav2_state", 10, &DergbryanTracker::uav2_state_callback, this, ros::TransportHints().tcpNoDelay());// get uav2 states
-        uav2_anchoring_point_sub=nh_.subscribe("/uav2/control_manager/dergbryan_tracker/uav2_anchoring_point_state", 10, &DergbryanTracker::uav2_anchoring_point_callback, this, ros::TransportHints().tcpNoDelay());
-        uav2_position_cmd_sub=nh_.subscribe("/uav2/control_manager/dergbryan_tracker/uav2_position_cmd", 10, &DergbryanTracker::uav2_position_cmd_callback, this, ros::TransportHints().tcpNoDelay());
+        uav2_state_sub=nh_.subscribe("/uav2/control_manager/dergbryan_tracker/uav2_state", 1, &DergbryanTracker::uav2_state_callback, this, ros::TransportHints().tcpNoDelay());// get uav2 states
+        uav2_anchoring_point_sub=nh_.subscribe("/uav2/control_manager/dergbryan_tracker/uav2_anchoring_point_state", 1, &DergbryanTracker::uav2_anchoring_point_callback, this, ros::TransportHints().tcpNoDelay());
+        uav2_position_cmd_sub=nh_.subscribe("/uav2/control_manager/dergbryan_tracker/uav2_position_cmd", 1, &DergbryanTracker::uav2_position_cmd_callback, this, ros::TransportHints().tcpNoDelay());
       }else{
         uav_id = false; //uav 2
-        uav2_state_pub = nh2_.advertise<mrs_msgs::UavState>("uav2_state", 10);
-        uav2_anchoring_point_pub = nh2_.advertise<mrs_msgs::UavState>("uav2_anchoring_point_state", 10);
-        uav2_position_cmd_pub = nh2_.advertise<mrs_msgs::PositionCommand>("uav2_position_cmd", 10);
+        uav2_state_pub = nh2_.advertise<mrs_msgs::UavState>("uav2_state", 1);
+        uav2_anchoring_point_pub = nh2_.advertise<mrs_msgs::UavState>("uav2_anchoring_point_state", 1);
+        uav2_position_cmd_pub = nh2_.advertise<mrs_msgs::PositionCommand>("uav2_position_cmd", 1);
       }
   }
 
@@ -1263,6 +1263,7 @@ bool DergbryanTracker::resetStatic(void) {
 const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msgs::UavState::ConstPtr &                        uav_state,
                                                               [[maybe_unused]] const mrs_msgs::AttitudeCommand::ConstPtr &last_attitude_cmd) {
 
+  // ROS_INFO("[DergbryanTracker]: updating the DergbryanTracker of the controllers_brubotics package");
   // chatter_publisher_ example (disabled by default):
   if (false) {
     std_msgs::String msg;
@@ -3920,7 +3921,7 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
     Eigen::Vector3d wl ;
     Eigen::Vector3d dotwl ;
     //
-    double J_l=(1.0/2.0)*load_mass_*pow(0.75,2.0); 
+    double J_l=(1.0/2.0)*load_mass_*pow(1.5,2.0); 
 
     // Eigen::Vector3d acceleration_load = acceleration_load_; // don't need acceleration do I ??
 
@@ -4263,7 +4264,8 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
       wl=wl+dotwl*_prediction_dt_;
       custom_wl.position.x=wl[0];
       custom_wl.position.y=wl[1];
-      custom_wl.position.z=wl[2];   
+      custom_wl.position.z=wl[2];
+      dotnl = wl.cross(nl);   
       nl=nl+dotnl*_prediction_dt_;
       custom_nl.position.x=nl[0];
       custom_nl.position.y=nl[1];
@@ -4415,8 +4417,8 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
 
     // compute d(x,u)
     Eigen::MatrixXd d_matrix = Eigen::MatrixXd(2,1);
-    d_matrix(0,0)=(ml/m1)*mu1.dot(f1) + (uav1_velocity-uav1_anchoring_point_velocity).squaredNorm() + ml*d1*wl.squaredNorm()*mu1.dot(nl);
-    d_matrix(1,0)=(ml/m2)*mu2.dot(f2) + (uav2_velocity-uav2_anchoring_point_velocity).squaredNorm() + ml*d2*wl.squaredNorm()*mu2.dot(nl);
+    d_matrix(0,0)=(ml/m1)*mu1.dot(f1) + (ml/cable_length)*(uav1_velocity-uav1_anchoring_point_velocity).squaredNorm() + ml*d1*wl.squaredNorm()*mu1.dot(nl);
+    d_matrix(1,0)=(ml/m2)*mu2.dot(f2) + (ml/cable_length)*(uav2_velocity-uav2_anchoring_point_velocity).squaredNorm() + ml*d2*wl.squaredNorm()*mu2.dot(nl);
   
     // compute D(x)
 
@@ -4456,8 +4458,8 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
     D4_matrix(1,0)=D4_matrixCol1(1,0);
     D4_matrix(2,0)=D4_matrixCol1(2,0);
     D4_matrix(0,1)=D4_matrixCol2(0,0);
-    D4_matrix(1,1)=D4_matrixCol2(0,1);
-    D4_matrix(2,1)=D4_matrixCol2(0,2);
+    D4_matrix(1,1)=D4_matrixCol2(1,0);
+    D4_matrix(2,1)=D4_matrixCol2(2,0);
     // ROS_INFO_STREAM("D4  = \n" << D4_matrix);
 
     Eigen::MatrixXd D_matrix = Eigen::MatrixXd(2,2);
@@ -4474,7 +4476,7 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
     Eigen::Vector3d zw(0,0,1.0);
 
     Payload_acc=(1.0/ml)*T1*mu1+(1.0/ml)*T2*mu2-9.81*zw;
-    dotnl = wl.cross(nl);
+    //dotnl = wl.cross(nl); //should be above in the else ??? So it uses the new predicted wl value rather than the previous one as here
     dotwl=(d1/J_l)*T1*nl.cross(mu1)+(d2/J_l)*T2*nl.cross(mu2);
     uav1_acc=(1.0/m1)*f1-(1.0/m1)*T1*mu1-9.81*zw;
     uav2_acc=(1.0/m2)*f2-(1.0/m2)*T2*mu2-9.81*zw;
