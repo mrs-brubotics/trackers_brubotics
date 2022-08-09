@@ -1004,17 +1004,17 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
 
     //-----------------------2UAV predictions-----------------------//
   //publish pred
-  predicted_uav1_poses_pub = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav1_pose", 10);//why 10 queue size ???
-  predicted_uav2_poses_pub = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav2_pose", 10);
+  predicted_uav1_poses_pub = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav1_pose", 1);//why 10 queue size ???
+  predicted_uav2_poses_pub = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav2_pose", 1);
 
-  predicted_uav1_vel_pub = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav1_vel", 10);
-  predicted_uav2_vel_pub = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav2_vel", 10);
+  predicted_uav1_vel_pub = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav1_vel", 1);
+  predicted_uav2_vel_pub = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav2_vel", 1);
 
-  predicted_uav1_anchoring_point_pose_pub= nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav1_anchoring_point_pose", 10);
-  predicted_uav2_anchoring_point_pose_pub= nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav2_anchoring_point_pose", 10);
+  predicted_uav1_anchoring_point_pose_pub= nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav1_anchoring_point_pose", 1);
+  predicted_uav2_anchoring_point_pose_pub= nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav2_anchoring_point_pose", 1);
 
-  predicted_uav1_anchoring_point_vel_pub= nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav1_anchoring_point_vel", 10);
-  predicted_uav2_anchoring_point_vel_pub= nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav2_anchoring_point_vel", 10);
+  predicted_uav1_anchoring_point_vel_pub= nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav1_anchoring_point_vel", 1);
+  predicted_uav2_anchoring_point_vel_pub= nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav2_anchoring_point_vel", 1);
 
   //for communication between the two uav's 
   run_type = getenv("RUN_TYPE");
@@ -4506,7 +4506,7 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
     custom_uav2_acceleration.position.z=uav2_acc[2];
   } // end for loop prediction
 
-
+  // ROS_INFO_STREAM("Gets to the publishing");
   try {
     predicted_uav1_poses_pub.publish(predicted_uav1_poses_out_);
   }
