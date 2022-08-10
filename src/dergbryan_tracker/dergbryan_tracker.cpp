@@ -141,7 +141,7 @@ private:
 
   double                        _uav_mass_; // Why old ? use getmass instead ? TOCHECK when everything works again with load prediction.
   double                        uav_mass_difference_;
-  double                          load_mass_; // why not _load_mass_ as it's defined in yaml ?? Global shared variable with controller ? 
+  double                          _load_mass_; // TODO why not _load_mass_ as it's defined in yaml ?? Global shared variable with controller ? 
   
   // OLD double                        _g_;
   
@@ -224,7 +224,7 @@ private:
   double dt_ = 0.010; // DO NOT CHANGE! Hardcoded ERG sample time = controller sample time TODO: obtain via loop rate, see MpcTracker
   double _prediction_dt_; //0.010;//0.010;//0.001;//0.020; //0.010; // controller sampling time (in seconds) used in prediction
   double _pred_horizon_;//1.5//0.15;//1.5; //0.15; //1.5; //0.4; // prediction horizon (in seconds)
-  int num_pred_samples_;
+  int _num_pred_samples_; // number of tracker's trajectory prediction samples
 
   // load, why this value ? Why diff than the other dt ? Is it a problem ?
   double load_vel_dt; //= 0.004;
@@ -258,60 +258,49 @@ private:
   ros::Publisher predicted_load_acc_publisher_; 
   ros::Publisher predicted_tension_force_;
 
-  ros::Publisher predicted_phi_publisher;
-  ros::Publisher predicted_theta_publisher;
-  ros::Publisher predicted_phi_dot_publisher;
-  ros::Publisher predicted_theta_dot_publisher;
-  ros::Publisher predicted_phi_dot_dot_publisher;
-  ros::Publisher predicted_theta_dot_dot_publisher;
+  ros::Publisher predicted_phi_publisher_;
+  ros::Publisher predicted_theta_publisher_;
+  ros::Publisher predicted_phi_dot_publisher_;
+  ros::Publisher predicted_theta_dot_publisher_;
+  ros::Publisher predicted_phi_dot_dot_publisher_;
+  ros::Publisher predicted_theta_dot_dot_publisher_;
+  ros::Publisher predicted_output_force_publisher_;
+  ros::Publisher predicted_load_position_errors_publisher_;
+  ros::Publisher tracker_load_pose_publisher_;
+  ros::Publisher tracker_load_vel_publisher_;
+  ros::Publisher tracker_uav_state_publisher_;
+  ros::Publisher tracker_load_old_vel_publisher_;
+  ros::Publisher load_pose_experiments_publisher_;
+  ros::Publisher load_pose_error_publisher_;
+  ros::Publisher load_velocity_error_publisher_;
+  ros::Publisher theta_load_cable_publisher_;
+  ros::Publisher phi_load_cable_publisher_;
+  ros::Publisher theta_dot_load_cable_publisher_;
+  ros::Publisher phi_dot_load_cable_publisher_;
+  ros::Publisher theta_dot_dot_load_cable_publisher_;
+  ros::Publisher phi_dot_dot_load_cable_publisher_;
+  ros::Publisher uav_state_init_publisher_;
+  ros::Publisher load_position_init_publisher_;
+  ros::Publisher load_velocity_init_publisher_;
+  ros::Publisher load_acceleration_init_publisher_;
+  ros::Publisher predicted_q_state_dot_dot_uav_publisher_;
+  ros::Publisher predicted_q_state_dot_dot_load_publisher_;
 
-  ros::Publisher predicted_output_force_publisher;
-  ros::Publisher predicted_load_position_errors_publisher;
-
-  ros::Publisher publisher_tracker_load_pose; // add _ on the following ?
-  ros::Publisher publisher_tracker_load_vel;
-  ros::Publisher publisher_tracker_uav_state;
-  ros::Publisher publisher_tracker_load_old_vel;
-  //ros::Publisher custom_publisher_load_pose;
-  ros::Publisher publisher_load_pose_experiments;
-  ros::Publisher publisher_load_pose_error;
-  ros::Publisher publisher_load_velocity_error;
-  //ros::Publisher custom_publisher_tension_force; unused
-  //ros::Publisher custom_publisher_tracker_load_acceleration;
-  //ros::Publisher custom_publisher_pos_difference_x;
-  //ros::Publisher custom_publisher_pos_difference_y;
-  ros::Publisher publisher_theta_load_cable;
-  ros::Publisher publisher_phi_load_cable;
-  ros::Publisher publisher_theta_dot_load_cable;
-  ros::Publisher publisher_phi_dot_load_cable;
-  ros::Publisher publisher_theta_dot_dot_load_cable;
-  ros::Publisher publisher_phi_dot_dot_load_cable;
-  ros::Publisher publisher_uav_state_init;
-  ros::Publisher publisher_load_position_init;
-  ros::Publisher publisher_load_velocity_init;
-  ros::Publisher publisher_load_acceleration_init;
-
-  ros::Publisher predicted_q_state_dot_dot_uav_publisher;
-  ros::Publisher predicted_q_state_dot_dot_load_publisher;
-
-  //ros::Publisher custom_predicted_thrust_publisher; //TODO see which custom pub is already defined by Bryan (without any custom_ before)
-  //ros::Publisher custom_predicted_pose_publisher;
-  // ros::Publisher custom_predicted_vel_publisher;
   //------------------UAV2predictionspub------------------------//
   //for communication between uav1 and 2
-  ros::Publisher uav2_state_pub;
-  ros::Publisher uav2_anchoring_point_pub;
-  ros::Publisher uav2_position_cmd_pub;
+  ros::Publisher uav2_state_publisher_;
+  ros::Publisher uav2_anchoring_point_publisher_;
+  ros::Publisher uav2_position_cmd_publisher_;
   //To publish predictions
-  ros::Publisher predicted_uav1_poses_pub;
-  ros::Publisher predicted_uav2_poses_pub;
-  ros::Publisher predicted_uav1_vel_pub;
-  ros::Publisher predicted_uav2_vel_pub;
+  ros::Publisher predicted_uav1_poses_publisher_;
+  ros::Publisher predicted_uav2_poses_publisher_;
+  ros::Publisher predicted_uav1_vel_publisher_;
+  ros::Publisher predicted_uav2_vel_publisher_;
   //add accelerations here if needed
-  ros::Publisher predicted_uav1_anchoring_point_pose_pub;
-  ros::Publisher predicted_uav2_anchoring_point_pose_pub;
-  ros::Publisher predicted_uav1_anchoring_point_vel_pub;
-  ros::Publisher predicted_uav2_anchoring_point_vel_pub;
+  ros::Publisher predicted_uav1_anchoring_point_pose_publisher_;
+  ros::Publisher predicted_uav2_anchoring_point_pose_publisher_;
+  ros::Publisher predicted_uav1_anchoring_point_vel_publisher_;
+  ros::Publisher predicted_uav2_anchoring_point_vel_publisher_;
 //|--------------------------------------------------------------------|//
 
 
@@ -370,7 +359,7 @@ private:
   geometry_msgs::PoseArray predicted_q_state_dot_dot_load_out; 
  
   geometry_msgs::PoseArray predicted_output_force_out;
-  geometry_msgs::PoseArray predicted_load__position_errors_out;
+  geometry_msgs::PoseArray predicted_load_position_errors_out;
   geometry_msgs::Pose load_pose;
   geometry_msgs::Vector3 old_load_lin_vel;
 
@@ -614,15 +603,16 @@ private:
     Eigen::Vector3d rel_load_pose_position = Eigen::Vector3d::Zero(3);
     Eigen::Vector3d Difference_load_drone_position = Eigen::Vector3d::Zero(3);
     
-    bool payload_spawned = false;
-    bool uav2_payload_spawned = false;
+    bool payload_spawned_ = false;
+    bool uav2_payload_spawned_ = false;
     bool remove_offset = true;
-    std::string load_gains_switch;
+    std::string _load_gains_switch_;
+    double _cable_length_;
     Eigen::Vector3d load_pose_position_offset = Eigen::Vector3d::Zero(3);
-    std::string run_type;
+    std::string _run_type_; // defined in bashrc or session
     Eigen::Vector3d acceleration_load_;
         
-    double cable_length;
+
     float encoder_angle_1;
     float encoder_angle_2;
     float encoder_velocity_1;
@@ -631,8 +621,7 @@ private:
 
     // to merge Load_controller for 1 and 2 uavs
     bool uav_id = false; // false = uav2, true = uav1
-    std::string uav_name;
-    std::string number_of_uav;
+    std::string _number_of_uav_;
 
     std::array<uint8_t, 3> data_payload;
 
@@ -762,73 +751,56 @@ private:
 /*initialize()//{*/
 void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unused]] const std::string uav_name,
                              [[maybe_unused]] std::shared_ptr<mrs_uav_managers::CommonHandlers_t> common_handlers) {
-  /*QUESTION: using se3_controller here since I want to load the se3 controllers paramters and not overwrite them. How to add paramters specific to derg tracker? How to overwrite se3 control paramters if we would use our own se3 controller?*/
-  //ros::NodeHandle nh_(parent_nh, "dergbryan_tracker");
-  //ros::NodeHandle nh_(parent_nh, "se3_controller");
   
-  //CHOOSE:
-  // ros::NodeHandle nh_(parent_nh, "se3_brubotics_controller");
-  ros::NodeHandle nh_(parent_nh, "se3_copy_controller");
-
-  common_handlers_ = common_handlers;
-  _uav_name_       = uav_name;
-  /*QUESTION: how to load these paramters commented below as was done in the se3controllller?*/
-  // _uav_mass_       = uav_mass;
-
-   // | -----------------load------------------|
-    _uav_mass_       = std::stod(getenv("UAV_MASS"));
-    // | --------------------------------------|
-
-
+  common_handlers_ = common_handlers;                          
+  ros::NodeHandle nh_(parent_nh, "se3_copy_controller"); // NodeHandle 1 for Se3CopyController, used to load controller params
+  ros::NodeHandle nh2_(parent_nh, "dergbryan_tracker"); // NodeHandle 2 for DergbryanTracker, used to load tracker params
+  _uav_name_       = uav_name; // this UAV
+  /*TODO: how to load these paramters commented below as was done in the se3controller?*/
+  // _uav_mass_       = uav_mass; // now loaded later via getenv()
   ros::Time::waitForValid();
 
-  // | ------------------- loading parameters ------------------- |
-  //mrs_lib::ParamLoader param_loader(nh_, "DergbryanTracker");
-  // mrs_lib::ParamLoader param_loader(nh_, "Se3Controller");
-  // CHOOSE:
-  // mrs_lib::ParamLoader param_loader(nh_, "Se3BruboticsController");
+  // | ------------------- loading env (session/bashrc) parameters ------------------- |
+  // TODO: as not all sessions already have these variables, updater all the (older) sessions as some do not work anymore
+  // TODO: Explain why you need getenv and cannot use yaml.
+  // stod to transforms string double
+  _uav_mass_       = std::stod(getenv("UAV_MASS")); // TODO: why for load transport is UAV_MASS specificlaly loaded like this and not initialized used as before (what we did before adding load)? 
+  _run_type_ = getenv("RUN_TYPE");
+  _number_of_uav_ = getenv("NUMBER_OF_UAV"); // is exported in the session.yaml TODO: not in all, so adapt name to something more logical (as only used for modle type 2 uavs with payload) and update all sessions and autoload in bashrc for real exp
+  _load_gains_switch_ = getenv("LOAD_GAIN_SWITCH"); // TODO: explain its use
+  //uav_name = getenv("UAV_NAME"); //TODO: not required as _uav_name_ is used everywherer in code now
+  _cable_length_ = std::stod(getenv("CABLE_LENGTH")); // 
+  _load_mass_ = std::stod(getenv("LOAD_MASS")); // 
+  
+
+  // | ------------------- loading .yaml parameters ------------------- |
   mrs_lib::ParamLoader param_loader(nh_, "Se3CopyController");
-
   param_loader.loadParam("version", _version_);
-
-  /*QUESTION: this block triggers the error always, anyone knows solution to this?*/
+  /*TODO: this block triggers the error always, anyone knows solution to this?*/
   // if (_version_ != VERSION) {
   //   ROS_ERROR("[DergbryanTracker]: the version of the binary (%s) does not match the config file (%s), please build me!", VERSION, _version_.c_str());
   //   ros::shutdown();
   // }
-
   param_loader.loadParam("enable_profiler", _profiler_enabled_);
-  // lateral gains
+  // lateral gains and limits:
   param_loader.loadParam("default_gains/horizontal/kp", kpxy_);
-  //kpxy_ = 5.0; //5.0//5.0; //3.0; // To mimic a delay in the predicitons
   param_loader.loadParam("default_gains/horizontal/kv", kvxy_);
-  //kvxy_ = 3.0; //3.0//2.0; //2.0; // To mimic a delay in the predicitons
   param_loader.loadParam("default_gains/horizontal/ka", kaxy_);
-
   param_loader.loadParam("default_gains/horizontal/kiw", kiwxy_);
   param_loader.loadParam("default_gains/horizontal/kib", kibxy_);
-
-  // height gains
-  param_loader.loadParam("default_gains/vertical/kp", kpz_);
-  //kpz_ = 12.0; //15.0; // To mimic a delay in the predicitons
-  param_loader.loadParam("default_gains/vertical/kv", kvz_);
-  //kvz_ = 8.0; //8.0; // To mimic a delay in the predicitons
-  param_loader.loadParam("default_gains/vertical/ka", kaz_);
-
-  // attitude gains
-  param_loader.loadParam("default_gains/horizontal/attitude/kq", kqxy_);
-  //kqxy_ = 7.0; //8.0; //1.0; // To mimic a delay in the predicitons
-  param_loader.loadParam("default_gains/vertical/attitude/kq", kqz_);
-
-  // mass estimator
-  param_loader.loadParam("default_gains/mass_estimator/km", km_);
-  param_loader.loadParam("default_gains/mass_estimator/km_lim", km_lim_);
-
-  // integrator limits
   param_loader.loadParam("default_gains/horizontal/kiw_lim", kiwxy_lim_);
   param_loader.loadParam("default_gains/horizontal/kib_lim", kibxy_lim_);
-
-  // constraints
+  // height gains:
+  param_loader.loadParam("default_gains/vertical/kp", kpz_);
+  param_loader.loadParam("default_gains/vertical/kv", kvz_);
+  param_loader.loadParam("default_gains/vertical/ka", kaz_);
+  // mass estimator (height) gains and limits:
+  param_loader.loadParam("default_gains/mass_estimator/km", km_);
+  param_loader.loadParam("default_gains/mass_estimator/km_lim", km_lim_);
+  // attitude gains:
+  param_loader.loadParam("default_gains/horizontal/attitude/kq", kqxy_);
+  param_loader.loadParam("default_gains/vertical/attitude/kq", kqz_);
+  // constraints:
   param_loader.loadParam("constraints/tilt_angle_failsafe/enabled", _tilt_angle_failsafe_enabled_);
   param_loader.loadParam("constraints/tilt_angle_failsafe/limit", _tilt_angle_failsafe_);
   if (_tilt_angle_failsafe_enabled_ && fabs(_tilt_angle_failsafe_) < 1e-3) {
@@ -836,65 +808,24 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
     ros::shutdown();
   }
   param_loader.loadParam("constraints/thrust_saturation", _thrust_saturation_); // is further reduced by _thrust_saturation_ratio_
-
-  // output mode
+  // output mode:
   param_loader.loadParam("output_mode", output_mode_);
-
+  // TODO: any other Se3CopyController params to load?
   //param_loader.loadParam("rotation_matrix", drs_params_.rotation_type);
-
-
-  // should we also add this for other paramters?
   if (!param_loader.loadedSuccessfully()) {
-    ROS_ERROR("[DergbryanTracker]: could not load all parameters!");
+    ROS_ERROR("[DergbryanTracker]: could not load all Se3CopyController parameters!");
     ros::shutdown();
+  } 
+  else{
+    ROS_INFO("[DergbryanTracker]: correctly loaded all Se3CopyController parameters!");
   }
 
-
-
-  ros::NodeHandle nh2_(parent_nh, "dergbryan_tracker");
   mrs_lib::ParamLoader param_loader2(nh2_, "DergbryanTracker");
-
   param_loader2.loadParam("use_derg", _use_derg_);
-  //Frank : Reactivate this parameters NO - They are remplaced by enable_dsm_x
-  // param_loader2.loadParam("use_wall_constraints", use_wall_constraints_);
-  // param_loader2.loadParam("use_cylindrical_constraints", use_cylindrical_constraints_);
-  // param_loader2.loadParam("use_agents_avoidance", use_agents_avoidance_);
   param_loader2.loadParam("network/robot_names", _avoidance_other_uav_names_);
-
-// should we change all nh_ to nh2_?????? do we need both? (see begin init params from controller en derg. can it be done with just 1?)
-  // extract the numerical name
-  sscanf(_uav_name_.c_str(), "uav%d", &avoidance_this_uav_number_);
-  ROS_INFO("[DergbryanTracker]: Numerical ID of this UAV is %d", avoidance_this_uav_number_);
-  avoidance_this_uav_priority_ = avoidance_this_uav_number_;
-
-  // exclude this drone from the list
-  std::vector<std::string>::iterator it = _avoidance_other_uav_names_.begin();
-  while (it != _avoidance_other_uav_names_.end()) {
-
-    std::string temp_str = *it;
-
-    int other_uav_priority;
-    sscanf(temp_str.c_str(), "uav%d", &other_uav_priority);
-
-    if (other_uav_priority == avoidance_this_uav_number_) {
-
-      _avoidance_other_uav_names_.erase(it);
-      continue;
-    }
-
-    it++;
-  }
-
-  // added by Titouan and Jonathan
-  param_loader2.loadParam("enable_visualization", _enable_visualization_);
-  param_loader2.loadParam("enable_diagnostics_pub", _enable_diagnostics_pub_);
-  param_loader2.loadParam("enable_trajectory_pub", _enable_trajectory_pub_);
-
   param_loader2.loadParam("prediction/horizon", _pred_horizon_);
   param_loader2.loadParam("prediction/time_step",_prediction_dt_);
   param_loader2.loadParam("prediction/use_body_inertia",_predicitons_use_body_inertia_);
-  // convert below to int
-  num_pred_samples_ = (int)(_pred_horizon_/_prediction_dt_); // number of prediction samples
   param_loader2.loadParam("dynamic_safety_margin/type_id", _DSM_type_);
   param_loader2.loadParam("dynamic_safety_margin/lyapunov/type_id", _Lyapunov_type_);
   param_loader2.loadParam("dynamic_safety_margin/lyapunov/epsilon", _epsilon_);
@@ -903,19 +834,14 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   param_loader2.loadParam("dynamic_safety_margin/kappa/a", _kappa_a_);
   param_loader2.loadParam("dynamic_safety_margin/kappa/w", _kappa_w_);
   param_loader2.loadParam("dynamic_safety_margin/kappa/o", _kappa_o_);
-  //Frank : Add _kappa_o, _kappa_w - DONE 
-  //Frank : Add _zeta_w, _delta_w, _sigma_o, _delta_o, R_o_j (this last one must come from the world file where the obstacle is defined)
   param_loader2.loadParam("dynamic_safety_margin/enable_dsm/constant_dsm", _constant_dsm_);
   param_loader2.loadParam("dynamic_safety_margin/enable_dsm/sT", _enable_dsm_sT_);
   param_loader2.loadParam("dynamic_safety_margin/enable_dsm/sw", _enable_dsm_sw_);
   param_loader2.loadParam("dynamic_safety_margin/enable_dsm/a", _enable_dsm_a_);
   param_loader2.loadParam("dynamic_safety_margin/enable_dsm/w", _enable_dsm_w_);
   param_loader2.loadParam("dynamic_safety_margin/enable_dsm/o", _enable_dsm_o_);
-  //Frank : Add _enable_dsm_w, _enable_dsm_o - DONE 
-  //Frank : Add _d_w  for walls (this last one must come from the world file where the obstacle is defined) - DONE
   param_loader2.loadParam("constraints/total_thrust/min", _T_min_);
   param_loader2.loadParam("constraints/total_thrust/extra_saturation_ratio", _extra_thrust_saturation_ratio_);
-  _thrust_saturation_ = _extra_thrust_saturation_ratio_*_thrust_saturation_; // as to not trigger the emergency landing too quickly
   param_loader2.loadParam("strategy_id", _DERG_strategy_id_);
   param_loader2.loadParam("use_distance_xy", _use_distance_xy_);
   param_loader2.loadParam("agent_collision_volumes/sphere/radius", _Sa_max_);
@@ -928,11 +854,10 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   param_loader2.loadParam("navigation_field/repulsion/agents/static_safety_margin", _delta_a_);
   param_loader2.loadParam("navigation_field/repulsion/agents/circulation_gain", _alpha_a_);
   param_loader2.loadParam("navigation_field/repulsion/agents/circulation_type", _circ_type_);
-  param_loader2.loadParam("navigation_field/repulsion/wall/enabled", _enable_repulsion_w_);
-  param_loader2.loadParam("navigation_field/repulsion/wall/influence_margin", _zeta_w_);
-  param_loader2.loadParam("navigation_field/repulsion/wall/static_safety_margin", _delta_w_);
-  param_loader2.loadParam("navigation_field/repulsion/wall/wall_position_x", wall_p_x); //Frank : NOT FINAL, need to take account of N_w -> make it a matrix of dim N_w*3 with the position of each wall
-  //param_loader2.loadParam("navigation_field/attraction/smoothing_ratio", _eta_);
+  param_loader2.loadParam("navigation_field/repulsion/wall/enabled", _enable_repulsion_w_); // TODO
+  param_loader2.loadParam("navigation_field/repulsion/wall/influence_margin", _zeta_w_); // TODO
+  param_loader2.loadParam("navigation_field/repulsion/wall/static_safety_margin", _delta_w_); // TODO
+  param_loader2.loadParam("navigation_field/repulsion/wall/wall_position_x", wall_p_x); //TODO Frank : NOT FINAL, need to take account of N_w -> make it a matrix of dim N_w*3 with the position of each wall
   param_loader2.loadParam("navigation_field/repulsion/static_obstacle/enabled", _enable_repulsion_o_);
   param_loader2.loadParam("navigation_field/repulsion/static_obstacle/influence_margin", _zeta_o_);
   param_loader2.loadParam("navigation_field/repulsion/static_obstacle/static_safety_margin", _delta_o_);
@@ -941,16 +866,55 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   param_loader2.loadParam("navigation_field/repulsion/static_obstacle/obstacle_position_x", obs_position(0,0));
   param_loader2.loadParam("navigation_field/repulsion/static_obstacle/obstacle_position_y", obs_position(1,0));
   param_loader2.loadParam("navigation_field/repulsion/static_obstacle/radius", R_o_);
-  // Frank: Add same parameters for the navigation field of the wall and obstable - DONE HALF
+  // Visualization (rviz):
+  param_loader2.loadParam("enable_visualization", _enable_visualization_);
+  param_loader2.loadParam("enable_diagnostics_pub", _enable_diagnostics_pub_);
+  param_loader2.loadParam("enable_trajectory_pub", _enable_trajectory_pub_);
+  // TODO: any other DergbryanTracker params to load?
+  // TODO Frank: Add same parameters for the navigation field of the wall and obstable - DONE HALF
+  // TODO: Reactivate this parameters NO - They are remplaced by enable_dsm_x
+  // param_loader2.loadParam("use_wall_constraints", use_wall_constraints_);
+  // param_loader2.loadParam("use_cylindrical_constraints", use_cylindrical_constraints_);
+  // param_loader2.loadParam("use_agents_avoidance", use_agents_avoidance_);
+  // Frank : Add _kappa_o, _kappa_w - DONE 
+  // Frank : Add _zeta_w, _delta_w, _sigma_o, _delta_o, R_o_j (this last one must come from the world file where the obstacle is defined)
+  // Frank : Add _enable_dsm_w, _enable_dsm_o - DONE 
+  // Frank : Add _d_w  for walls (this last one must come from the world file where the obstacle is defined) - DONE
+  if (!param_loader.loadedSuccessfully()) {
+    ROS_ERROR("[DergbryanTracker]: could not load all DergbryanTracker parameters!");
+    ros::shutdown();
+  } 
+  else{
+    ROS_INFO("[DergbryanTracker]: correctly loaded all DergbryanTracker parameters!");
+  }
 
-  // create publishers
+  // | ------------------- this uav and other uavs ------------------- |
+  // extract the numerical uav name:
+  sscanf(_uav_name_.c_str(), "uav%d", &avoidance_this_uav_number_);
+  ROS_INFO("[DergbryanTracker]: Numerical ID of this UAV is %d", avoidance_this_uav_number_);
+  avoidance_this_uav_priority_ = avoidance_this_uav_number_;
+  // exclude this uav from the list:
+  std::vector<std::string>::iterator it = _avoidance_other_uav_names_.begin();
+  while (it != _avoidance_other_uav_names_.end()) {
+    std::string temp_str = *it;
+    int other_uav_priority;
+    sscanf(temp_str.c_str(), "uav%d", &other_uav_priority);
+    if (other_uav_priority == avoidance_this_uav_number_) {
+      _avoidance_other_uav_names_.erase(it);
+      continue;
+    }
+    it++;
+  }
+  ROS_INFO("[DergbryanTracker]: _avoidance_other_uav_names_ contains IDs of all other UAVs.");
 
-
+  // | ------------------- create publishers ------------------- |
+  // TODO: change below to correct msg types (e.g., do not use PoseArray for a thrust or angle)
+  // example:
   chatter_publisher_ = nh2_.advertise<std_msgs::String>("chatter", 1);
+  // uav:
   goal_pose_publisher_ = nh2_.advertise<mrs_msgs::ReferenceStamped>("goal_pose", 1);
   applied_ref_pose_publisher_ = nh2_.advertise<mrs_msgs::ReferenceStamped>("applied_ref_pose", 1);
   uav_state_publisher_ = nh2_.advertise<mrs_msgs::UavState>("uav_state", 1);
-  // custom_predicted_traj_publisher = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_traj", 1);
   predicted_pose_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_poses", 1);
   predicted_vel_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_vels", 1);
   predicted_acc_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_accs", 1);
@@ -958,156 +922,134 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   predicted_attrate_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_attrate", 1);
   predicted_des_attrate_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_des_predicted_attrate", 1);
   predicted_tiltangle_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_tiltangle", 1);
-  DSM_publisher_ = nh2_.advertise<trackers_brubotics::DSM>("DSM", 1);
-  DistanceBetweenUavs_publisher_ = nh2_.advertise<trackers_brubotics::DistanceBetweenUavs>("DistanceBetweenUavs", 1);
-  TrajectoryTracking_publisher_ = nh2_.advertise<trackers_brubotics::TrajectoryTracking>("TrajectoryTracking", 1);
-  ComputationalTime_publisher_ = nh2_.advertise<trackers_brubotics::ComputationalTime>("ComputationalTime", 1);
+  // TODO: create topic similar to predicted_load_position_errors_publisher__
+  // single uav with suspended load:
+  // TODO: unlcear definitions what phi and theta represent (encoders? world angles?)
+  theta_load_cable_publisher_   = nh2_.advertise<std_msgs::Float32>("theta_load_cable",1);
+  phi_load_cable_publisher_   = nh2_.advertise<std_msgs::Float32>("phi_load_cable",1);
+  theta_dot_load_cable_publisher_   = nh2_.advertise<std_msgs::Float32>("theta_dot_load_cable",1);
+  phi_dot_load_cable_publisher_   = nh2_.advertise<std_msgs::Float32>("phi_dot_load_cable",1);
+  theta_dot_dot_load_cable_publisher_   = nh2_.advertise<std_msgs::Float32>("theta_dot_dot_load_cable",1);
+  phi_dot_dot_load_cable_publisher_   = nh2_.advertise<std_msgs::Float32>("phi_dot_dot_load_cable",1);
+  uav_state_init_publisher_   = nh2_.advertise<mrs_msgs::UavState>("uav_state_init",1); // TODO: why needed?
+  // TODO: tension force? or pub in controller?
+  load_position_init_publisher_   = nh2_.advertise<geometry_msgs::Vector3>("load_position_init",1); // TODO: why needed?
+  load_velocity_init_publisher_   = nh2_.advertise<geometry_msgs::Pose>("load_velocity_init",1);// TODO: why needed?
+  load_acceleration_init_publisher_   = nh2_.advertise<geometry_msgs::Pose>("load_acceleration_init",1);// TODO: why needed?
+  // TODO: unlcear definitions what tracker_ publishers represent:
+  tracker_load_pose_publisher_   = nh2_.advertise<geometry_msgs::Pose>("tracker_load_pose",1); // TODO: this is computed in the controller and would be logical to publish there
+  tracker_load_vel_publisher_   = nh2_.advertise<geometry_msgs::Twist>("tracker_load_vel",1); // TODO: this is computed in the controller and would be logical to publish there
+  tracker_uav_state_publisher_   = nh2_.advertise<mrs_msgs::UavState>("tracker_uav_state",1); // TODO: a tracker can never be linked to a full UAV state, that why above I used applied_ref_pose_publisher_
+  tracker_load_old_vel_publisher_   = nh2_.advertise<geometry_msgs::Vector3>("tracker_load_old_vel",1);// TODO: old???
+  predicted_load_pose_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_load_poses", 1);
+  predicted_load_vel_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_load_vels", 1);
+  predicted_load_acc_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_load_accs", 1);
+  predicted_tension_force_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_tension_force", 1);
+  // TODO: (see comment before) unlcear definitions what phi and theta represent (encoders? world angles?)
+  predicted_phi_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_phi", 1);
+  predicted_theta_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_theta", 1);
+  predicted_phi_dot_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_phi_dot", 1);
+  predicted_theta_dot_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_theta_dot", 1);
+  predicted_phi_dot_dot_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_phi_dot_dot", 1);
+  predicted_theta_dot_dot_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_theta_dot_dot", 1);
+  // TODO: unlcear definitions what output_force represents, also is a topic for uav and not if load
+  predicted_output_force_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_output_force", 1);
+  predicted_load_position_errors_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_load_position_errors", 1);
+  // TODO: unlcear definitions what q state represents: for uav what is difference with predicted_acc_publisher_? needs to be moved under uav.
+  predicted_q_state_dot_dot_uav_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_q_state_dot_dot_uav", 1);
+  predicted_q_state_dot_dot_load_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_q_state_dot_dot_load", 1);
 
+  /// two uavs with suspended load:
+  // TODO: it is not good to explicitely use a uav id  (e.g., uav 1 , uav2) in the names as with the hardware (nuc and nimbro) you won't be able to choose the uav id (these are hardcoded in the nuc and must not be changed). There is just one "leader" (what you call uav1) and one "follower" (what you call uav2). I would advice to always use the highest priority uav as the leader. So do a check on _avoidance_other_uav_names_ defined above to see which uavs are defined and add an extra requirement that there may be at most 2 uavs specified in the list, else return a ROS_ERROR.
+  predicted_uav1_poses_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav1_pose", 1);
+  predicted_uav2_poses_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav2_pose", 1);
+  predicted_uav1_vel_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav1_vel", 1);
+  predicted_uav2_vel_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav2_vel", 1);
+  predicted_uav1_anchoring_point_pose_publisher_= nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav1_anchoring_point_pose", 1);
+  predicted_uav2_anchoring_point_pose_publisher_= nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav2_anchoring_point_pose", 1);
+  predicted_uav1_anchoring_point_vel_publisher_= nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav1_anchoring_point_vel", 1);
+  predicted_uav2_anchoring_point_vel_publisher_= nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav2_anchoring_point_vel", 1);
 
-  // | -------------------------------load--------------------------------|
-  predicted_load_pose_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_load_poses", 10);
-  predicted_load_vel_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_load_vels", 10);
-  predicted_load_acc_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_load_accs", 10);
-  predicted_tension_force_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_tension_force", 10);
-
-  predicted_phi_publisher = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_phi", 10);
-  predicted_theta_publisher = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_theta", 10);
-  predicted_phi_dot_publisher = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_phi_dot", 10);
-  predicted_theta_dot_publisher = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_theta_dot", 10);
-  predicted_phi_dot_dot_publisher = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_phi_dot_dot", 10);
-  predicted_theta_dot_dot_publisher = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_theta_dot_dot", 10);
-
-  predicted_output_force_publisher = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_output_force", 10);
-  predicted_load_position_errors_publisher = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_load_position_errors", 10);
-
-  predicted_q_state_dot_dot_uav_publisher = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_q_state_dot_dot_uav", 10);
-  predicted_q_state_dot_dot_load_publisher = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_q_state_dot_dot_load", 10);
-  
-  publisher_tracker_load_pose   = nh2_.advertise<geometry_msgs::Pose>("tracker_load_pose",10);
-  publisher_tracker_load_vel   = nh2_.advertise<geometry_msgs::Twist>("tracker_load_vel",10);
-  publisher_tracker_uav_state   = nh2_.advertise<mrs_msgs::UavState>("tracker_uav_state",10);
-  publisher_tracker_load_old_vel   = nh2_.advertise<geometry_msgs::Vector3>("tracker_load_old_vel",10);
-  //publisher_tension_force = nh2_.advertise<geometry_msgs::Pose>("tracker_custom_tension_force",10);
-  //publisher_tracker_load_acceleration = nh2_.advertise<geometry_msgs::Vector3>("tracker_custom_tracker_load_acceleration",10); 
-  // custom_publisher_pos_difference_x   = nh2_.advertise<std_msgs::Float32>("pos_difference_x",10);
-  // custom_publisher_pos_difference_y   = nh2_.advertise<std_msgs::Float32>("pos_difference_y",10);
-
-  publisher_theta_load_cable   = nh2_.advertise<std_msgs::Float32>("theta_load_cable",10);
-  publisher_phi_load_cable   = nh2_.advertise<std_msgs::Float32>("phi_load_cable",10);
-  publisher_theta_dot_load_cable   = nh2_.advertise<std_msgs::Float32>("theta_dot_load_cable",10);
-  publisher_phi_dot_load_cable   = nh2_.advertise<std_msgs::Float32>("phi_dot_load_cable",10);
-  publisher_theta_dot_dot_load_cable   = nh2_.advertise<std_msgs::Float32>("theta_dot_dot_load_cable",10);
-  publisher_phi_dot_dot_load_cable   = nh2_.advertise<std_msgs::Float32>("phi_dot_dot_load_cable",10);
-  publisher_uav_state_init   = nh2_.advertise<mrs_msgs::UavState>("uav_state_init",10);
-  publisher_load_position_init   = nh2_.advertise<geometry_msgs::Vector3>("load_position_init",10);
-  publisher_load_velocity_init   = nh2_.advertise<geometry_msgs::Pose>("load_velocity_init",10);
-  publisher_load_acceleration_init   = nh2_.advertise<geometry_msgs::Pose>("load_acceleration_init",10);
-
-    //-----------------------2UAV predictions-----------------------//
-  //publish pred
-  predicted_uav1_poses_pub = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav1_pose", 1);//why 10 queue size ???
-  predicted_uav2_poses_pub = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav2_pose", 1);
-
-  predicted_uav1_vel_pub = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav1_vel", 1);
-  predicted_uav2_vel_pub = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav2_vel", 1);
-
-  predicted_uav1_anchoring_point_pose_pub= nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav1_anchoring_point_pose", 1);
-  predicted_uav2_anchoring_point_pose_pub= nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav2_anchoring_point_pose", 1);
-
-  predicted_uav1_anchoring_point_vel_pub= nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav1_anchoring_point_vel", 1);
-  predicted_uav2_anchoring_point_vel_pub= nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav2_anchoring_point_vel", 1);
-
-  //-----------2UAVpredictions------------//
   //for communication between the two uav's, if I am uav1, I subscribe to UAV2 states/position_cmd/anchoring points. If I am uav2, I advertise on the correct topic.
-  run_type = getenv("RUN_TYPE");
-  number_of_uav = getenv("NUMBER_OF_UAV"); // is exported in the session.yaml
-  if (number_of_uav == "2"){
-    if (uav_name == "uav1"){  // to see which UAV it is
+
+  // TODO: 
+  // _number_of_uav_ is a bad variable as collision avoidance test can also require 2 uavs.
+  // Instead of _number_of_uav_ use a vairable that specified the type of dynamic model you are running: e.g.: uav, uav_suspended_payload or 2uavs_suspended_payload. Then this dynamic model type should be defined in all sessions.
+  // defining uav_id as a bool is very unlogical as id is a number
+  // generlize the code below based on leader and follower comments above on publishers and not just uav 1 or uav 2
+  // See below for subscribers on _avoidance_other_uav_names_ to embed the subcriber part. 
+  // Make sure the code checks that if a sessions is loaded for , that _avoidance_other_uav_names_ entered via session.yaml contains exactly 2 ids where the lowest id has the highest prioirty and hence is the leader. Esle return an error.
+  // So also split the code in a part for publishing and part for subscribing and add it at the correct place.
+
+
+  if (_number_of_uav_ == "2"){
+    if (_uav_name_ == "uav1"){  // to see which UAV it is
         uav_id = true; //uav 1
         uav2_state_sub=nh_.subscribe("/uav2/control_manager/dergbryan_tracker/uav2_state", 1, &DergbryanTracker::uav2_state_callback, this, ros::TransportHints().tcpNoDelay());// get uav2 states
         uav2_anchoring_point_sub=nh_.subscribe("/uav2/control_manager/dergbryan_tracker/uav2_anchoring_point_state", 1, &DergbryanTracker::uav2_anchoring_point_callback, this, ros::TransportHints().tcpNoDelay());
         uav2_position_cmd_sub=nh_.subscribe("/uav2/control_manager/dergbryan_tracker/uav2_position_cmd", 1, &DergbryanTracker::uav2_position_cmd_callback, this, ros::TransportHints().tcpNoDelay());
       }else{
         uav_id = false; //uav 2
-        uav2_state_pub = nh2_.advertise<mrs_msgs::UavState>("uav2_state", 1);
-        uav2_anchoring_point_pub = nh2_.advertise<mrs_msgs::UavState>("uav2_anchoring_point_state", 1);
-        uav2_position_cmd_pub = nh2_.advertise<mrs_msgs::PositionCommand>("uav2_position_cmd", 1);
+        uav2_state_publisher_ = nh2_.advertise<mrs_msgs::UavState>("uav2_state", 1);
+        uav2_anchoring_point_publisher_ = nh2_.advertise<mrs_msgs::UavState>("uav2_anchoring_point_state", 1);
+        uav2_position_cmd_publisher_ = nh2_.advertise<mrs_msgs::PositionCommand>("uav2_position_cmd", 1);
       }
   }
 
-  // | ------------------------------------------------------------|
-
-
+  // general:
+  // TODO generalize below for all 3 model cases
+  DSM_publisher_ = nh2_.advertise<trackers_brubotics::DSM>("DSM", 1);
+  DistanceBetweenUavs_publisher_ = nh2_.advertise<trackers_brubotics::DistanceBetweenUavs>("DistanceBetweenUavs", 1);
+  TrajectoryTracking_publisher_ = nh2_.advertise<trackers_brubotics::TrajectoryTracking>("TrajectoryTracking", 1);
+  ComputationalTime_publisher_ = nh2_.advertise<trackers_brubotics::ComputationalTime>("ComputationalTime", 1);
   // DERG - multi-uav collision avoidance:
   tube_min_radius_publisher_ = nh2_.advertise<std_msgs::Float32>("tube_min_radius", 1);
   future_tube_publisher_ = nh2_.advertise<trackers_brubotics::FutureTrajectoryTube>("future_trajectory_tube", 1);
   avoidance_applied_ref_publisher_ = nh2_.advertise<mrs_msgs::FutureTrajectory>("uav_applied_ref", 1);
   avoidance_pos_publisher_ = nh2_.advertise<mrs_msgs::FutureTrajectory>("uav_position", 1);
   avoidance_trajectory_publisher_= nh2_.advertise<mrs_msgs::FutureTrajectory>("predicted_trajectory", 1);
-  // TODO  from here on compare with  mpc_tracker implementation 
-
-  
-  
-  
-
-  // added by Titouan and Jonathan
+  // visualization:
   if(_enable_visualization_){
     derg_strategy_id_publisher_ = nh2_.advertise<std_msgs::Int32>("derg_strategy_id", 1);
     point_link_star_publisher_ = nh2_.advertise<geometry_msgs::Pose>("point_link_star", 1);
     sa_max_publisher_ = nh2_.advertise<std_msgs::Int32>("sa_max", 1);
     sa_perp_max_publisher_ = nh2_.advertise<std_msgs::Int32>("sa_perp_max", 1);
   }
+  // TODO: see mpc_tracker for other topics 
+  ROS_INFO("[DergbryanTracker]: advertised all publishers.");
 
+  // | ------------------- create subscribers ------------------- |
+  // this uav subscribes to own (i.e., of this uav) load states:
+  // TODO: this block was initially placed in update function above "get the current heading". Replacing it here, it works in sim, but to be tested on hardware. 
+  if (_run_type_ == "simulation"){ // subscriber of the gazebo simulation
+    load_state_sub =  nh_.subscribe("/gazebo/link_states", 1, &DergbryanTracker::loadStatesCallback, this, ros::TransportHints().tcpNoDelay());
+  }
+  else if (_run_type_ == "uav"){ // subscriber of the hardware encoders
+    std::string slash = "/";
+    data_payload_sub = nh_.subscribe(slash.append(_uav_name_.append("/serial/received_message")), 1, &DergbryanTracker::BacaCallback, this, ros::TransportHints().tcpNoDelay()); // TODO: explain how this is used for 2 uav hardware
+  }
+  else{ // undefined
+    ROS_ERROR("[DergbryanTracker]: undefined _run_type_ used!");
+    ros::shutdown();
+  }
 
-
-
-
-  // TODO!!!!!
-  // advertise string topic publisher that publishes uav id to test callback
-  // test same function but for float 64
-  // test inside for loop over all uav and add to other_uav_subscribers_ (wouthout use of uav name)
-  // now make custom flat 64 msg that also has uav name and test it
-  // use it for sharing sa_perp_min
-
-  // mrs_lib::SubscribeHandlerOptions shopts;
-  // shopts.nh                 = nh_;
-  // shopts.node_name          = "DergbryanTracker"; //DergbryanTracker or Se3BruboticsController????
-  // shopts.no_message_timeout = mrs_lib::no_timeout;
-  // shopts.threadsafe         = true;
-  // shopts.autostart          = true;
-  // shopts.queue_size         = 10;
-  // shopts.transport_hints    = ros::TransportHints().tcpNoDelay();
-
-
-
-  
-// TODO !!! see mpc tracker for other options
-  // Subsciber on chatter topic
-  // mrs_lib::SubscribeHandlerOptions shopts;
-  // shopts.nh              = nh_;
-  // shopts.node_name       = "DergbryanTracker";
-  // shopts.threadsafe      = true;
-  // shopts.autostart       = true;
-  // shopts.transport_hints = ros::TransportHints().tcpNoDelay();
-   
-  // copy mpc tracker
+  // this uav subscribes to these topics of other uavs:
   mrs_lib::SubscribeHandlerOptions shopts;
-  shopts.nh                 = nh_;
+  shopts.nh                 = nh_; // TODO: shouldn't this be nh2 as this is related to tracker and not to controller?
   shopts.node_name          = "DergbryanTracker";
   shopts.no_message_timeout = mrs_lib::no_timeout;
   shopts.threadsafe         = true;
   shopts.autostart          = true;
   shopts.queue_size         = 10;
   shopts.transport_hints    = ros::TransportHints().tcpNoDelay();
-
+  // TODO !!! see mpc tracker for other options
   for (int i = 0; i < int(_avoidance_other_uav_names_.size()); i++) {
-
-    // example:
+    // just an example:
     std::string chatter_topic_name = std::string("/") + _avoidance_other_uav_names_[i] + std::string("/") + std::string("control_manager/dergbryan_tracker/chatter");
     ROS_INFO("[DergbryanTracker]: subscribing to %s", chatter_topic_name.c_str());
     other_uav_subscribers2_.push_back(mrs_lib::SubscribeHandler<std_msgs::String>(shopts, chatter_topic_name, &DergbryanTracker::chatterCallback, this));
 
-    // subscribe to other uav topics for collision avoidance:
+    // subscribe to other uav topics for e.g., collision avoidance and cooperative load transport:
     std::string applied_ref_topic_name = std::string("/") + _avoidance_other_uav_names_[i] + std::string("/") + std::string("control_manager/dergbryan_tracker/uav_applied_ref");  
     ROS_INFO("[DergbryanTracker]: subscribing to %s", applied_ref_topic_name.c_str());
     other_uav_subscribers_.push_back(nh_.subscribe(applied_ref_topic_name, 1, &DergbryanTracker::callbackOtherUavAppliedRef, this, ros::TransportHints().tcpNoDelay()));
@@ -1128,76 +1070,47 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
     ROS_INFO("[DergbryanTracker]: subscribing to %s", future_trajectory_tube_topic_name.c_str());
     other_uav_subscribers4_.push_back(mrs_lib::SubscribeHandler<trackers_brubotics::FutureTrajectoryTube>(shopts, future_trajectory_tube_topic_name, &DergbryanTracker::callbackOtherUavFutureTrajectoryTube, this));
 
-
-    // std::string tube_min_radius_topic_name = std::string("/") + _avoidance_other_uav_names_[i] + std::string("/") + std::string("control_manager/dergbryan_tracker/tube_min_radius");
-    // ROS_INFO("[DergbryanTracker]: subscribing to %s", tube_min_radius_topic_name.c_str());
-    // other_uav_subscribers3_.push_back(mrs_lib::SubscribeHandler<std_msgs::Float32>(shopts, tube_min_radius_topic_name, &DergbryanTracker::callbackOtherUavTubeMinRadius, this));
-
-
-
-
-    // std::string prediction_topic_name = std::string("/") + _avoidance_other_uav_names_[i] + std::string("/") + std::string("control_manager/dergbryan_tracker/custom_predicted_poses");//_avoidance_trajectory_topic_name_;
-    // ROS_INFO("[DergbryanTracker]: subscribing to %s", prediction_topic_name.c_str());
-    // other_uav_trajectory_subscribers_.push_back(mrs_lib::SubscribeHandler<mrs_msgs::FutureTrajectory>(shopts, prediction_topic_name, &DergbryanTracker::callbackOtherMavTrajectory, this));
-
-    //std::string chatter_topic_name = std::string("/") + _avoidance_other_uav_names_[i] + std::string("/") + std::string("control_manager/dergbryan_tracker/tube_min_radius");
-    // ROS_INFO("[DergbryanTracker]: subscribing to %s", tube_min_radius_topic_name.c_str());
-    
-    //builds, does not takeoff uavs: 
-    // other_uav_subscribers_.push_back(nh_.subscribe("chatter", 1, &DergbryanTracker::chatterCallback, this, ros::TransportHints().tcpNoDelay()));
-    
-    //other_uav_subscribers_.push_back(mrs_lib::SubscribeHandler<std_msgs::String::ConstPtr>(shopts, "chatter", &DergbryanTracker::chatterCallback, this));
+    // TODO: add cooperative load transport topics here in a similar fashion
   }
-  //does not work sub = nh_.subscribe("chatter", 1000, &DergbryanTracker::chatterCallback);
-  
-  // Subsciber on chatter topic ()
-  // mrs_lib::SubscribeHandlerOptions shopts;
-  // shopts.nh              = nh_;
-  // shopts.node_name       = "DergbryanTracker";
-  // shopts.threadsafe      = true;
-  // shopts.autostart       = true;
-  // shopts.transport_hints = ros::TransportHints().tcpNoDelay();
-  // mrs_lib::SubscribeHandler<std_msgs::String> sh_command_;
-  // std::string chatter_topic_name = std::string("/") + _avoidance_other_uav_names_[i] + std::string("/") + _avoidance_trajectory_topic_name_;
-  // sh_command_ = mrs_lib::SubscribeHandler<std_msgs::String>(shopts, "chatter", &DergbryanTracker::chatterCallback, this);
-  
-  // | ---------------- prepare stuff from params --------------- |
+  ROS_INFO("[DergbryanTracker]: linked all subscribers to their callbacks.");
 
-  /* QUESTION: do we need this? */
+  // | ---------------- prepare stuff from params --------------- |
+  _num_pred_samples_ = (int)(_pred_horizon_/_prediction_dt_); // double converted to int
+  _thrust_saturation_ = _extra_thrust_saturation_ratio_*_thrust_saturation_; // as to not trigger the emergency landing too quickly
+
+  // initialize the integrals:
+  // TODO: explain how this will be used with aditional load? does uav_mass_difference_ contain all?
+  uav_mass_difference_ = 0;
+  // Iw_w_                = Eigen::Vector2d::Zero(2); // TODO: do we need it?
+  // Ib_b_                = Eigen::Vector2d::Zero(2); // TODO: do we need it?
+
+  // ensure output_mode_ is defined well:
   if (!(output_mode_ == OUTPUT_ATTITUDE_RATE || output_mode_ == OUTPUT_ATTITUDE_QUATERNION)) {
     ROS_ERROR("[DergbryanTracker]: output mode has to be {0, 1}!");
     ros::shutdown();
   }
 
+  // TODO: check unit _tilt_angle_failsafe_
   // convert to radians
   //_tilt_angle_failsafe_ = (_tilt_angle_failsafe_ / 180.0) * M_PI;
   
-
-  // initialize the integrals
-  uav_mass_difference_ = 0;
-  // Iw_w_                = Eigen::Vector2d::Zero(2);
-  // Ib_b_                = Eigen::Vector2d::Zero(2);
-
-
-  // | ------------------------ profiler ------------------------ |
+  // profiler:
   profiler = mrs_lib::Profiler(nh2_, "DergbryanTracker", _profiler_enabled_);
-
-
-
   // setTrajectory functions similar to mpc_tracker
+  // TODO: do we use it? How to choose update rate of tracker?
   _dt1_ = dt_; //1.0 / _mpc_rate_;
   // mpc_x_heading_ = MatrixXd::Zero(_mpc_n_states_heading_, 1);
 
-
-  // | ------------------------- timers ------------------------- |
+  // timers:
   timer_trajectory_tracking_  = nh_.createTimer(ros::Rate(1.0), &DergbryanTracker::timerTrajectoryTracking, this, false, false);
-  // timer_hover_                = nh_.createTimer(ros::Rate(10.0), &DergbryanTracker::timerHover, this, false, false);
+  // timer_hover_                = nh_.createTimer(ros::Rate(10.0), &DergbryanTracker::timerHover, this, false, false); // TODO: do we need it?
   
-  // initialization completed
+  // initialization completed:
   is_initialized_ = true;
   ROS_INFO("[DergbryanTracker]: initialized");
 }
-//}
+
+
 /*activate()//{*/
 std::tuple<bool, std::string> DergbryanTracker::activate(const mrs_msgs::PositionCommand::ConstPtr &last_position_cmd) {
   
@@ -1343,11 +1256,10 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
     uav_state_prev_ = uav_state_; // required for computing derrivative of angular rate
 
     starting_bool_=false;
-  return mrs_msgs::PositionCommand::ConstPtr(new mrs_msgs::PositionCommand(position_cmd));
-}
-/* begin copy of se3controller*/
-
-// | -------------------- calculate the dt -------------------- |
+    return mrs_msgs::PositionCommand::ConstPtr(new mrs_msgs::PositionCommand(position_cmd));
+  }
+  /* begin copy of se3controller*/
+  // | -------------------- calculate the dt -------------------- |
 
   // double dt;
   // dt = 0.010;
@@ -1388,18 +1300,7 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
   //   }
   // }
 
-
-    std::string slash = "/";
-// subscribe to load states, depending if hardware or simulation
-    if (run_type == "simulation")
-    {
-      // subscriber of the simulation
-      load_state_sub =  nh_.subscribe("/gazebo/link_states", 1, &DergbryanTracker::loadStatesCallback, this, ros::TransportHints().tcpNoDelay());
-    }else{
-      // subscriber of the encoder
-      data_payload_sub = nh_.subscribe(slash.append(uav_name.append("/serial/received_message")), 1, &DergbryanTracker::BacaCallback, this, ros::TransportHints().tcpNoDelay());
-    }
-//|----------------------------------------------------- |//
+  //|----------------------------------------------------- |//
 
 
   // | ----------------- get the current heading ---------------- |
@@ -1428,13 +1329,6 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
   position_cmd.use_heading             = 1;
   position_cmd.use_heading_rate        = 1;
 
-//|---------------------LOAD--------------------- |//
-  load_gains_switch = getenv("LOAD_GAIN_SWITCH");
-//|---------------------------------------------- |//
-
-
-
-
 
   if (_use_derg_){
     // initially applied_ref_x_, applied_ref_y_, applied_ref_z_ is defined as stay where you are when starting_bool_ = 1;
@@ -1443,12 +1337,14 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
     position_cmd.position.z     = applied_ref_z_;
     position_cmd.heading        = goal_heading_;
     //tictoc_stack.push(clock());
-    if (load_gains_switch == "true" && payload_spawned){ 
-      //ROS_INFO_STREAM("if loadgainswitch and payload_spawned = \n" << true);
-      if((number_of_uav=="2") && (uav_name == "uav1")){
+
+    // TODO: update block below based on previous comments given in initialize function (leader follower instead of specific uuav ids, no _number_of_uav_, ...): use the 3 dynamic model types for 3 if conditions. As this block is used multiple times make a single trajectory_prediction function that calls these 3 dynamic model specific functions basd on the params.
+    if (_load_gains_switch_ == "true" && payload_spawned_){ 
+      //ROS_INFO_STREAM("if loadgainswitch and payload_spawned_ = \n" << true);
+      if((_number_of_uav_=="2") && (_uav_name_ == "uav1")){
         trajectory_prediction_general_load_2UAV(position_cmd, uav_heading, last_attitude_cmd);
       }
-      else if (number_of_uav=="1") {
+      else if (_number_of_uav_=="1") {
         trajectory_prediction_general_load(position_cmd, uav_heading, last_attitude_cmd);
       }
     }
@@ -1464,35 +1360,34 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
     position_cmd.position.z     = applied_ref_z_;
     position_cmd.heading        = goal_heading_;
   }
-  else{ // bypass the D-ERG (i.e. potentially UNSAFE!):
-    // set applied ref = desired goal ref (bypass tracker)
+  else{ // bypass the D-ERG (i.e., potentially UNSAFE!):
+    // set applied ref = desired goal ref (bypass tracker):
     position_cmd.position.x     = goal_x_;
     position_cmd.position.y     = goal_y_;
     position_cmd.position.z     = goal_z_;
     position_cmd.heading        = goal_heading_;
 
+    // but always compute the predictions for analysis:
 
-//|---------------------If I am UAV2 : publish position_cmd, state and payload position ------------------------------ |// 
-  uav_name = getenv("UAV_NAME");
-  number_of_uav = getenv("NUMBER_OF_UAV"); // is exported in the session.yaml
-    //maybe redondant
-
+  // TODO: on this large block same comments as before. Change the variables explained before.
+  //|---------------------If I am UAV2 : publish position_cmd, state and payload position ------------------------------ |// 
+  // TODO: reading the title above, publishing this info should be done in any case (not only in this else where you bypass the ERG) 
   // If I am uav2 => publish relevant data for the predictions made on uav1.   
-  if (run_type == "simulation"){
+  if (_run_type_ == "simulation"){
     // to see how many UAVs there are
 
-    if (number_of_uav == "2"){
-      if (uav_name == "uav1"){  // to see which UAV it is
+    if (_number_of_uav_ == "2"){
+      if (_uav_name_ == "uav1"){  // to see which UAV it is
         uav_id = true; //uav 1
       }else{
         uav_id = false; //uav 2
         uav2_state_msg=uav_state_;
         //publish uav2 state
         try {
-        uav2_state_pub.publish(uav2_state_msg);
+        uav2_state_publisher_.publish(uav2_state_msg);
         }
         catch (...) {
-        ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", uav2_state_pub.getTopic().c_str());
+        ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", uav2_state_publisher_.getTopic().c_str());
         }
 
         // fill msg with reference goal
@@ -1503,13 +1398,13 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
         // uav2_position_cmd.heading = goal_heading_;
         //publish uav2 reference goal
         try { //publish position cmd of uav2
-        uav2_position_cmd_pub.publish(uav2_position_cmd);
+        uav2_position_cmd_publisher_.publish(uav2_position_cmd);
         }
         catch (...) {
-        ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", uav2_state_pub.getTopic().c_str());
+        ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", uav2_state_publisher_.getTopic().c_str());
         }
 
-        if(payload_spawned){ //Only if the payload has spawned, start to publish its position and velocity value  
+        if(payload_spawned_){ //Only if the payload has spawned, start to publish its position and velocity value  
           // fill msg with anchoringpoint states
           uav2_anchoring_point_msg.pose.position.x=load_pose_position_.x;
           uav2_anchoring_point_msg.pose.position.y=load_pose_position_.y;
@@ -1520,10 +1415,10 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
           uav2_anchoring_point_msg.velocity.linear.z=load_lin_vel_[2];
 
           try {
-          uav2_anchoring_point_pub.publish(uav2_anchoring_point_msg);
+          uav2_anchoring_point_publisher_.publish(uav2_anchoring_point_msg);
           }
           catch (...) {
-          ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", uav2_anchoring_point_pub.getTopic().c_str());
+          ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", uav2_anchoring_point_publisher_.getTopic().c_str());
           }
         }
 
@@ -1531,12 +1426,13 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
     }
   }
 //------------------------//
+    // TODO: (see comment before) use the mother function that calls these 3 functions based on params
     // ROS_INFO_STREAM("Position cmd \n"<< position_cmd);
-    if ((load_gains_switch == "true") && (payload_spawned)){   //If switch defined in session.yaml is true, and the payload has spawned, start predicting depending on the 2 case : (1UAV+pointmass or 2UAV+beam)
-      if((number_of_uav=="2") && (uav_name == "uav1") && (uav2_payload_spawned == true) ){ //if 2UAV+BEAM, and If the payload of uav2 has been received at least once.
+    if ((_load_gains_switch_ == "true") && (payload_spawned_)){   //If switch defined in session.yaml is true, and the payload has spawned, start predicting depending on the 2 case : (1UAV+pointmass or 2UAV+beam)
+      if((_number_of_uav_=="2") && (_uav_name_ == "uav1") && (uav2_payload_spawned_ == true) ){ //if 2UAV+BEAM, and If the payload of uav2 has been received at least once.
         trajectory_prediction_general_load_2UAV(position_cmd, uav_heading, last_attitude_cmd);
       }
-      else if (number_of_uav=="1"){ //If 1UAV+Pointmass payload
+      else if (_number_of_uav_=="1"){ //If 1UAV+Pointmass payload
         trajectory_prediction_general_load(position_cmd, uav_heading, last_attitude_cmd);
       }
     }
@@ -1546,6 +1442,7 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
 
     // trajectory_prediction_general(position_cmd, uav_heading, last_attitude_cmd);
   }
+
   // Depending on the above case, the applied reference as output to the tracker and input to the controller:
   applied_ref_x_ = position_cmd.position.x;
   applied_ref_y_ = position_cmd.position.y;
@@ -1636,7 +1533,7 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
   predicted_theta_dot_dot.poses.clear();
 
   predicted_output_force_out.poses.clear();
-  predicted_load__position_errors_out.poses.clear();
+  predicted_load_position_errors_out.poses.clear();
 
   //-----------2UAV pred-----------//
   predicted_uav1_poses_out_.poses.clear();
@@ -1659,8 +1556,8 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
 
 
     //-----------------LOAD-------------//
-  load_vel_time = ros::Time::now();;
-  load_vel_dt = (load_vel_time - last_load_vel_time).toSec();
+  load_vel_time = ros::Time::now();
+  load_vel_dt = (load_vel_time - last_load_vel_time).toSec(); // TODO: why are you computing this at multiple locations in the code?
   //ROS_INFO_STREAM("Time= \n" << load_vel_dt);
   // return a position command:
   //-----------------------------------//
@@ -1765,12 +1662,6 @@ const std_srvs::TriggerResponse::ConstPtr DergbryanTracker::resumeTrajectoryTrac
 
   return std_srvs::TriggerResponse::ConstPtr(new std_srvs::TriggerResponse(res));
 }
-//}
-
-// /*gotoTrajectoryStart()//{*/
-// const std_srvs::TriggerResponse::ConstPtr DergbryanTracker::gotoTrajectoryStart([[maybe_unused]] const std_srvs::TriggerRequest::ConstPtr &cmd) {
-//   return std_srvs::TriggerResponse::Ptr();
-// }
 //}
 
 /* //{ gotoTrajectoryStart() */
@@ -1894,7 +1785,7 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
 //}
 
 //---------------------------------------LOAD-----------------------------------//
-
+  // TODO (as last thing after all other TODO's): there is so much redundant code on these extra 2 prediction functions. This needs to be cleaned out as much as possible... There is no way to keep a good overview as from a first glimpse your functions miss already some aspects which were initially present. Use your global variables that define which model you are prediciton for and create a single clean function for which there is maximal reuse of code that is needed in all 3 cases. Only then it is time efficient to review a code, not if several large parts are copied. Feel free to make extra helper functions wherever needed.
   void DergbryanTracker::trajectory_prediction_general_load(mrs_msgs::PositionCommand position_cmd, double uav_heading, const mrs_msgs::AttitudeCommand::ConstPtr &last_attitude_cmd){
     // --------------------------------------------------------------
     // |          load the control reference and estimates          | --> the reference is assumed constant over the prediction
@@ -1981,7 +1872,7 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
     // Rvl - velocity reference load in global frame
     Eigen::Vector3d Rpl = Eigen::Vector3d::Zero(3);
 
-    cable_length = std::stod(getenv("CABLE_LENGTH")); // is changed inside session.yml to take length cable into account! stod to transform string defined in session to double.
+    
 
     if (position_cmd.use_position_vertical || position_cmd.use_position_horizontal) {
 
@@ -1991,7 +1882,7 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
       } 
 
       if (position_cmd.use_position_vertical) {
-        Rpl[2] = position_cmd.position.z - cable_length;
+        Rpl[2] = position_cmd.position.z - _cable_length_;
       } 
     }
 
@@ -2031,7 +1922,7 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
   predicted_theta_dot_dot.header.stamp = uav_state_.header.stamp;
 
   predicted_output_force_out.header.stamp = uav_state_.header.stamp;
-  predicted_load__position_errors_out.header.stamp=uav_state.header.stamp;
+  predicted_load_position_errors_out.header.stamp=uav_state.header.stamp;
 
   geometry_msgs::Pose custom_pose;
   geometry_msgs::Pose custom_vel;
@@ -2078,7 +1969,7 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
   Eigen::Matrix3d skew_Ow;
   Eigen::Vector3d attitude_rate_pred;
 
-  for (int i = 0; i < num_pred_samples_; i++) {
+  for (int i = 0; i < _num_pred_samples_; i++) {
     if(i==0){
       // ROS_INFO_STREAM("attitude_rate_pred = \n" << attitude_rate_pred);
       //Initial conditions for first iteration
@@ -2118,22 +2009,22 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
       // custom_publisher_pos_difference_y.publish(pos_difference_y);
 
       // Thesis b: Test 06/08
-      // theta_load_cable = asin((load_pose_position.x - uav_state.pose.position.x)/cable_length); 
-      // phi_load_cable = asin((load_pose_position.y - uav_state.pose.position.y)/cable_length); 
+      // theta_load_cable = asin((load_pose_position.x - uav_state.pose.position.x)/_cable_length_); 
+      // phi_load_cable = asin((load_pose_position.y - uav_state.pose.position.y)/_cable_length_); 
 
-      // theta_dot_load_cable = pow(1.0 - pow((load_pose_position.x - uav_state.pose.position.x)/cable_length,2.0),-1.0/2.0) 
-      // * ((load_lin_vel[0] - uav_state.velocity.linear.x)/cable_length); 
-      // phi_dot_load_cable = pow(1.0 - pow((load_pose_position.y - uav_state.pose.position.y)/cable_length,2.0),-1.0/2.0) 
-      // * ((load_lin_vel[1] - uav_state.velocity.linear.y)/cable_length); 
+      // theta_dot_load_cable = pow(1.0 - pow((load_pose_position.x - uav_state.pose.position.x)/_cable_length_,2.0),-1.0/2.0) 
+      // * ((load_lin_vel[0] - uav_state.velocity.linear.x)/_cable_length_); 
+      // phi_dot_load_cable = pow(1.0 - pow((load_pose_position.y - uav_state.pose.position.y)/_cable_length_,2.0),-1.0/2.0) 
+      // * ((load_lin_vel[1] - uav_state.velocity.linear.y)/_cable_length_); 
 
       // Corrected IK, Raphael:
-      theta_load_cable = asin((load_pose_position.x - uav_state.pose.position.x)/cable_length); //was already good
-      phi_load_cable = asin((load_pose_position.y - uav_state.pose.position.y)/(cable_length*cos(theta_load_cable)));
+      theta_load_cable = asin((load_pose_position.x - uav_state.pose.position.x)/_cable_length_); //was already good
+      phi_load_cable = asin((load_pose_position.y - uav_state.pose.position.y)/(_cable_length_*cos(theta_load_cable)));
 
 
-      theta_dot_load_cable = pow(1.0 - pow((load_pose_position.x - uav_state.pose.position.x)/cable_length,2.0),-1.0/2.0) 
-      * ((load_lin_vel[0] - uav_state.velocity.linear.x)/cable_length); //was already good
-      phi_dot_load_cable = ((load_lin_vel[1] - uav_state.velocity.linear.y)*cos(theta_load_cable) + (load_pose_position.y - uav_state.pose.position.y)*theta_dot_load_cable*sin(theta_load_cable))/(cable_length*pow(cos(theta_load_cable),2.0)*pow(1.0-pow((load_pose_position.y - uav_state.pose.position.y)/(cable_length*cos(theta_load_cable)),2),0.5));
+      theta_dot_load_cable = pow(1.0 - pow((load_pose_position.x - uav_state.pose.position.x)/_cable_length_,2.0),-1.0/2.0) 
+      * ((load_lin_vel[0] - uav_state.velocity.linear.x)/_cable_length_); //was already good
+      phi_dot_load_cable = ((load_lin_vel[1] - uav_state.velocity.linear.y)*cos(theta_load_cable) + (load_pose_position.y - uav_state.pose.position.y)*theta_dot_load_cable*sin(theta_load_cable))/(_cable_length_*pow(cos(theta_load_cable),2.0)*pow(1.0-pow((load_pose_position.y - uav_state.pose.position.y)/(_cable_length_*cos(theta_load_cable)),2),0.5));
 
       // Thesis b: Test 06/08
       theta_load_to_publish.position.x = theta_load_cable;
@@ -2191,51 +2082,51 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
       // ROS_INFO_STREAM("phi_load_cable  = \n" << phi_load_cable);
 
       // Thesis B, incorrect eq :
-      // load_pose_position.x = sin(theta_load_cable)*cable_length + uav_state.pose.position.x; 
-      // load_pose_position.y = sin(phi_load_cable)*cable_length + uav_state.pose.position.y; 
-      // load_pose_position.z = uav_state.pose.position.z - cable_length*cos(phi_load_cable)*cos(theta_load_cable);
+      // load_pose_position.x = sin(theta_load_cable)*_cable_length_ + uav_state.pose.position.x; 
+      // load_pose_position.y = sin(phi_load_cable)*_cable_length_ + uav_state.pose.position.y; 
+      // load_pose_position.z = uav_state.pose.position.z - _cable_length_*cos(phi_load_cable)*cos(theta_load_cable);
 
-      // load_lin_vel[0] = cos(theta_load_cable)*cable_length*theta_dot_load_cable + uav_state.velocity.linear.x;  
-      // load_lin_vel[1] = cos(phi_load_cable)*cable_length*phi_dot_load_cable + uav_state.velocity.linear.y; 
-      // load_lin_vel[2] = uav_state.velocity.linear.z + cable_length*(sin(phi_load_cable)*phi_dot_load_cable*cos(theta_load_cable) 
+      // load_lin_vel[0] = cos(theta_load_cable)*_cable_length_*theta_dot_load_cable + uav_state.velocity.linear.x;  
+      // load_lin_vel[1] = cos(phi_load_cable)*_cable_length_*phi_dot_load_cable + uav_state.velocity.linear.y; 
+      // load_lin_vel[2] = uav_state.velocity.linear.z + _cable_length_*(sin(phi_load_cable)*phi_dot_load_cable*cos(theta_load_cable) 
       // + cos(phi_load_cable)*sin(theta_load_cable)*theta_dot_load_cable);
 
 
       // Corrected FK, Raphael :
 
-      load_pose_position.x = sin(theta_load_cable)*cable_length + uav_state.pose.position.x; 
-      load_pose_position.y = sin(phi_load_cable)*cos(theta_load_cable)*cable_length + uav_state.pose.position.y; 
-      load_pose_position.z = uav_state.pose.position.z - cable_length*cos(phi_load_cable)*cos(theta_load_cable);
+      load_pose_position.x = sin(theta_load_cable)*_cable_length_ + uav_state.pose.position.x; 
+      load_pose_position.y = sin(phi_load_cable)*cos(theta_load_cable)*_cable_length_ + uav_state.pose.position.y; 
+      load_pose_position.z = uav_state.pose.position.z - _cable_length_*cos(phi_load_cable)*cos(theta_load_cable);
 
       custom_load_pose.position.x = load_pose_position.x;
       custom_load_pose.position.y = load_pose_position.y;
       custom_load_pose.position.z = load_pose_position.z;
 
-      load_lin_vel[0] = cos(theta_load_cable)*cable_length*theta_dot_load_cable + uav_state.velocity.linear.x;  
-      load_lin_vel[1] = cos(phi_load_cable)*cos(theta_load_cable)*cable_length*phi_dot_load_cable -cable_length*sin(phi_load_cable)*sin(theta_load_cable) * theta_dot_load_cable
+      load_lin_vel[0] = cos(theta_load_cable)*_cable_length_*theta_dot_load_cable + uav_state.velocity.linear.x;  
+      load_lin_vel[1] = cos(phi_load_cable)*cos(theta_load_cable)*_cable_length_*phi_dot_load_cable -_cable_length_*sin(phi_load_cable)*sin(theta_load_cable) * theta_dot_load_cable
       + uav_state.velocity.linear.y; 
-      load_lin_vel[2] = uav_state.velocity.linear.z + cable_length*(sin(phi_load_cable)*phi_dot_load_cable*cos(theta_load_cable) 
+      load_lin_vel[2] = uav_state.velocity.linear.z + _cable_length_*(sin(phi_load_cable)*phi_dot_load_cable*cos(theta_load_cable) 
       + cos(phi_load_cable)*sin(theta_load_cable)*theta_dot_load_cable);
       
       custom_load_vel.position.x = load_lin_vel[0];
       custom_load_vel.position.y = load_lin_vel[1];
       custom_load_vel.position.z = load_lin_vel[2];
       // not corrected yet :
-      acceleration_load[0] = -sin(theta_load_cable)*cable_length*pow(theta_dot_load_cable,2.0) 
-      + cos(theta_load_cable)*cable_length*theta_dot_dot_load_cable + custom_acceleration.position.x;
+      acceleration_load[0] = -sin(theta_load_cable)*_cable_length_*pow(theta_dot_load_cable,2.0) 
+      + cos(theta_load_cable)*_cable_length_*theta_dot_dot_load_cable + custom_acceleration.position.x;
 
-      acceleration_load[1] = -sin(phi_load_cable)*cable_length*pow(phi_dot_load_cable,2.0) 
-      + cos(phi_load_cable)*cable_length*phi_dot_dot_load_cable + custom_acceleration.position.y;
+      acceleration_load[1] = -sin(phi_load_cable)*_cable_length_*pow(phi_dot_load_cable,2.0) 
+      + cos(phi_load_cable)*_cable_length_*phi_dot_dot_load_cable + custom_acceleration.position.y;
 
-      acceleration_load[2] = custom_acceleration.position.z + cable_length*((pow(phi_dot_load_cable,2.0) + pow(theta_dot_load_cable,2.0)) * (cos(theta_load_cable)*cos(phi_load_cable))
+      acceleration_load[2] = custom_acceleration.position.z + _cable_length_*((pow(phi_dot_load_cable,2.0) + pow(theta_dot_load_cable,2.0)) * (cos(theta_load_cable)*cos(phi_load_cable))
       - 2*sin(phi_load_cable)*sin(theta_load_cable)*theta_dot_load_cable*phi_dot_load_cable + cos(theta_load_cable)*sin(phi_load_cable)*phi_dot_dot_load_cable
       + cos(phi_load_cable)*sin(theta_load_cable)*theta_dot_dot_load_cable);
 
-      // acceleration_load[2] = (1.0/4.0)*pow(pow(cable_length,2.0)-pow(load_pose_position.x-uav_state.pose.position.x,2.0)
+      // acceleration_load[2] = (1.0/4.0)*pow(pow(_cable_length_,2.0)-pow(load_pose_position.x-uav_state.pose.position.x,2.0)
       // -pow(load_pose_position.y-uav_state.pose.position.y,2.0),-3.0/2.0)
       // *pow((-2.0*(load_pose_position.x-uav_state.pose.position.x)*(load_lin_vel[0]-uav_state.velocity.linear.x) 
       // - 2*(load_pose_position.y-uav_state.pose.position.y)*(load_lin_vel[1]-uav_state.velocity.linear.y)),2.0)
-      // - (1.0/2.0)*pow(pow(cable_length,2.0)-pow(load_pose_position.x-uav_state.pose.position.x,2)
+      // - (1.0/2.0)*pow(pow(_cable_length_,2.0)-pow(load_pose_position.x-uav_state.pose.position.x,2)
       // -pow(load_pose_position.y-uav_state.pose.position.y,2.0),-1.0/2.0)
       // *(-2.0*pow((load_lin_vel[0]-uav_state.velocity.linear.x),2.0) 
       // - 2.0*(load_pose_position.x-uav_state.pose.position.x)*(acceleration_load[0]-custom_acceleration.position.x) 
@@ -2345,8 +2236,8 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
 //     Eigen::Vector3d Opl(load_pose_position.x, load_pose_position.y, load_pose_position.z);
 //     Eigen::Vector3d Ovl(load_lin_vel[0], load_lin_vel[1], load_lin_vel[2]);
     
-//     if (run_type == "simulation"){
-//       if(payload_spawned){
+//     if (_run_type_ == "simulation"){
+//       if(payload_spawned_){
 //           if(remove_offset){
 //             Epl = Rp - Opl; //Change Rp to Op
 //             load_pose_position_offset = Epl;
@@ -2390,10 +2281,10 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
 //       load_velocity_error.y = -Evl[1];
 //       load_velocity_error.z = -Evl[2];
 
-//       publisher_load_pose_experiments.publish(load_pose_position);
+//       load_pose_experiments_publisher_.publish(load_pose_position);
       
-//       publisher_load_pose_error.publish(load_pose_error);
-//       publisher_load_velocity_error.publish(load_velocity_error);
+//       load_pose_error_publisher_.publish(load_pose_error);
+//       load_velocity_error_publisher_.publish(load_velocity_error);
 
 //       //ROS_INFO_STREAM("Se3BruboticsLoadController: load_pose_position = \n" << load_pose_position);
 //       //ROS_INFO_STREAM("Se3BruboticsLoadController: Epl (Rpl-load_pose)= \n" << Epl);
@@ -2404,9 +2295,9 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
 //     // 2e method pandolfo
 //     Eigen::Array3d  Kpl = Eigen::Array3d::Zero(3); 
 //     Eigen::Array3d  Kdl = Eigen::Array3d::Zero(3); 
-//     load_gains_switch = getenv("LOAD_GAIN_SWITCH");
+//     _load_gains_switch_ = getenv("LOAD_GAIN_SWITCH");
 
-//     if (load_gains_switch == "true"){ 
+//     if (_load_gains_switch_ == "true"){ 
 //       // gains activated
 //       if (position_cmd.use_position_horizontal) {
 //         // gains activated
@@ -2519,7 +2410,7 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
 //       // because we need to control the attitude.
 //       Kq << kqxy_, kqxy_, kqz_;
 //     }
-//     load_mass_ = std::stod(getenv("LOAD_MASS")); // can be changed in session.yml file. To take mass load into account! stod to transform string defined in session to double
+//     _load_mass_ = std::stod(getenv("LOAD_MASS")); // can be changed in session.yml file. To take mass load into account! stod to transform string defined in session to double
 
 //     /*TODO: answer question below and define Kp, Kv accordingly, for now deined hardcoded*/
 //     // _uav_mass_ = 2.0; // TODO: change later, see issue Thomas Baca, this is mass of F450
@@ -2527,16 +2418,16 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
 //     // | --------------- Thesis B --------------- |
 //     uav_mass_difference_ = 0; 
 //     double total_mass = 0;
-//     if (run_type == "simulation"){ 
-//       if(payload_spawned){
-//         total_mass = _uav_mass_ + load_mass_ + uav_mass_difference_;
+//     if (_run_type_ == "simulation"){ 
+//       if(payload_spawned_){
+//         total_mass = _uav_mass_ + _load_mass_ + uav_mass_difference_;
 //         //ROS_INFO_STREAM("Mass spwaned" << std::endl << total_mass);
 //       }else{
 //         total_mass = _uav_mass_ + uav_mass_difference_;
 //         //ROS_INFO_STREAM("Mass NOT spwaned" << std::endl << total_mass);
 //       }
 //     }else{
-//       total_mass = _uav_mass_ + load_mass_ + uav_mass_difference_;
+//       total_mass = _uav_mass_ + _load_mass_ + uav_mass_difference_;
 //     }
 //     // | --------------- --------------- |
 
@@ -2660,22 +2551,22 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
 //     }
 
 //     // | --------------- Thesis B --------------- | 
-//     if (run_type == "simulation"){ 
+//     if (_run_type_ == "simulation"){ 
 //       for (int i = 0; i < 3; i++) // in order to set the error to 0 before the load spawn
 //       {
-//         if(!payload_spawned)
+//         if(!payload_spawned_)
 //         {
 //           Epl = Epl*0;
 //           Evl = Evl*0;
 //         }
-//         if(payload_spawned && abs(Epl[i]) < 0.05)
+//         if(payload_spawned_ && abs(Epl[i]) < 0.05)
 //         {
 //           Epl[i] = Epl[i]*0;
 //         }
 //       }
 //     }
 //     // ROS_INFO_STREAM("Epl = \n" << Epl);
-//     // ROS_INFO_STREAM("payload_spawned = \n" << payload_spawned);
+//     // ROS_INFO_STREAM("payload_spawned_ = \n" << payload_spawned_);
 
 
 //     // publish errors
@@ -2683,7 +2574,7 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
 //     predicted_load_position_errors_to_publish.position.y=Epl[1];
 //     predicted_load_position_errors_to_publish.position.z=Epl[2];
     
-//     predicted_load__position_errors_out.poses.push_back(predicted_load_position_errors_to_publish);
+//     predicted_load_position_errors_out.poses.push_back(predicted_load_position_errors_to_publish);
 
 
     
@@ -2989,63 +2880,63 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
 //     // OLD Eigen::Vector3d acceleration_uav = 1/_uav_mass_ * (thrust_force*R.col(2) + _uav_mass_ * (Eigen::Vector3d(0, 0, -common_handlers_->g)));
   
 //     //Thesis B: step 7: calculating the predicted uav acceleration
-//     //Eigen::Vector3d acceleration_uav = (1/_uav_mass_ )* ((thrust_force*R.col(2)  + _uav_mass_ * (Eigen::Vector3d(0, 0, -common_handlers_->g))) - load_mass_*(acceleration_load + (Eigen::Vector3d(0, 0, common_handlers_->g))));
+//     //Eigen::Vector3d acceleration_uav = (1/_uav_mass_ )* ((thrust_force*R.col(2)  + _uav_mass_ * (Eigen::Vector3d(0, 0, -common_handlers_->g))) - _load_mass_*(acceleration_load + (Eigen::Vector3d(0, 0, common_handlers_->g))));
 
 //     // Thesis b: Test 06/08. 
 //     //Corrected model see thesis Raphael
     //-------------based on new EOM with angles----------------//
 
     Eigen::MatrixXd M_matrix = Eigen::MatrixXd(5, 5);
-    M_matrix(0,0) = _uav_mass_ + load_mass_; M_matrix(0,1) = 0.0; M_matrix(0,2) = 0.0; 
-    M_matrix(0,3) = 0.0; M_matrix(0,4) = cable_length*load_mass_*cos(theta_load_cable);
+    M_matrix(0,0) = _uav_mass_ + _load_mass_; M_matrix(0,1) = 0.0; M_matrix(0,2) = 0.0; 
+    M_matrix(0,3) = 0.0; M_matrix(0,4) = _cable_length_*_load_mass_*cos(theta_load_cable);
     
-    M_matrix(1,0) = 0.0; M_matrix(1,1) = _uav_mass_ + load_mass_; M_matrix(1,2) = 0.0; 
-    M_matrix(1,3) = cable_length*load_mass_*cos(phi_load_cable)*cos(theta_load_cable); 
-    M_matrix(1,4) = -cable_length*load_mass_*sin(phi_load_cable)*sin(theta_load_cable);
+    M_matrix(1,0) = 0.0; M_matrix(1,1) = _uav_mass_ + _load_mass_; M_matrix(1,2) = 0.0; 
+    M_matrix(1,3) = _cable_length_*_load_mass_*cos(phi_load_cable)*cos(theta_load_cable); 
+    M_matrix(1,4) = -_cable_length_*_load_mass_*sin(phi_load_cable)*sin(theta_load_cable);
     
-    M_matrix(2,0) = 0.0; M_matrix(2,1) = 0.0; M_matrix(2,2) = _uav_mass_ + load_mass_; 
-    M_matrix(2,3) = cable_length*load_mass_*cos(theta_load_cable)*sin(phi_load_cable); 
-    M_matrix(2,4) = cable_length*load_mass_*cos(phi_load_cable)*sin(theta_load_cable);
+    M_matrix(2,0) = 0.0; M_matrix(2,1) = 0.0; M_matrix(2,2) = _uav_mass_ + _load_mass_; 
+    M_matrix(2,3) = _cable_length_*_load_mass_*cos(theta_load_cable)*sin(phi_load_cable); 
+    M_matrix(2,4) = _cable_length_*_load_mass_*cos(phi_load_cable)*sin(theta_load_cable);
     
-    M_matrix(3,0) = 0.0; M_matrix(3,1) = cable_length*load_mass_*cos(phi_load_cable)*cos(theta_load_cable); 
-    M_matrix(3,2) = cable_length*load_mass_*sin(phi_load_cable)*cos(theta_load_cable); 
-    M_matrix(3,3) = pow(cable_length,2.0)*load_mass_*(cos(theta_load_cable))*(cos(theta_load_cable)); M_matrix(3,4) = 0.0;
+    M_matrix(3,0) = 0.0; M_matrix(3,1) = _cable_length_*_load_mass_*cos(phi_load_cable)*cos(theta_load_cable); 
+    M_matrix(3,2) = _cable_length_*_load_mass_*sin(phi_load_cable)*cos(theta_load_cable); 
+    M_matrix(3,3) = pow(_cable_length_,2.0)*_load_mass_*(cos(theta_load_cable))*(cos(theta_load_cable)); M_matrix(3,4) = 0.0;
     
-    M_matrix(4,0) = cable_length*load_mass_*cos(theta_load_cable); 
-    M_matrix(4,1) = -cable_length*load_mass_*sin(phi_load_cable)*sin(theta_load_cable); 
-    M_matrix(4,2) = cable_length*load_mass_*cos(phi_load_cable)*sin(theta_load_cable); 
-    M_matrix(4,3) = 0.0; M_matrix(4,4) = pow(cable_length,2.0)*load_mass_ ;
+    M_matrix(4,0) = _cable_length_*_load_mass_*cos(theta_load_cable); 
+    M_matrix(4,1) = -_cable_length_*_load_mass_*sin(phi_load_cable)*sin(theta_load_cable); 
+    M_matrix(4,2) = _cable_length_*_load_mass_*cos(phi_load_cable)*sin(theta_load_cable); 
+    M_matrix(4,3) = 0.0; M_matrix(4,4) = pow(_cable_length_,2.0)*_load_mass_ ;
     // ROS_INFO_STREAM("M_inverse = \n" << M_matrix.inverse());
 
     Eigen::MatrixXd V_matrix = Eigen::MatrixXd(5, 5);
     V_matrix(0,0) = 0.0; V_matrix(0,1) = 0.0; V_matrix(0,2) = 0.0; V_matrix(0,3) = 0.0; 
-    V_matrix(0,4) = -cable_length*theta_dot_load_cable*load_mass_*sin(theta_load_cable);
+    V_matrix(0,4) = -_cable_length_*theta_dot_load_cable*_load_mass_*sin(theta_load_cable);
 
     V_matrix(1,0) = 0.0; V_matrix(1,1) = 0.0; V_matrix(1,2) = 0.0; 
-    V_matrix(1,3) = -cable_length*load_mass_*(phi_dot_load_cable*sin(phi_load_cable)*cos(theta_load_cable) 
+    V_matrix(1,3) = -_cable_length_*_load_mass_*(phi_dot_load_cable*sin(phi_load_cable)*cos(theta_load_cable) 
     + theta_dot_load_cable*cos(phi_load_cable)*sin(theta_load_cable)); 
-    V_matrix(1,4) = -cable_length*load_mass_*(phi_dot_load_cable*cos(phi_load_cable)*sin(theta_load_cable) 
+    V_matrix(1,4) = -_cable_length_*_load_mass_*(phi_dot_load_cable*cos(phi_load_cable)*sin(theta_load_cable) 
     + theta_dot_load_cable*sin(phi_load_cable)*cos(theta_load_cable));
 
     V_matrix(2,0) = 0.0; V_matrix(2,1) = 0.0; V_matrix(2,2) = 0.0; 
-    V_matrix(2,3) = cable_length*load_mass_*(phi_dot_load_cable*cos(phi_load_cable)*cos(theta_load_cable) 
+    V_matrix(2,3) = _cable_length_*_load_mass_*(phi_dot_load_cable*cos(phi_load_cable)*cos(theta_load_cable) 
     - theta_dot_load_cable*sin(phi_load_cable)*sin(theta_load_cable)); 
-    V_matrix(2,4) = cable_length*load_mass_*(theta_dot_load_cable*cos(phi_load_cable)*cos(theta_load_cable) 
+    V_matrix(2,4) = _cable_length_*_load_mass_*(theta_dot_load_cable*cos(phi_load_cable)*cos(theta_load_cable) 
     - phi_dot_load_cable*sin(phi_load_cable)*sin(theta_load_cable));
 
     V_matrix(3,0) = 0.0; V_matrix(3,1) = 0.0; V_matrix(3,2) = 0.0; 
-    V_matrix(3,3) = (-1.0/2.0)*pow(cable_length,2.0)*theta_dot_load_cable*load_mass_*sin(2.0*theta_load_cable); 
-    V_matrix(3,4) = (-1.0/2.0)*pow(cable_length,2.0)*phi_dot_load_cable*load_mass_*sin(2.0*theta_load_cable);
+    V_matrix(3,3) = (-1.0/2.0)*pow(_cable_length_,2.0)*theta_dot_load_cable*_load_mass_*sin(2.0*theta_load_cable); 
+    V_matrix(3,4) = (-1.0/2.0)*pow(_cable_length_,2.0)*phi_dot_load_cable*_load_mass_*sin(2.0*theta_load_cable);
     
     V_matrix(4,0) = 0.0; V_matrix(4,1) = 0.0; V_matrix(4,2) = 0.0; 
-    V_matrix(4,3) = (1.0/2.0)*pow(cable_length,2.0)*phi_dot_load_cable*load_mass_*sin(2.0*theta_load_cable); V_matrix(4,4) = 0.0;
+    V_matrix(4,3) = (1.0/2.0)*pow(_cable_length_,2.0)*phi_dot_load_cable*_load_mass_*sin(2.0*theta_load_cable); V_matrix(4,4) = 0.0;
 
     // ROS_INFO_STREAM("V = \n" << V_matrix);
 
     Eigen::MatrixXd G_vector = Eigen::MatrixXd(5, 1);
-    G_vector(0,0) = 0.0; G_vector(1,0) = 0.0; G_vector(2,0) = (load_mass_+_uav_mass_)*common_handlers_->g; // g here is positif
-    G_vector(3,0) = cable_length*common_handlers_->g*load_mass_*cos(theta_load_cable)*sin(phi_load_cable); 
-    G_vector(4,0) = cable_length*common_handlers_->g*load_mass_*cos(phi_load_cable)*sin(theta_load_cable);
+    G_vector(0,0) = 0.0; G_vector(1,0) = 0.0; G_vector(2,0) = (_load_mass_+_uav_mass_)*common_handlers_->g; // g here is positif
+    G_vector(3,0) = _cable_length_*common_handlers_->g*_load_mass_*cos(theta_load_cable)*sin(phi_load_cable); 
+    G_vector(4,0) = _cable_length_*common_handlers_->g*_load_mass_*cos(phi_load_cable)*sin(theta_load_cable);
 
     // ROS_INFO_STREAM("G = \n" << G_vector);
 
@@ -3126,9 +3017,9 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
     // ROS_INFO_STREAM("theta_dot_dot_load_cable = \n" << theta_dot_dot_load_cable);
     // ROS_INFO_STREAM("phi_dot_dot_load_cable = \n" << phi_dot_dot_load_cable);
 
-    // custom_tension_force.position.x = load_mass_*(acceleration_load[0]);
-    // custom_tension_force.position.y = load_mass_*(acceleration_load[1]);
-    // custom_tension_force.position.z = load_mass_*(acceleration_load[2] + (common_handlers_->g));
+    // custom_tension_force.position.x = _load_mass_*(acceleration_load[0]);
+    // custom_tension_force.position.y = _load_mass_*(acceleration_load[1]);
+    // custom_tension_force.position.z = _load_mass_*(acceleration_load[2] + (common_handlers_->g));
 
     // Eigen::Vector3d custom_tension_force_vec;
 
@@ -3137,7 +3028,7 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
     // custom_tension_force_vec[2] = custom_tension_force.position.z;
 
     //Thesis B: step 7: calculating the predicted uav acceleration
-    //Eigen::Vector3d acceleration_uav = (1/_uav_mass_ )* ((thrust_force*R.col(2)  + _uav_mass_ * (Eigen::Vector3d(0, 0, -common_handlers_->g))) - load_mass_*(acceleration_load + (Eigen::Vector3d(0, 0, common_handlers_->g))));
+    //Eigen::Vector3d acceleration_uav = (1/_uav_mass_ )* ((thrust_force*R.col(2)  + _uav_mass_ * (Eigen::Vector3d(0, 0, -common_handlers_->g))) - _load_mass_*(acceleration_load + (Eigen::Vector3d(0, 0, common_handlers_->g))));
 
     // Eigen::Vector3d acceleration_uav = (1/_uav_mass_ )* ((thrust_force*R.col(2)  + _uav_mass_ * (Eigen::Vector3d(0, 0, -common_handlers_->g))) - custom_tension_force_vec);
     
@@ -3145,7 +3036,7 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
     // custom_acceleration.position.y = acceleration_uav[1];
     // custom_acceleration.position.z = acceleration_uav[2];
 
-    // acceleration_load = (1/load_mass_)*(total_mass * (Eigen::Vector3d(0, 0, -common_handlers_->g)) + thrust_force*R.col(2) - _uav_mass_*acceleration_uav);
+    // acceleration_load = (1/_load_mass_)*(total_mass * (Eigen::Vector3d(0, 0, -common_handlers_->g)) + thrust_force*R.col(2) - _uav_mass_*acceleration_uav);
 
     // custom_load_acceleration.position.x = acceleration_load[0];
     // custom_load_acceleration.position.y = acceleration_load[1];
@@ -3163,20 +3054,20 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
     
     //Thesis B
     // workin for uav_state
-    //custom_acceleration.position.x = (1/_uav_mass_)*(Kp[0]*(position_cmd.position.x-custom_pose.position.x) + Kv[0]*(position_cmd.velocity.x - custom_vel.position.x)) - (load_mass_/_uav_mass_)*(acceleration_load[0]);
-    //custom_acceleration.position.y = (1/_uav_mass_)*(Kp[1]*(position_cmd.position.y-custom_pose.position.y) + Kv[1]*(position_cmd.velocity.y - custom_vel.position.y))  - (load_mass_/_uav_mass_)*(acceleration_load[1]);
-    //custom_acceleration.position.z = (1/_uav_mass_)*(Kp[2]*(position_cmd.position.z-custom_pose.position.z) + Kv[2]*(position_cmd.velocity.z - custom_vel.position.z))  - (load_mass_/_uav_mass_)*(acceleration_load[2]);
+    //custom_acceleration.position.x = (1/_uav_mass_)*(Kp[0]*(position_cmd.position.x-custom_pose.position.x) + Kv[0]*(position_cmd.velocity.x - custom_vel.position.x)) - (_load_mass_/_uav_mass_)*(acceleration_load[0]);
+    //custom_acceleration.position.y = (1/_uav_mass_)*(Kp[1]*(position_cmd.position.y-custom_pose.position.y) + Kv[1]*(position_cmd.velocity.y - custom_vel.position.y))  - (_load_mass_/_uav_mass_)*(acceleration_load[1]);
+    //custom_acceleration.position.z = (1/_uav_mass_)*(Kp[2]*(position_cmd.position.z-custom_pose.position.z) + Kv[2]*(position_cmd.velocity.z - custom_vel.position.z))  - (_load_mass_/_uav_mass_)*(acceleration_load[2]);
     
 
     // using (m_q - m)
-    //custom_acceleration.position.x = (1/(_uav_mass_ - total_mass))*(Kpl[0]*(position_cmd.position.x - custom_load_pose.position.x) + Kdl[0]*(uav_state.velocity.linear.x - custom_load_vel.position.x) + Kp[0]*(position_cmd.position.x-custom_pose.position.x) + Kv[0]*(position_cmd.velocity.x - custom_vel.position.x)) - (load_mass_/(_uav_mass_ - total_mass))*(acceleration_load[0]);
-    //custom_acceleration.position.y = (1/(_uav_mass_ - total_mass))*(Kpl[1]*(position_cmd.position.y - custom_load_pose.position.y) + Kdl[1]*(uav_state.velocity.linear.y - custom_load_vel.position.y) + Kp[1]*(position_cmd.position.y-custom_pose.position.y) + Kv[1]*(position_cmd.velocity.y - custom_vel.position.y))  - (load_mass_/(_uav_mass_ - total_mass))*(acceleration_load[1]);
-    //custom_acceleration.position.z = (1/(_uav_mass_ - total_mass))*(Kpl[2]*(position_cmd.position.z - custom_load_pose.position.z - cable_length) + Kdl[2]*(uav_state.velocity.linear.z - custom_load_vel.position.z) + Kp[2]*(position_cmd.position.z-custom_pose.position.z) + Kv[2]*(position_cmd.velocity.z - custom_vel.position.z))  - (load_mass_/(_uav_mass_ - total_mass))*(acceleration_load[2]);
+    //custom_acceleration.position.x = (1/(_uav_mass_ - total_mass))*(Kpl[0]*(position_cmd.position.x - custom_load_pose.position.x) + Kdl[0]*(uav_state.velocity.linear.x - custom_load_vel.position.x) + Kp[0]*(position_cmd.position.x-custom_pose.position.x) + Kv[0]*(position_cmd.velocity.x - custom_vel.position.x)) - (_load_mass_/(_uav_mass_ - total_mass))*(acceleration_load[0]);
+    //custom_acceleration.position.y = (1/(_uav_mass_ - total_mass))*(Kpl[1]*(position_cmd.position.y - custom_load_pose.position.y) + Kdl[1]*(uav_state.velocity.linear.y - custom_load_vel.position.y) + Kp[1]*(position_cmd.position.y-custom_pose.position.y) + Kv[1]*(position_cmd.velocity.y - custom_vel.position.y))  - (_load_mass_/(_uav_mass_ - total_mass))*(acceleration_load[1]);
+    //custom_acceleration.position.z = (1/(_uav_mass_ - total_mass))*(Kpl[2]*(position_cmd.position.z - custom_load_pose.position.z - _cable_length_) + Kdl[2]*(uav_state.velocity.linear.z - custom_load_vel.position.z) + Kp[2]*(position_cmd.position.z-custom_pose.position.z) + Kv[2]*(position_cmd.velocity.z - custom_vel.position.z))  - (_load_mass_/(_uav_mass_ - total_mass))*(acceleration_load[2]);
     
     // with kpl and kdl (m_q)
-    //custom_acceleration.position.x = (1/_uav_mass_)*(Kpl[0]*(position_cmd.position.x - custom_load_pose.position.x) + Kdl[0]*(uav_state.velocity.linear.x - custom_load_vel.position.x) + Kp[0]*(position_cmd.position.x-custom_pose.position.x) + Kv[0]*(position_cmd.velocity.x - custom_vel.position.x)) - (load_mass_/_uav_mass_)*(acceleration_load[0]);
-    //custom_acceleration.position.y = (1/_uav_mass_)*(Kpl[1]*(position_cmd.position.y - custom_load_pose.position.y) + Kdl[1]*(uav_state.velocity.linear.y - custom_load_vel.position.y) + Kp[1]*(position_cmd.position.y-custom_pose.position.y) + Kv[1]*(position_cmd.velocity.y - custom_vel.position.y))  - (load_mass_/_uav_mass_)*(acceleration_load[1]);
-    //custom_acceleration.position.z = (1/_uav_mass_)*(Kpl[2]*(position_cmd.position.z - custom_load_pose.position.z - cable_length) + Kdl[2]*(uav_state.velocity.linear.z - custom_load_vel.position.z) + Kp[2]*(position_cmd.position.z-custom_pose.position.z) + Kv[2]*(position_cmd.velocity.z - custom_vel.position.z))  - (load_mass_/_uav_mass_)*(acceleration_load[2]);
+    //custom_acceleration.position.x = (1/_uav_mass_)*(Kpl[0]*(position_cmd.position.x - custom_load_pose.position.x) + Kdl[0]*(uav_state.velocity.linear.x - custom_load_vel.position.x) + Kp[0]*(position_cmd.position.x-custom_pose.position.x) + Kv[0]*(position_cmd.velocity.x - custom_vel.position.x)) - (_load_mass_/_uav_mass_)*(acceleration_load[0]);
+    //custom_acceleration.position.y = (1/_uav_mass_)*(Kpl[1]*(position_cmd.position.y - custom_load_pose.position.y) + Kdl[1]*(uav_state.velocity.linear.y - custom_load_vel.position.y) + Kp[1]*(position_cmd.position.y-custom_pose.position.y) + Kv[1]*(position_cmd.velocity.y - custom_vel.position.y))  - (_load_mass_/_uav_mass_)*(acceleration_load[1]);
+    //custom_acceleration.position.z = (1/_uav_mass_)*(Kpl[2]*(position_cmd.position.z - custom_load_pose.position.z - _cable_length_) + Kdl[2]*(uav_state.velocity.linear.z - custom_load_vel.position.z) + Kp[2]*(position_cmd.position.z-custom_pose.position.z) + Kv[2]*(position_cmd.velocity.z - custom_vel.position.z))  - (_load_mass_/_uav_mass_)*(acceleration_load[2]);
     
 
     // // prepare the attitude feedback
@@ -3653,85 +3544,85 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
     ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_tension_force_.getTopic().c_str());
   }
   try {
-    publisher_tracker_load_pose.publish(load_pose);
+    tracker_load_pose_publisher_.publish(load_pose);
   }
   catch (...) {
-    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", publisher_tracker_load_pose.getTopic().c_str());
+    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", tracker_load_pose_publisher_.getTopic().c_str());
   }
   try {
-    publisher_tracker_load_vel.publish(load_velocity);
+    tracker_load_vel_publisher_.publish(load_velocity);
   }
   catch (...) {
-    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", publisher_tracker_load_vel.getTopic().c_str());
+    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", tracker_load_vel_publisher_.getTopic().c_str());
   }
   try {
-    publisher_tracker_uav_state.publish(uav_state_);
+    tracker_uav_state_publisher_.publish(uav_state_);
   }
   catch (...) {
-    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", publisher_tracker_uav_state.getTopic().c_str());
+    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", tracker_uav_state_publisher_.getTopic().c_str());
   }
   try {
-    predicted_phi_publisher.publish(predicted_phi);
+    predicted_phi_publisher_.publish(predicted_phi);
   }
   catch (...) {
-    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_phi_publisher.getTopic().c_str());
+    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_phi_publisher_.getTopic().c_str());
   }
   try {
-    predicted_theta_publisher.publish(predicted_theta);
+    predicted_theta_publisher_.publish(predicted_theta);
   }
   catch (...) {
-    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_theta_publisher.getTopic().c_str());
+    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_theta_publisher_.getTopic().c_str());
   }
   try {
-    predicted_phi_dot_publisher.publish(predicted_phi_dot);
+    predicted_phi_dot_publisher_.publish(predicted_phi_dot);
   }
   catch (...) {
-    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_phi_dot_publisher.getTopic().c_str());
+    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_phi_dot_publisher_.getTopic().c_str());
   }
   try {
-    predicted_theta_dot_publisher.publish(predicted_theta_dot);
+    predicted_theta_dot_publisher_.publish(predicted_theta_dot);
   }
   catch (...) {
-    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_theta_dot_publisher.getTopic().c_str());
+    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_theta_dot_publisher_.getTopic().c_str());
   }
   try {
-    predicted_q_state_dot_dot_uav_publisher.publish(predicted_q_state_dot_dot_uav_out);
+    predicted_q_state_dot_dot_uav_publisher_.publish(predicted_q_state_dot_dot_uav_out);
   }
   catch (...) {
-    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_q_state_dot_dot_uav_publisher.getTopic().c_str());
+    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_q_state_dot_dot_uav_publisher_.getTopic().c_str());
   }
   try {
-    predicted_q_state_dot_dot_load_publisher.publish(predicted_q_state_dot_dot_load_out);
+    predicted_q_state_dot_dot_load_publisher_.publish(predicted_q_state_dot_dot_load_out);
   }
   catch (...) {
-    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_q_state_dot_dot_load_publisher.getTopic().c_str());
+    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_q_state_dot_dot_load_publisher_.getTopic().c_str());
   }
 
   try {
-    predicted_phi_dot_dot_publisher.publish(predicted_phi_dot_dot);
+    predicted_phi_dot_dot_publisher_.publish(predicted_phi_dot_dot);
   }
   catch (...) {
-    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_phi_dot_dot_publisher.getTopic().c_str());
+    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_phi_dot_dot_publisher_.getTopic().c_str());
   }
   try {
-    predicted_theta_dot_dot_publisher.publish(predicted_theta_dot_dot);
+    predicted_theta_dot_dot_publisher_.publish(predicted_theta_dot_dot);
   }
   catch (...) {
-    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_theta_dot_dot_publisher.getTopic().c_str());
+    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_theta_dot_dot_publisher_.getTopic().c_str());
   }
 
   try {
-    predicted_output_force_publisher.publish(predicted_output_force_out);
+    predicted_output_force_publisher_.publish(predicted_output_force_out);
   }
   catch (...) {
-    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_output_force_publisher.getTopic().c_str());
+    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_output_force_publisher_.getTopic().c_str());
   }
 
   try {
-    predicted_load_position_errors_publisher.publish(predicted_load__position_errors_out);
+    predicted_load_position_errors_publisher_.publish(predicted_load_position_errors_out);
   }
   catch (...) {
-    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_load_position_errors_publisher.getTopic().c_str());
+    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_load_position_errors_publisher_.getTopic().c_str());
   }
 
   }
@@ -3747,8 +3638,8 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
     //uav2_state_received_ is the state of the UAV
     //uav2_anchoring_point_position_ and velocities_ are the linear position and velocities
 
-    load_mass_ = std::stod(getenv("LOAD_MASS")); // can be changed in session.yml file. To take mass load into account! stod to transform string defined in session to double
-    // ROS_INFO_STREAM("load_mass_= \n" <<load_mass_);
+    
+    // ROS_INFO_STREAM("_load_mass_= \n" <<_load_mass_);
     // --------------------------------------------------------------
     // Rp - position reference in global frame
     // Rv - velocity reference in global frame
@@ -3853,7 +3744,6 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
     // Rpl1,2 - position reference of the anchoring point 1,2 in global frame
     // Rvl1,2 - velocity reference of the anchoring point 1,2 load in global frame
 
-    cable_length = std::stod(getenv("CABLE_LENGTH")); // is changed inside session.yml to take length cable into account! stod to transform string defined in session to double.
     
     Eigen::Vector3d Rpl1 = Eigen::Vector3d::Zero(3); // reference for 1st anchoring point
     Eigen::Vector3d Rpl2 = Eigen::Vector3d::Zero(3);// reference for the 2nd anchoring point
@@ -3866,7 +3756,7 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
       } 
 
       if (position_cmd.use_position_vertical) {
-        Rpl1[2] = position_cmd.position.z - cable_length;
+        Rpl1[2] = position_cmd.position.z - _cable_length_;
       } 
     }
     if (uav2_position_cmd_received_.use_position_vertical || uav2_position_cmd_received_.use_position_horizontal) {
@@ -3877,7 +3767,7 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
       } 
 
       if (uav2_position_cmd_received_.use_position_vertical) {
-        Rpl2[2] = uav2_position_cmd_received_.position.z - cable_length;
+        Rpl2[2] = uav2_position_cmd_received_.position.z - _cable_length_;
       } 
     }
 
@@ -3928,7 +3818,7 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
     Eigen::Vector3d wl ;
     Eigen::Vector3d dotwl ;
     //
-    double J_l=(1.0/2.0)*load_mass_*pow(1.5,2.0); //Inertia of the load
+    double J_l=(1.0/2.0)*_load_mass_*pow(1.5,2.0); //Inertia of the load
 
     // Eigen::Vector3d acceleration_load = acceleration_load_; // don't need acceleration do I ??
 
@@ -4112,7 +4002,7 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
 
   double m1=_uav_mass_;
   double m2=_uav_mass_;
-  double ml= load_mass_*2.0; //As the load_mass_ value exported in session file is half of the payload. As this is the value used in controller to control the anchoring point position.
+  double ml= _load_mass_*2.0; //As the _load_mass_ value exported in session file is half of the payload. As this is the value used in controller to control the anchoring point position.
   double d1=0.75;
   double d2=-0.75; //todo make these two modified in session file as for the load mass and other parameters that might vary.
 
@@ -4120,7 +4010,7 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
   // Eigen::MatrixXd x_full_state = Eigen::MatrixXd(5, 5);
 
 // Prediction loop (over 3sec horizon)
-  for (int i = 0; i < num_pred_samples_; i++) {
+  for (int i = 0; i < _num_pred_samples_; i++) {
     if(i==0){
       //Initial conditions for first iteration + Fill in custom poses
 
@@ -4430,8 +4320,8 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
 
     // compute d(x,u)
     Eigen::MatrixXd d_matrix = Eigen::MatrixXd(2,1);
-    d_matrix(0,0)=(ml/m1)*mu1.dot(f1) + (ml/cable_length)*(uav1_velocity-uav1_anchoring_point_velocity).squaredNorm() + ml*d1*wl.squaredNorm()*mu1.dot(nl);
-    d_matrix(1,0)=(ml/m2)*mu2.dot(f2) + (ml/cable_length)*(uav2_velocity-uav2_anchoring_point_velocity).squaredNorm() + ml*d2*wl.squaredNorm()*mu2.dot(nl);
+    d_matrix(0,0)=(ml/m1)*mu1.dot(f1) + (ml/_cable_length_)*(uav1_velocity-uav1_anchoring_point_velocity).squaredNorm() + ml*d1*wl.squaredNorm()*mu1.dot(nl);
+    d_matrix(1,0)=(ml/m2)*mu2.dot(f2) + (ml/_cable_length_)*(uav2_velocity-uav2_anchoring_point_velocity).squaredNorm() + ml*d2*wl.squaredNorm()*mu2.dot(nl);
   
     // compute D(x)
 
@@ -4522,55 +4412,55 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
 //Publish the PoseArray that have been filled during the predictions.
   // ROS_INFO_STREAM("Gets to the publishing");
   try {
-    predicted_uav1_poses_pub.publish(predicted_uav1_poses_out_);
+    predicted_uav1_poses_publisher_.publish(predicted_uav1_poses_out_);
   }
   catch (...) {
-    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_uav1_poses_pub.getTopic().c_str());
+    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_uav1_poses_publisher_.getTopic().c_str());
   }
 
   try {
-    predicted_uav2_poses_pub.publish(predicted_uav2_poses_out_);
+    predicted_uav2_poses_publisher_.publish(predicted_uav2_poses_out_);
   }
   catch (...) {
-    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_uav2_poses_pub.getTopic().c_str());
+    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_uav2_poses_publisher_.getTopic().c_str());
   }
   try {
-    predicted_uav1_vel_pub.publish(predicted_uav1_vel_out_);
+    predicted_uav1_vel_publisher_.publish(predicted_uav1_vel_out_);
   }
   catch (...) {
-    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_uav1_vel_pub.getTopic().c_str());
+    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_uav1_vel_publisher_.getTopic().c_str());
   }
     try {
-    predicted_uav2_vel_pub.publish(predicted_uav2_vel_out_);
+    predicted_uav2_vel_publisher_.publish(predicted_uav2_vel_out_);
   }
   catch (...) {
-    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_uav2_vel_pub.getTopic().c_str());
+    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_uav2_vel_publisher_.getTopic().c_str());
   }
     try {
-    predicted_uav1_anchoring_point_pose_pub.publish(predicted_uav1_anchoring_point_pose_out_);
+    predicted_uav1_anchoring_point_pose_publisher_.publish(predicted_uav1_anchoring_point_pose_out_);
   }
   catch (...) {
-    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_uav1_anchoring_point_pose_pub.getTopic().c_str());
+    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_uav1_anchoring_point_pose_publisher_.getTopic().c_str());
   }
 
   try {
-    predicted_uav2_anchoring_point_pose_pub.publish(predicted_uav2_anchoring_point_pose_out_);
+    predicted_uav2_anchoring_point_pose_publisher_.publish(predicted_uav2_anchoring_point_pose_out_);
   }
   catch (...) {
-    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_uav2_anchoring_point_pose_pub.getTopic().c_str());
+    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_uav2_anchoring_point_pose_publisher_.getTopic().c_str());
   }
   try {
-    predicted_uav1_anchoring_point_vel_pub.publish(predicted_uav1_anchoring_point_vel_out_);
+    predicted_uav1_anchoring_point_vel_publisher_.publish(predicted_uav1_anchoring_point_vel_out_);
   }
   catch (...) {
-    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_uav1_anchoring_point_vel_pub.getTopic().c_str());
+    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_uav1_anchoring_point_vel_publisher_.getTopic().c_str());
   }
 
   try {
-    predicted_uav2_anchoring_point_vel_pub.publish(predicted_uav2_anchoring_point_vel_out_);
+    predicted_uav2_anchoring_point_vel_publisher_.publish(predicted_uav2_anchoring_point_vel_out_);
   }
   catch (...) {
-    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_uav2_anchoring_point_vel_pub.getTopic().c_str());
+    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_uav2_anchoring_point_vel_publisher_.getTopic().c_str());
   }
   // try {
   //   predicted_thrust_publisher_.publish(predicted_thrust_out_);
@@ -4630,85 +4520,85 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
   //   ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_tension_force_.getTopic().c_str());
   // }
   // try {
-  //   publisher_tracker_load_pose.publish(load_pose);
+  //   tracker_load_pose_publisher_.publish(load_pose);
   // }
   // catch (...) {
-  //   ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", publisher_tracker_load_pose.getTopic().c_str());
+  //   ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", tracker_load_pose_publisher_.getTopic().c_str());
   // }
   // try {
-  //   publisher_tracker_load_vel.publish(load_velocity);
+  //   tracker_load_vel_publisher_.publish(load_velocity);
   // }
   // catch (...) {
-  //   ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", publisher_tracker_load_vel.getTopic().c_str());
+  //   ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", tracker_load_vel_publisher_.getTopic().c_str());
   // }
   // try {
-  //   publisher_tracker_uav_state.publish(uav_state_);
+  //   tracker_uav_state_publisher_.publish(uav_state_);
   // }
   // catch (...) {
-  //   ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", publisher_tracker_uav_state.getTopic().c_str());
+  //   ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", tracker_uav_state_publisher_.getTopic().c_str());
   // }
   // try {
-  //   predicted_phi_publisher.publish(predicted_phi);
+  //   predicted_phi_publisher_.publish(predicted_phi);
   // }
   // catch (...) {
-  //   ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_phi_publisher.getTopic().c_str());
+  //   ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_phi_publisher_.getTopic().c_str());
   // }
   // try {
-  //   predicted_theta_publisher.publish(predicted_theta);
+  //   predicted_theta_publisher_.publish(predicted_theta);
   // }
   // catch (...) {
-  //   ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_theta_publisher.getTopic().c_str());
+  //   ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_theta_publisher_.getTopic().c_str());
   // }
   // try {
-  //   predicted_phi_dot_publisher.publish(predicted_phi_dot);
+  //   predicted_phi_dot_publisher_.publish(predicted_phi_dot);
   // }
   // catch (...) {
-  //   ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_phi_dot_publisher.getTopic().c_str());
+  //   ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_phi_dot_publisher_.getTopic().c_str());
   // }
   // try {
-  //   predicted_theta_dot_publisher.publish(predicted_theta_dot);
+  //   predicted_theta_dot_publisher_.publish(predicted_theta_dot);
   // }
   // catch (...) {
-  //   ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_theta_dot_publisher.getTopic().c_str());
+  //   ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_theta_dot_publisher_.getTopic().c_str());
   // }
   // try {
-  //   predicted_q_state_dot_dot_uav_publisher.publish(predicted_q_state_dot_dot_uav_out);
+  //   predicted_q_state_dot_dot_uav_publisher_.publish(predicted_q_state_dot_dot_uav_out);
   // }
   // catch (...) {
-  //   ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_q_state_dot_dot_uav_publisher.getTopic().c_str());
+  //   ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_q_state_dot_dot_uav_publisher_.getTopic().c_str());
   // }
   // try {
-  //   predicted_q_state_dot_dot_load_publisher.publish(predicted_q_state_dot_dot_load_out);
+  //   predicted_q_state_dot_dot_load_publisher_.publish(predicted_q_state_dot_dot_load_out);
   // }
   // catch (...) {
-  //   ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_q_state_dot_dot_load_publisher.getTopic().c_str());
+  //   ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_q_state_dot_dot_load_publisher_.getTopic().c_str());
   // }
 
   // try {
-  //   predicted_phi_dot_dot_publisher.publish(predicted_phi_dot_dot);
+  //   predicted_phi_dot_dot_publisher_.publish(predicted_phi_dot_dot);
   // }
   // catch (...) {
-  //   ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_phi_dot_dot_publisher.getTopic().c_str());
+  //   ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_phi_dot_dot_publisher_.getTopic().c_str());
   // }
   // try {
-  //   predicted_theta_dot_dot_publisher.publish(predicted_theta_dot_dot);
+  //   predicted_theta_dot_dot_publisher_.publish(predicted_theta_dot_dot);
   // }
   // catch (...) {
-  //   ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_theta_dot_dot_publisher.getTopic().c_str());
+  //   ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_theta_dot_dot_publisher_.getTopic().c_str());
   // }
 
   // try {
-  //   predicted_output_force_publisher.publish(predicted_output_force_out);
+  //   predicted_output_force_publisher_.publish(predicted_output_force_out);
   // }
   // catch (...) {
-  //   ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_output_force_publisher.getTopic().c_str());
+  //   ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_output_force_publisher_.getTopic().c_str());
   // }
 
   // try {
-  //   predicted_load_position_errors_publisher.publish(predicted_load__position_errors_out);
+  //   predicted_load_position_errors_publisher_.publish(predicted_load_position_errors_out);
   // }
   // catch (...) {
-  //   ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_load_position_errors_publisher.getTopic().c_str());
+  //   ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_load_position_errors_publisher_.getTopic().c_str());
   // }
 
   }
@@ -4773,8 +4663,8 @@ std::tuple< Eigen::Vector3d, Eigen::Vector3d> DergbryanTracker::SimulateSe3CopyC
     Eigen::Vector3d Opl(load_pose_position.x, load_pose_position.y, load_pose_position.z);
     Eigen::Vector3d Ovl(load_lin_vel[0], load_lin_vel[1], load_lin_vel[2]);
     
-    if (run_type == "simulation"){
-      if(payload_spawned){
+    if (_run_type_ == "simulation"){
+      if(payload_spawned_){
           if(remove_offset){
             Epl = Rp - Opl; //Change Rp to Op
             load_pose_position_offset = Epl;
@@ -4818,10 +4708,10 @@ std::tuple< Eigen::Vector3d, Eigen::Vector3d> DergbryanTracker::SimulateSe3CopyC
       // load_velocity_error.y = -Evl[1];
       // load_velocity_error.z = -Evl[2];
 
-      // publisher_load_pose_experiments.publish(load_pose_position);
+      // load_pose_experiments_publisher_.publish(load_pose_position);
       
-      // publisher_load_pose_error.publish(load_pose_error);
-      // publisher_load_velocity_error.publish(load_velocity_error);
+      // load_pose_error_publisher_.publish(load_pose_error);
+      // load_velocity_error_publisher_.publish(load_velocity_error);
 
       // //ROS_INFO_STREAM("Se3BruboticsLoadController: load_pose_position = \n" << load_pose_position);
       // //ROS_INFO_STREAM("Se3BruboticsLoadController: Epl (Rpl-load_pose)= \n" << Epl);
@@ -4832,9 +4722,9 @@ std::tuple< Eigen::Vector3d, Eigen::Vector3d> DergbryanTracker::SimulateSe3CopyC
     // 2e method pandolfo
     Eigen::Array3d  Kpl = Eigen::Array3d::Zero(3); 
     Eigen::Array3d  Kdl = Eigen::Array3d::Zero(3); 
-    load_gains_switch = getenv("LOAD_GAIN_SWITCH");
+  
 
-    if (load_gains_switch == "true"){ 
+    if (_load_gains_switch_ == "true"){ 
       // gains activated
       if (position_cmd.use_position_horizontal) {
         // gains activated
@@ -4947,22 +4837,23 @@ std::tuple< Eigen::Vector3d, Eigen::Vector3d> DergbryanTracker::SimulateSe3CopyC
       // because we need to control the attitude.
       Kq << kqxy_, kqxy_, kqz_;
     }
-    load_mass_ = std::stod(getenv("LOAD_MASS")); // can be changed in session.yml file. To take mass load into account! stod to transform string defined in session to double
+  
+    
 
     
     // | --------------- Thesis B --------------- |
     uav_mass_difference_ = 0.0; 
     double total_mass = 0.0;
-    if (run_type == "simulation"){ 
-      if(payload_spawned){
-        total_mass = _uav_mass_ + load_mass_ + uav_mass_difference_;
+    if (_run_type_ == "simulation"){ 
+      if(payload_spawned_){
+        total_mass = _uav_mass_ + _load_mass_ + uav_mass_difference_;
 
       }else{
         total_mass = _uav_mass_ + uav_mass_difference_;
 
       }
     }else{
-      total_mass = _uav_mass_ + load_mass_ + uav_mass_difference_;
+      total_mass = _uav_mass_ + _load_mass_ + uav_mass_difference_;
     }
     // | --------------- --------------- |
 
@@ -5054,15 +4945,15 @@ std::tuple< Eigen::Vector3d, Eigen::Vector3d> DergbryanTracker::SimulateSe3CopyC
     // }
 
     // | --------------- Thesis B --------------- | 
-    if (run_type == "simulation"){ 
+    if (_run_type_ == "simulation"){ 
       for (int i = 0; i < 3; i++) // in order to set the error to 0 before the load spawn
       {
-        if(!payload_spawned)
+        if(!payload_spawned_)
         {
           Epl = Epl*0;
           Evl = Evl*0;
         }
-        if(payload_spawned && abs(Epl[i]) < 0.05)
+        if(payload_spawned_ && abs(Epl[i]) < 0.05)
         {
           Epl[i] = Epl[i]*0;
         }
@@ -5074,7 +4965,7 @@ std::tuple< Eigen::Vector3d, Eigen::Vector3d> DergbryanTracker::SimulateSe3CopyC
     // predicted_load_position_errors_to_publish.position.y=Epl[1];
     // predicted_load_position_errors_to_publish.position.z=Epl[2];
 
-    // predicted_load__position_errors_out.poses.push_back(predicted_load_position_errors_to_publish);
+    // predicted_load_position_errors_out.poses.push_back(predicted_load_position_errors_to_publish);
 
     Eigen::Vector3d position_load_feedback = -Kpl * Epl.array();
     Eigen::Vector3d velocity_load_feedback = -Kdl * Evl.array();
@@ -5856,7 +5747,7 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
   Eigen::Vector3d torque_pred;
   Eigen::Vector3d attitude_acceleration_pred;
 
-  for (int i = 0; i < num_pred_samples_; i++) {
+  for (int i = 0; i < _num_pred_samples_; i++) {
     if(i == 0){
       // ROS_INFO_STREAM("attitude_rate_pred = \n" << attitude_rate_pred);
       //Initial conditions for first iteration
@@ -7066,7 +6957,7 @@ void DergbryanTracker::DERG_computation(){
     // TODO: predicted_thrust_out_.poses is not good programming for a scalar. Maybe try using Class: Std_msgs::Float32MultiArray and test plot still work
     double diff_T = thrust_saturation_physical_; // initialization at the highest possible positive difference value
     // ROS_INFO_STREAM("thrust_saturation_physical_ = \n" << thrust_saturation_physical_);
-    for (size_t i = 0; i < num_pred_samples_; i++) {
+    for (size_t i = 0; i < _num_pred_samples_; i++) {
       double diff_Tmax = thrust_saturation_physical_ - predicted_thrust_out_.poses[i].position.x;
       double diff_Tmin = predicted_thrust_out_.poses[i].position.x - _T_min_;
       if (diff_Tmax < diff_T) {
@@ -7097,7 +6988,7 @@ void DergbryanTracker::DERG_computation(){
     double body_rate_roll;
     double body_rate_pitch;
     double body_rate_yaw;
-    for (size_t i = 0; i < num_pred_samples_; i++) {
+    for (size_t i = 0; i < _num_pred_samples_; i++) {
     // Depending if the predictions _predicitons_use_body_inertia_:
       if (_predicitons_use_body_inertia_) { // we implement constraints on the actual body rates
         body_rate_roll = predicted_attituderate_out_.poses[i].position.x;
@@ -7174,7 +7065,7 @@ void DergbryanTracker::DERG_computation(){
   // c_w(2,0)=0;
   // // _d_w_(1,0) = wall_p_x - arm_radius;
   // min_wall_distance= abs(_d_w_(1,0) - predicted_poses_out_.poses[0].position.x);//custom_trajectory_out.poses[0].position.x);
-  // for (size_t i = 0; i < num_pred_samples_; i++) {
+  // for (size_t i = 0; i < _num_pred_samples_; i++) {
   //   if (abs(_d_w_(1,0) - predicted_poses_out_.poses[i].position.x) < min_wall_distance){
   //     min_wall_distance=abs(_d_w_(1,0) - predicted_poses_out_.poses[i].position.x);
   //   }
@@ -7227,7 +7118,7 @@ void DergbryanTracker::DERG_computation(){
 
     //  double dist = sqrt(dist_x*dist_x + dist_y*dist_y + dist_z*dist_z);
   ///// Prediction part  with lambda 
-  // for (size_t i = 0; i < num_pred_samples_; i++) {
+  // for (size_t i = 0; i < _num_pred_samples_; i++) {
   //    // shortest distance from predicted pos to tube link
   //    Eigen::Vector3d point_predicted_pos(predicted_poses_out_.poses[i].position.x, predicted_poses_out_.poses[i].position.y, predicted_poses_out_.poses[i].position.z);
   //    double lambda = getLambda(point_link_applied_ref, point_link_star, point_predicted_pos); 
@@ -7259,7 +7150,7 @@ void DergbryanTracker::DERG_computation(){
   // dist_obs_(3)=sqrt(dist_obs_(0)*dist_obs_(0)+dist_obs_(1)*dist_obs_(1));
 
   // min_obs_distance=dist_obs_(3)-R_o_;
-  // for (size_t i = 1; i < num_pred_samples_; i++) {
+  // for (size_t i = 1; i < _num_pred_samples_; i++) {
   //   dist_obs_(0)=predicted_poses_out_.poses[i].position.x-obs_position(0,0);
   //   dist_obs_(1)=predicted_poses_out_.poses[i].position.y-obs_position(1,0);
 
@@ -7365,7 +7256,7 @@ void DergbryanTracker::DERG_computation(){
       }
     }
     else if(_DSM_type_ == 2){ // Trajectory based DSM:
-      for (size_t i = 0; i < num_pred_samples_; i++) {
+      for (size_t i = 0; i < _num_pred_samples_; i++) {
         double pos_error_x = applied_ref_x_ - predicted_poses_out_.poses[i].position.x;
         double pos_error_y = applied_ref_y_ - predicted_poses_out_.poses[i].position.y;
         double pos_error_z = applied_ref_z_ - predicted_poses_out_.poses[i].position.z;
@@ -7510,7 +7401,7 @@ void DergbryanTracker::DERG_computation(){
     }
 
     
-    for (size_t i = 0; i < num_pred_samples_; i++) {
+    for (size_t i = 0; i < _num_pred_samples_; i++) {
       // shortest distance from predicted pos to tube link
       Eigen::Vector3d point_predicted_pos(predicted_poses_out_.poses[i].position.x, predicted_poses_out_.poses[i].position.y, predicted_poses_out_.poses[i].position.z);
       double lambda = getLambda(point_link_applied_ref, point_link_star, point_predicted_pos); 
@@ -7659,7 +7550,7 @@ void DergbryanTracker::DERG_computation(){
       //it2++;
     }
 
-    for (size_t i = 0; i < num_pred_samples_; i++) {
+    for (size_t i = 0; i < _num_pred_samples_; i++) {
       Eigen::Vector3d point_predicted_pos(predicted_poses_out_.poses[i].position.x, predicted_poses_out_.poses[i].position.y, predicted_poses_out_.poses[i].position.z);
       double lambda = getLambda(point_link_applied_ref, point_link_star, point_predicted_pos);
       double norm;
@@ -7706,7 +7597,7 @@ void DergbryanTracker::DERG_computation(){
       point_link_star = point_link_applied_ref;
     }
     // tube p, pstar
-    for (size_t i = 0; i < num_pred_samples_; i++) {
+    for (size_t i = 0; i < _num_pred_samples_; i++) {
       Eigen::Vector3d point_predicted_pos(predicted_poses_out_.poses[i].position.x, predicted_poses_out_.poses[i].position.y, predicted_poses_out_.poses[i].position.z);
       double lambda = getLambda(point_link_applied_ref, point_link_star, point_predicted_pos);
       double norm;
@@ -7730,7 +7621,7 @@ void DergbryanTracker::DERG_computation(){
     double Sa_perp_min = 0; // initialize at the min possible value
     // tube p , pv
     // TODO !!!we loop over large number of same point resulting in same distance, as in prev loop. Skip these ehre to reduce compute load.
-    for (size_t i = 0; i < num_pred_samples_; i++) {
+    for (size_t i = 0; i < _num_pred_samples_; i++) {
       Eigen::Vector3d point_predicted_pos(predicted_poses_out_.poses[i].position.x, predicted_poses_out_.poses[i].position.y, predicted_poses_out_.poses[i].position.z);
       double lambda = getLambda(point_link_applied_ref, point_link_pos, point_predicted_pos);
       double norm;
@@ -7924,7 +7815,7 @@ void DergbryanTracker::DERG_computation(){
       point_link_star = point_link_applied_ref;
     }
     // tube p, pstar
-    for (size_t i = 0; i < num_pred_samples_; i++) {
+    for (size_t i = 0; i < _num_pred_samples_; i++) {
       Eigen::Vector3d point_predicted_pos(predicted_poses_out_.poses[i].position.x, predicted_poses_out_.poses[i].position.y, predicted_poses_out_.poses[i].position.z);
       double lambda = getLambda(point_link_applied_ref, point_link_star, point_predicted_pos);
       double norm;
@@ -7952,7 +7843,7 @@ void DergbryanTracker::DERG_computation(){
     double norm_long_p1 = 0; // initialize at the min possible value
     // tube p , pv
     // TODO !!!we loop over large number of same point resulting in same distance, as in prev loop. Skip these ehre to reduce compute load.
-    for (size_t i = 0; i < num_pred_samples_; i++) {
+    for (size_t i = 0; i < _num_pred_samples_; i++) {
       Eigen::Vector3d point_predicted_pos(predicted_poses_out_.poses[i].position.x, predicted_poses_out_.poses[i].position.y, predicted_poses_out_.poses[i].position.z);
       double lambda = getLambda(point_link_applied_ref, point_link_pos, point_predicted_pos);
       double norm_perp;
@@ -8200,7 +8091,7 @@ void DergbryanTracker::DERG_computation(){
       point_link_star = point_link_applied_ref;
     }
     // tube p, pstar
-    for (size_t i = 0; i < num_pred_samples_; i++) {
+    for (size_t i = 0; i < _num_pred_samples_; i++) {
       Eigen::Vector3d point_predicted_pos(predicted_poses_out_.poses[i].position.x, predicted_poses_out_.poses[i].position.y, predicted_poses_out_.poses[i].position.z);
       double lambda = getLambda(point_link_applied_ref, point_link_star, point_predicted_pos);
       double norm;
@@ -8227,7 +8118,7 @@ void DergbryanTracker::DERG_computation(){
     double Sa_perp_min = 0; // initialize at the min possible value
     // tube p , pv
     // TODO !!!we loop over large number of same point resulting in same distance, as in prev loop. Skip these ehre to reduce compute load.
-    for (size_t i = 0; i < num_pred_samples_; i++) {
+    for (size_t i = 0; i < _num_pred_samples_; i++) {
       Eigen::Vector3d point_predicted_pos(predicted_poses_out_.poses[i].position.x, predicted_poses_out_.poses[i].position.y, predicted_poses_out_.poses[i].position.z);
       double lambda = getLambda(point_link_applied_ref, point_link_pos, point_predicted_pos);
       double norm;
@@ -8276,7 +8167,7 @@ void DergbryanTracker::DERG_computation(){
     std::map<std::string, mrs_msgs::FutureTrajectory>::iterator it = other_uav_avoidance_trajectories_.begin();
     while (it != other_uav_avoidance_trajectories_.end()) {
       // ROS_INFO_STREAM("INSIDE WHILE = \n");
-      for (size_t i = 0; i < num_pred_samples_; i++) {
+      for (size_t i = 0; i < _num_pred_samples_; i++) {
         Eigen::Vector3d point_traj(predicted_poses_out_.poses[i].position.x, predicted_poses_out_.poses[i].position.y, predicted_poses_out_.poses[i].position.z);
         // ROS_INFO_STREAM("UAV position = \n" << point_traj);
         double other_uav_pos_x = it->second.points[i].x;//Second means accessing the second part of the iterator. Here it is FutureTrajectory
@@ -8548,7 +8439,7 @@ void DergbryanTracker::DERG_computation(){
     future_trajectory_out_.uav_name = _uav_name_;
     future_trajectory_out_.priority = avoidance_this_uav_priority_; 
     // mrs_msgs::FuturePoint new_point;
-    for (size_t i = 0; i < num_pred_samples_; i++) {
+    for (size_t i = 0; i < _num_pred_samples_; i++) {
       new_point.x = predicted_poses_out_.poses[i].position.x;
       new_point.y = predicted_poses_out_.poses[i].position.y;
       new_point.z = predicted_poses_out_.poses[i].position.z;
@@ -8851,103 +8742,113 @@ std::tuple< Eigen::Vector3d, Eigen::Vector3d> DergbryanTracker::getMinDistDirLin
 // | ------------------------ callbacks ----------------------- |
 
 // | ---------------------------LOAD----------------------------------------------- | 
-  // | ----------------- load subscribtion callback ---------------- |
-
-  void DergbryanTracker::loadStatesCallback(const gazebo_msgs::LinkStatesConstPtr& loadmsg) {
-    int load_index = -1;
-    std::vector<std::string> link_names = loadmsg->name;
-
-    for(size_t i = 0; i < link_names.size(); i++)
-    {
-      if (number_of_uav == "2")
+// | ----------------- load subscribtion callback ---------------- |
+// TODO: streamline, account for prev comments and document the load callbacks below
+void DergbryanTracker::loadStatesCallback(const gazebo_msgs::LinkStatesConstPtr& loadmsg) {
+  // TODO: this function needs a big clean and more comments. It is also not clear how the load model is differently used for 1 vs 2 uavs.
+  int load_index;
+  std::vector<std::string> link_names = loadmsg->name;
+  // TODO: change variable names as defined before using 3 types of dynamic models
+  // TODO: explain the link_names
+  for(size_t i = 0; i < link_names.size(); i++){
+    if (_number_of_uav_ == "2"){
+      if (uav_id) // for uav1
       {
-        if (uav_id) // for uav1
-        {
-          if(link_names[i] == "bar::link_04"){
-              load_index = i;
-              payload_spawned = true;
-          }
-        }else { // for uav2
-          if(link_names[i] == "bar::link_01"){
-              load_index = i;
-              payload_spawned = true;
-          }
+        if(link_names[i] == "bar::link_04"){
+            load_index = i;
+            payload_spawned_ = true;
         }
-      }else{
-        if(link_names[i] == "bar::link_01")
-        {
-          load_index = i;
-          payload_spawned = true;
-        }else{
-        }  
-      }   
+      }
+      else { // for uav2
+        if(link_names[i] == "bar::link_01"){
+            load_index = i;
+            payload_spawned_ = true;
+        }
+      }
     }
-
-    load_pose = loadmsg->pose[load_index];
-    load_pose_position_.x = load_pose.position.x;
-    load_pose_position_.y = load_pose.position.y;
-    load_pose_position_.z = load_pose.position.z;
-
-    //ROS_INFO_STREAM("payload_spawned \n" << payload_spawned );
-
-    // for (int i = 0; i < 3; i++) // to set it to zero when the load hasn't spawn yet
-    // {
-    //     if (load_pose_position_[i] > 1000)
-    //     {
-    //       load_pose_position_[i] = 0;
-    //     } else {
-    //       load_pose_position_[i] = load_pose_position_[i];
-    //     }
-    // }
-
-    if (load_pose_position_.x > 1000)
-        {
-          load_pose_position_.x = 0;
-        }
-    if (load_pose_position_.y > 1000)
-        {
-          load_pose_position_.y = 0;
-        }
-    if (load_pose_position_.z > 1000)
-        {
-          load_pose_position_.z = 0;
-        }
-
-    // Thesis B: Step 1: update velocity and save old load velocity
-    last_load_vel_time = load_vel_time;
-    old_load_lin_vel.x = load_lin_vel_before_pred[0];  // initialise the old load velocity 
-    old_load_lin_vel.y = load_lin_vel_before_pred[1];
-    old_load_lin_vel.z = load_lin_vel_before_pred[2];
-
-    load_velocity = loadmsg->twist[load_index];
-    load_vel_time = ros::Time::now();;
-    load_vel_dt = (load_vel_time - last_load_vel_time).toSec();
-    // //ROS_INFO_STREAM("load velocity 1 = \n" << load_lin_vel_);
-    load_lin_vel_[0]= load_velocity.linear.x;
-    load_lin_vel_[1]= load_velocity.linear.y;
-    load_lin_vel_[2]= load_velocity.linear.z;
-    // //ROS_INFO_STREAM("Old load velocity = \n" << old_load_lin_vel);
-    // //ROS_INFO_STREAM("New load velocity = \n" << load_lin_vel_);
-
-    load_lin_vel_before_pred[0] = load_velocity.linear.x; // in order have the real load velocity each time the update function starts again (not changed in prediction)
-    load_lin_vel_before_pred[1] = load_velocity.linear.y; //Actually not necessary anymore since load_lin_vel is copied in local variable in prediction
-    load_lin_vel_before_pred[2] = load_velocity.linear.z;
-    // //ROS_INFO_STREAM("dt = \n" << (last_load_vel_time - load_vel_time).toSec() );
-
-
-    // // define the load acceleration 
-    acceleration_load_[0] = (load_lin_vel_[0] - old_load_lin_vel.x)/load_vel_dt;
-    acceleration_load_[1] = (load_lin_vel_[1] - old_load_lin_vel.y)/load_vel_dt;
-    acceleration_load_[2] = (load_lin_vel_[2] - old_load_lin_vel.z)/load_vel_dt;
-    //ROS_INFO_STREAM("load velocity = \n" << load_lin_vel_);
-    //ROS_INFO_STREAM("Old load velocity = \n" << old_load_lin_vel);
-    //ROS_INFO_STREAM("Load acceleration = \n" << acceleration_load_);
-
-    publisher_tracker_load_pose.publish(load_pose);
-    publisher_tracker_load_vel.publish(load_velocity);
-    publisher_tracker_load_old_vel.publish(old_load_lin_vel);
+    else { // TODO: specify explicitely which case (dynamic model type) this is
+      if(link_names[i] == "bar::link_01")
+      {
+        load_index = i;
+        payload_spawned_ = true;
+      }else{
+        // TODO: do what?
+      }  
+    }   
   }
 
+  load_pose = loadmsg->pose[load_index]; // TODO: why load_index 
+  load_pose_position_.x = load_pose.position.x;
+  load_pose_position_.y = load_pose.position.y;
+  load_pose_position_.z = load_pose.position.z;
+
+  // TODO: if block not to be used delete it
+  // ROS_INFO_STREAM("payload_spawned_ \n" << payload_spawned_ );
+
+  // for (int i = 0; i < 3; i++) // to set it to zero when the load hasn't spawn yet
+  // {
+  //     if (load_pose_position_[i] > 1000)
+  //     {
+  //       load_pose_position_[i] = 0;
+  //     } else {
+  //       load_pose_position_[i] = load_pose_position_[i];
+  //     }
+  // }
+
+  // TODO: what is goal of this block?
+  if (load_pose_position_.x > 1000)
+      {
+        load_pose_position_.x = 0;
+      }
+  if (load_pose_position_.y > 1000)
+      {
+        load_pose_position_.y = 0;
+      }
+  if (load_pose_position_.z > 1000)
+      {
+        load_pose_position_.z = 0;
+      }
+
+  // Not clear why you need an old load velocity? Why do you need to compute acceleration from this?
+  // Thesis B: Step 1: update velocity and save old load velocity
+  last_load_vel_time = load_vel_time;
+  old_load_lin_vel.x = load_lin_vel_before_pred[0]; // initialize the old load velocity 
+  old_load_lin_vel.y = load_lin_vel_before_pred[1];
+  old_load_lin_vel.z = load_lin_vel_before_pred[2];
+
+  load_velocity = loadmsg->twist[load_index];
+  load_vel_time = ros::Time::now(); // TODO: looks to be a very dangerous way of computing a time step. As you do not know the timestep at which gazebo updates. using the ros time now is dangerous as this is based on when your cpu executes this task. This leads to load_vel_dt which can be highly variable. 
+  load_vel_dt = (load_vel_time - last_load_vel_time).toSec(); // TODO: why are you computing this at multiple locations in the code?
+  // //ROS_INFO_STREAM("load velocity 1 = \n" << load_lin_vel_);
+  // TODO: why only the linear velocity of the load is required and what about rotational velocity in the case of beam load used in 2UAV model?
+  load_lin_vel_[0]= load_velocity.linear.x;
+  load_lin_vel_[1]= load_velocity.linear.y;
+  load_lin_vel_[2]= load_velocity.linear.z;
+  // //ROS_INFO_STREAM("Old load velocity = \n" << old_load_lin_vel);
+  // //ROS_INFO_STREAM("New load velocity = \n" << load_lin_vel_);
+
+  // TODO: why do you need to initialize it here? Feels like these are things to do in the prediciton itself.
+  load_lin_vel_before_pred[0] = load_velocity.linear.x; // in order have the real load velocity each time the update function starts again (not changed in prediction)
+  load_lin_vel_before_pred[1] = load_velocity.linear.y; //Actually not necessary anymore since load_lin_vel is copied in local variable in prediction
+  load_lin_vel_before_pred[2] = load_velocity.linear.z;
+  // //ROS_INFO_STREAM("dt = \n" << (last_load_vel_time - load_vel_time).toSec() );
+
+
+  // // define the load acceleration 
+  acceleration_load_[0] = (load_lin_vel_[0] - old_load_lin_vel.x)/load_vel_dt;
+  acceleration_load_[1] = (load_lin_vel_[1] - old_load_lin_vel.y)/load_vel_dt;
+  acceleration_load_[2] = (load_lin_vel_[2] - old_load_lin_vel.z)/load_vel_dt;
+  //ROS_INFO_STREAM("load velocity = \n" << load_lin_vel_);
+  //ROS_INFO_STREAM("Old load velocity = \n" << old_load_lin_vel);
+  //ROS_INFO_STREAM("Load acceleration = \n" << acceleration_load_);
+
+  // TODO: put published variables always in try catch as done everywhere else
+  tracker_load_pose_publisher_.publish(load_pose);
+  tracker_load_vel_publisher_.publish(load_velocity);
+  tracker_load_old_vel_publisher_.publish(old_load_lin_vel);
+}
+
+// TODO: document this callback
   void DergbryanTracker::BacaCallback(const mrs_msgs::BacaProtocolConstPtr& msg) {
     int message_id;
     int payload_1;
@@ -8976,9 +8877,9 @@ std::tuple< Eigen::Vector3d, Eigen::Vector3d> DergbryanTracker::getMinDistDirLin
       encoder_velocity_2 = encoder_output;
     }
     
-    rel_load_pose_position[0] = cable_length*sin(encoder_angle_1); // x relative to drone in drone coordinate (turns with uav_heading)
-    rel_load_pose_position[1] = cable_length*sin(encoder_angle_2); // y relative to drone in drone coordinate (turns with uav_heading)
-    rel_load_pose_position[2] = -sqrt(pow(cable_length,2) - (pow(rel_load_pose_position[0],2) + pow(rel_load_pose_position[1],2))); // z relative to drone in drone coordinate (turns with uav_heading)
+    rel_load_pose_position[0] = _cable_length_*sin(encoder_angle_1); // x relative to drone in drone coordinate (turns with uav_heading)
+    rel_load_pose_position[1] = _cable_length_*sin(encoder_angle_2); // y relative to drone in drone coordinate (turns with uav_heading)
+    rel_load_pose_position[2] = -sqrt(pow(_cable_length_,2) - (pow(rel_load_pose_position[0],2) + pow(rel_load_pose_position[1],2))); // z relative to drone in drone coordinate (turns with uav_heading)
 
     Difference_load_drone_position[0] = (rel_load_pose_position[0]*cos(uav_heading) - rel_load_pose_position[1]*sin(uav_heading)); // x relative to drone in absolute coordinate
     Difference_load_drone_position[1] = (-(rel_load_pose_position[0]*sin(uav_heading) + rel_load_pose_position[1]*cos(uav_heading))); // y relative to drone in absolute coordinate
@@ -8989,11 +8890,12 @@ std::tuple< Eigen::Vector3d, Eigen::Vector3d> DergbryanTracker::getMinDistDirLin
     //load_pose.position.z = load_pose_position_[2];
     
     //ROS_INFO_STREAM("Load Pose \n" << load_pose );
-    load_lin_vel_[0]= encoder_velocity_1*cable_length;//WWRONG TO CORRECT
-    load_lin_vel_[1]= encoder_velocity_2*cable_length;
+    load_lin_vel_[0]= encoder_velocity_1*_cable_length_;//WWRONG TO CORRECT
+    load_lin_vel_[1]= encoder_velocity_2*_cable_length_;
     load_lin_vel_[2]= 0;
     
   }
+  // TODO: update these callbacks which contain too hardcoded info as uav2
   void DergbryanTracker::uav2_state_callback(const mrs_msgs::UavState::ConstPtr& msg){
         // load_pose_position_.x = load_pose.position.x;
 
@@ -9008,7 +8910,7 @@ std::tuple< Eigen::Vector3d, Eigen::Vector3d> DergbryanTracker::getMinDistDirLin
     uav2_velocity_[2]=msg->velocity.linear.z;
     // ROS_INFO_STREAM("Received uav2 velocity \n"<< uav2_velocity);
   }
-
+  // TODO: update these callbacks which contain too hardcoded info as uav2
   void DergbryanTracker::uav2_anchoring_point_callback(const mrs_msgs::UavState::ConstPtr& msg){
         // load_pose_position_.x = load_pose.position.x;
     uav2_anchoring_point_position_[0]=msg->pose.position.x;
@@ -9020,13 +8922,14 @@ std::tuple< Eigen::Vector3d, Eigen::Vector3d> DergbryanTracker::getMinDistDirLin
     uav2_anchoring_point_velocity_[2]=msg->velocity.linear.z;
     // ROS_INFO_STREAM("Received uav2 anchoring point velocity \n"<< uav2_anchoring_point_velocity);
 
-    if (uav2_payload_spawned==false){
-      uav2_payload_spawned=true;
+    if (uav2_payload_spawned_==false){
+      uav2_payload_spawned_=true;
     }
   }
-
+  // TODO: update these callbacks which contain too hardcoded info as uav2
   void DergbryanTracker::uav2_position_cmd_callback(const mrs_msgs::PositionCommand::ConstPtr& msg){
-        // load_pose_position_.x = load_pose.position.x;
+    // TODO: if you use the same approach as with collision avoidance this would not require more callbacks. Be clear on what yuo define as position_cmd is it v or r. For v see callbackOtherUavAppliedRef which was already defined.
+    // load_pose_position_.x = load_pose.position.x;
     uav2_position_cmd_received_=*msg;
     // uav2_position_cmd_received_.position.x=msg->position.x;
     // uav2_position_cmd_received_.position.y=msg->position.y;
@@ -9270,7 +9173,7 @@ std::tuple<bool, std::string, bool> DergbryanTracker::loadTrajectory(const mrs_m
 //   /* copy the trajectory to a local variable //{ */
 
   // copy only the part from the first valid index
-//   // _mpc_horizon_len_ = num_pred_samples_
+//   // _mpc_horizon_len_ = _num_pred_samples_
 // !!!! deleted parts in the original block: _mpc_horizon_len_ = 0
   MatrixXd des_x_whole_trajectory       = VectorXd::Zero(trajectory_size, 1);
   MatrixXd des_y_whole_trajectory       = VectorXd::Zero(trajectory_size, 1);
@@ -9330,7 +9233,7 @@ std::tuple<bool, std::string, bool> DergbryanTracker::loadTrajectory(const mrs_m
 //   if (!loop) {
 
 //     // extend it so it has smooth ending
-//     for (int i = 0; i < num_pred_samples_; i++) {
+//     for (int i = 0; i < _num_pred_samples_; i++) {
 
 //       des_x_whole_trajectory(i + trajectory_size)       = des_x_whole_trajectory(i + trajectory_size - 1);
 //       des_y_whole_trajectory(i + trajectory_size)       = des_y_whole_trajectory(i + trajectory_size - 1);
