@@ -4935,8 +4935,7 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
 
     }
     else{ //1UAV no payload equations
-      predicted_thrust_norm.position.x = thrust_force; // change later to a non vec type; Why not f?
-      predicted_thrust_out_.poses.push_back(predicted_thrust_norm);
+
       // Bryan used thrust_force in eom instead of f as I did. what does it changes??? Thrust force takes attitude into action when my predictions assume that the attitude has been controller perfectly.
       
       //------EOM BRYAN :
@@ -4950,7 +4949,8 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
 
     }
 
-    
+      predicted_thrust_norm.position.x = thrust_force; // change later to a non vec type; Why not f?
+      predicted_thrust_out_.poses.push_back(predicted_thrust_norm);
 
 
     //--------
