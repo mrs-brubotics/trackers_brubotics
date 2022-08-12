@@ -139,8 +139,9 @@ private:
 
   // | ---------- thrust generation and mass estimation --------- |
 
-  double                        _uav_mass_; // Why old ? use getmass instead ? TOCHECK when everything works again with load prediction.
-  double                        uav_mass_difference_;
+  double                        _uav_mass_;  // theoretical mass of the UAV (without payload always)
+  double                        _total_mass_; //Total estimated mass. Takes the load into account if it has spawned. Returned by the controller.
+  // double                        uav_mass_difference_;  //To delete
   double                          _load_mass_; // TODO why not _load_mass_ as it's defined in yaml ?? Global shared variable with controller ? // Its is defined in the session.yaml of every test file, and the xacro used in Gazebo will take this value from this session file  as well.
   
   // OLD double                        _g_;
@@ -765,7 +766,8 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   // TODO: as not all sessions already have these variables, updater all the (older) sessions as some do not work anymore
   // TODO: Explain why you need getenv and cannot use yaml.
   // stod to transforms string double
-  _uav_mass_          = common_handlers_->getMass(); //std::stod(getenv("UAV_MASS")); // TODO: why for load transport is UAV_MASS specificlaly loaded like this and not initialized used as before (what we did before adding load)? 
+  _uav_mass_          = std::stod(getenv("UAV_MASS")); // Theorical mass of the UAV.
+  _total_mass_        = common_handlers_->getMass(); //std::stod(getenv("UAV_MASS")); // TODO: why for load transport is UAV_MASS specificlaly loaded like this and not initialized used as before (what we did before adding load)? 
   _run_type_          = getenv("RUN_TYPE"); // =simulation if doing a simulation OR =uavID if hardware test, with ID being the number of the UAV(set in bashrc). Used to deal with the informations that are different in Gazebo and in practice, e.g. Payload position comes from 2 different callbacks depending on the type of test.
   _number_of_uav_     = getenv("NUMBER_OF_UAV"); // is exported in the session.yaml TODO: not in all, so adapt name to something more logical (as only used for modle type 2 uavs with payload) and update all sessions and autoload in bashrc for real exp
   _load_gains_switch_ = getenv("LOAD_GAIN_SWITCH"); // TODO: explain its use
@@ -1071,7 +1073,7 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
 
   // initialize the integrals:
   // TODO: explain how this will be used with aditional load? does uav_mass_difference_ contain all?
-  uav_mass_difference_ = 0;
+  // uav_mass_difference_ = 0;
   // Iw_w_                = Eigen::Vector2d::Zero(2); // TODO: do we need it? Don't think so as we don't use integral action in the predictions. 
   // Ib_b_                = Eigen::Vector2d::Zero(2); // TODO: do we need it?
 
@@ -1168,7 +1170,7 @@ bool DergbryanTracker::resetStatic(void) {
 /*update()//{*/
 const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msgs::UavState::ConstPtr &                        uav_state,
                                                               [[maybe_unused]] const mrs_msgs::AttitudeCommand::ConstPtr &last_attitude_cmd) {
-
+    _total_mass_        = common_handlers_->getMass();
   // ROS_INFO("[DergbryanTracker]: updating the DergbryanTracker of the controllers_brubotics package");
   // chatter_publisher_ example (disabled by default):
   if (false) {
@@ -2636,7 +2638,7 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
     Eigen::Vector3d wl ;
     Eigen::Vector3d dotwl ;
     //
-    double J_l=(1.0/2.0)*_load_mass_*2.0*pow(1.5,2.0); //Inertia of the load
+    double J_l=(1.0/2.0)*(_load_mass_*2.0)*pow(1.5,2.0); //Inertia of the load. _load_mass_ is the load lifted by one of the 2UAV, so it needs to be *2 to have the full mass of the beam payload.
 
     // Eigen::Vector3d acceleration_load = acceleration_load_; // don't need acceleration do I ??
 
@@ -2817,8 +2819,9 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
   // // R - current uav attitude
   // uav1_R = mrs_lib::AttitudeConverter(uav1_state.pose.orientation);
   // uav2_R = mrs_lib::AttitudeConverter(uav2_state.pose.orientation);
-
-  double m1=_uav_mass_;
+  // total_mass=common_handlers_->getMass(); //Estimated total mass (UAV+its part of the payload)
+  // uav_mass=_total_mass-_load_mass_; 
+  double m1=_uav_mass_;//theoretical mass of the UAV. If steady state error in predictions change to estimated mass.
   double m2=_uav_mass_;
   double ml= _load_mass_*2.0; //As the _load_mass_ value exported in session file is half of the payload. As this is the value used in controller to control the anchoring point position.
   double d1=0.75;
@@ -3664,24 +3667,27 @@ std::tuple< double, Eigen::Vector3d,double> DergbryanTracker::SimulateSe3CopyCon
 
     
     // | --------------- Thesis B --------------- | TODORAPHAEL : double total_mass = common_handlers_->getMass(); should contain the total mass with the payload ? Or should I add the payload mass to it ????
-    uav_mass_difference_ = 0.0; 
-    double total_mass = 0.0;
+    // double uav_mass_difference_ = 0.0; 
+    // double total_mass = 0.0;
+    double uav_mass = common_handlers_->getMass(); // estimated mass of the UAV, without the mass of the payload.
+    double total_mass =0.0;
     if(_type_of_system_== "1uav_payload" ||_type_of_system_ == "2uavs_and_payload"){ //Get theoretical total mass TODORAPHAEL CHANGE ONCE I KNOW IF THE ESTIMATED MASS INCLUDES THE PAYLOAD MASS,NORMALLY YES. BUT HOW TO USE IT THEN?
    
       if (_run_type_ == "simulation"){ 
         if(payload_spawned_){
-          total_mass = _uav_mass_ + _load_mass_ + uav_mass_difference_;
+          total_mass = uav_mass + _load_mass_;
 
         }else{
-          total_mass = _uav_mass_ + uav_mass_difference_;
+          total_mass = uav_mass;
 
         }
       }else{
-        total_mass = _uav_mass_ + _load_mass_ + uav_mass_difference_;
+        total_mass = uav_mass + _load_mass_ ;
       }
     }else{
-      total_mass = common_handlers_->getMass(); // Get estimated mass
+      total_mass =uav_mass; ///common_handlers_->getMass(); // Get estimated total mass from controller
     }
+    // ROS_INFO_STREAM("total_mass in SimulateSe3controller = \n" << total_mass); //now correct
     Kp = Kp * total_mass;
     Kv = Kv * total_mass;
 
@@ -4061,237 +4067,12 @@ std::tuple< double, Eigen::Vector3d,double> DergbryanTracker::SimulateSe3CopyCon
 
     t += rp_heading_rate_compensation;
 
-    // --------------------------------------------------------------
-    // |                      update parameters                     |
-    // --------------------------------------------------------------
-
-    /* world error integrator //{ */
-
-    // --------------------------------------------------------------
-    // |                  integrate the world error                 |
-    // --------------------------------------------------------------
-
-    // {
-    //   std::scoped_lock lock(mutex_gains_, mutex_integrals_);
-
-    //   Eigen::Vector3d integration_switch(1, 1, 0);
-
-    //   // integrate the world error
-    //   if (position_cmd.use_position_horizontal) {
-    //     Iw_w_ -= kiwxy_ * Ep.head(2) * _prediction_dt_;
-    //   } else if (position_cmd.use_velocity_horizontal) {
-    //     Iw_w_ -= kiwxy_ * Ev.head(2) * _prediction_dt_;
-    //   }
-
-    //   // saturate the world X
-    //   bool world_integral_saturated = false;
-    //   if (!std::isfinite(Iw_w_[0])) {
-    //     Iw_w_[0] = 0;
-    //     ROS_ERROR_THROTTLE(1.0, "[DergbryanTracker]: NaN detected in variable 'Iw_w_[0]', setting it to 0!!!");
-    //   } else if (Iw_w_[0] > kiwxy_lim_) {
-    //     Iw_w_[0]                 = kiwxy_lim_;
-    //     world_integral_saturated = true;
-    //   } else if (Iw_w_[0] < -kiwxy_lim_) {
-    //     Iw_w_[0]                 = -kiwxy_lim_;
-    //     world_integral_saturated = true;
-    //   }
-
-    //   if (kiwxy_lim_ >= 0 && world_integral_saturated) {
-    //     ROS_WARN_THROTTLE(1.0, "[DergbryanTracker]: SE3's world X integral is being saturated!");
-    //   }
-
-    //   // saturate the world Y
-    //   world_integral_saturated = false;
-    //   if (!std::isfinite(Iw_w_[1])) {
-    //     Iw_w_[1] = 0;
-    //     ROS_ERROR_THROTTLE(1.0, "[DergbryanTracker]: NaN detected in variable 'Iw_w_[1]', setting it to 0!!!");
-    //   } else if (Iw_w_[1] > kiwxy_lim_) {
-    //     Iw_w_[1]                 = kiwxy_lim_;
-    //     world_integral_saturated = true;
-    //   } else if (Iw_w_[1] < -kiwxy_lim_) {
-    //     Iw_w_[1]                 = -kiwxy_lim_;
-    //     world_integral_saturated = true;
-    //   }
-
-    //   if (kiwxy_lim_ >= 0 && world_integral_saturated) {
-    //     ROS_WARN_THROTTLE(1.0, "[DergbryanTracker]: SE3's world Y integral is being saturated!");
-    //   }
-    // }
-
-    //}
-
-    /* body error integrator //{ */
-
-    // --------------------------------------------------------------
-    // |                  integrate the body error                  |
-    // --------------------------------------------------------------
-
-    // {
-    //   std::scoped_lock lock(mutex_gains_);
-
-    //   Eigen::Vector2d Ep_fcu_untilted = Eigen::Vector2d(0, 0);  // position error in the untilted frame of the UAV
-    //   Eigen::Vector2d Ev_fcu_untilted = Eigen::Vector2d(0, 0);  // velocity error in the untilted frame of the UAV
-
-    //   // get the position control error in the fcu_untilted frame
-    //   {
-
-    //     geometry_msgs::Vector3Stamped Ep_stamped;
-
-    //     Ep_stamped.header.stamp    = ros::Time::now();
-    //     Ep_stamped.header.frame_id = uav_state_.header.frame_id;
-    //     Ep_stamped.vector.x        = Ep(0);
-    //     Ep_stamped.vector.y        = Ep(1);
-    //     Ep_stamped.vector.z        = Ep(2);
-
-    //     auto res = common_handlers_->transformer->transformSingle("fcu_untilted", Ep_stamped);
-
-    //     if (res) {
-    //       Ep_fcu_untilted[0] = res.value().vector.x;
-    //       Ep_fcu_untilted[1] = res.value().vector.y;
-    //     } else {
-    //       ROS_ERROR_THROTTLE(1.0, "[DergbryanTracker]: could not transform the position error to fcu_untilted");
-    //     }
-    //   }
-
-    //   // get the velocity control error in the fcu_untilted frame
-    //   {
-    //     geometry_msgs::Vector3Stamped Ev_stamped;
-
-    //     Ev_stamped.header.stamp    = ros::Time::now();
-    //     Ev_stamped.header.frame_id = uav_state_.header.frame_id;
-    //     Ev_stamped.vector.x        = Ev(0);
-    //     Ev_stamped.vector.y        = Ev(1);
-    //     Ev_stamped.vector.z        = Ev(2);
-
-    //     auto res = common_handlers_->transformer->transformSingle("fcu_untilted", Ev_stamped);
-
-    //     if (res) {
-    //       Ev_fcu_untilted[0] = res.value().vector.x;
-    //       Ev_fcu_untilted[1] = res.value().vector.y; // ?? why x and not y
-    //     } else {
-    //       ROS_ERROR_THROTTLE(1.0, "[DergbryanTracker]: could not transform the velocity error to fcu_untilted");
-    //     }
-    //   }
-
-    //   // integrate the body error
-    //   if (position_cmd.use_position_horizontal) {
-    //     Ib_b_ -= kibxy_ * Ep_fcu_untilted * _prediction_dt_;
-    //   } else if (position_cmd.use_velocity_horizontal) {
-    //     Ib_b_ -= kibxy_ * Ev_fcu_untilted * _prediction_dt_;
-    //   }
-    // // saturate the body
-    //   bool body_integral_saturated = false;
-    //   if (!std::isfinite(Ib_b_[0])) {
-    //     Ib_b_[0] = 0;
-    //     ROS_ERROR_THROTTLE(1.0, "[DergbryanTracker]: NaN detected in variable 'Ib_b_[0]', setting it to 0!!!");
-    //   } else if (Ib_b_[0] > kibxy_lim_) {
-    //     Ib_b_[0]                = kibxy_lim_;
-    //     body_integral_saturated = true;
-    //   } else if (Ib_b_[0] < -kibxy_lim_) {
-    //     Ib_b_[0]                = -kibxy_lim_;
-    //     body_integral_saturated = true;
-    //   }
-
-    //   if (kibxy_lim_ > 0 && body_integral_saturated) {
-    //     ROS_WARN_THROTTLE(1.0, "[DergbryanTracker]: SE3's body pitch integral is being saturated!");
-    //   }
-
-    //   // saturate the body
-    //   body_integral_saturated = false;
-    //   if (!std::isfinite(Ib_b_[1])) {
-    //     Ib_b_[1] = 0;
-    //     ROS_ERROR_THROTTLE(1.0, "[DergbryanTracker]: NaN detected in variable 'Ib_b_[1]', setting it to 0!!!");
-    //   } else if (Ib_b_[1] > kibxy_lim_) {
-    //     Ib_b_[1]                = kibxy_lim_;
-    //     body_integral_saturated = true;
-    //   } else if (Ib_b_[1] < -kibxy_lim_) {
-    //     Ib_b_[1]                = -kibxy_lim_;
-    //     body_integral_saturated = true;
-    //   }
-
-    //   if (kibxy_lim_ > 0 && body_integral_saturated) {
-    //     ROS_WARN_THROTTLE(1.0, "[DergbryanTracker]: SE3's body roll integral is being saturated!");
-    //   }
-    // }
-
-    //}
-
-    /* mass estimatior //{ */
-
-    // --------------------------------------------------------------
-    // |                integrate the mass difference               |
-    // --------------------------------------------------------------
-
-    // {
-    //   std::scoped_lock lock(mutex_gains_);
-    //   /*QUESTION: do we need to make it work with rampup_active_ or do we assume erg does not need to simulate this phase? */
-    //   if (position_cmd.use_position_vertical){// && !rampup_active_) {
-    //     uav_mass_difference_ -= km_ * Ep[2] * _prediction_dt_;
-    //   }
-
-    //   // saturate the mass estimator
-    //   bool uav_mass_saturated = false;
-    //   if (!std::isfinite(uav_mass_difference_)) {
-    //     uav_mass_difference_ = 0;
-    //     ROS_WARN_THROTTLE(1.0, "[DergbryanTracker]: NaN detected in variable 'uav_mass_difference_', setting it to 0 and returning!!!");
-    //   } else if (uav_mass_difference_ > km_lim_) {
-    //     uav_mass_difference_ = km_lim_;
-    //     uav_mass_saturated   = true;
-    //   } else if (uav_mass_difference_ < -km_lim_) {
-    //     uav_mass_difference_ = -km_lim_;
-    //     uav_mass_saturated   = true;
-    //   }
-
-    //   if (uav_mass_saturated) {
-    //     ROS_WARN_THROTTLE(1.0, "[DergbryanTracker]: The UAV mass difference is being saturated to %.2f!", uav_mass_difference_);
-    //   }
-    // }
-
-    //}
-
-      // --------------------------------------------------------------
-    // |                 produce the control output                 |
-    // --------------------------------------------------------------
-
-    // // mrs_msgs::AttitudeCommand::Ptr output_command(new mrs_msgs::AttitudeCommand);
-    // // output_command->header.stamp = ros::Time::now();
-
     // // | ------------ compensated desired acceleration ------------ |
 
     double desired_x_accel = 0; //Is this useless ???? Not in bryan's controller eq 
     double desired_y_accel = 0;
     double desired_z_accel = 0;
 
-    // {
-
-    //   Eigen::Matrix3d des_orientation = mrs_lib::AttitudeConverter(Rd);
-    //   Eigen::Vector3d thrust_vector   = thrust_force * des_orientation.col(2);
-
-    //   double world_accel_x = (thrust_vector[0] / total_mass) ;//- (Iw_w_[0] / total_mass) - (Ib_w[0] / total_mass);
-    //   double world_accel_y = (thrust_vector[1] / total_mass) ;//- (Iw_w_[1] / total_mass) - (Ib_w[1] / total_mass);
-    //   double world_accel_z = (thrust_vector[2] / total_mass) - common_handlers_->g;
-
-    //   geometry_msgs::Vector3Stamped world_accel;
-
-    //   world_accel.header.stamp    = ros::Time::now();
-    //   world_accel.header.frame_id = uav_state.header.frame_id;
-    //   world_accel.vector.x        = world_accel_x;
-    //   world_accel.vector.y        = world_accel_y;
-    //   world_accel.vector.z        = world_accel_z;
-
-    //   auto res = common_handlers_->transformer->transformSingle("fcu", world_accel);
-
-    //   if (res) {
-
-    //     desired_x_accel = res.value().vector.x;
-    //     desired_y_accel = res.value().vector.y;
-    //     desired_z_accel = res.value().vector.z;
-    //   }
-    // }
-
-    // // BRYAN: cancel terms for minimal controller
-    // t = q_feedback;// + Rw + q_feedforward;
-    // //_enable_repulsion_a_
     // // | --------------- saturate the attitude rate --------------- |
 
     if (got_constraints_) {
@@ -4328,84 +4109,6 @@ std::tuple< double, Eigen::Vector3d,double> DergbryanTracker::SimulateSe3CopyCon
     // t = attitude_rate_pred;
     
 
-    // | --------------- fill the resulting command --------------- |
-
-    //auto output_mode = mrs_lib::get_mutexed(mutex_output_mode_, output_mode_);
-
-    // // fill in the desired attitude anyway, since we know it
-    // output_command->attitude = mrs_lib::AttitudeConverter(Rd);
-
-    // if (output_mode == OUTPUT_ATTITUDE_RATE) {
-
-    //   // output the desired attitude rate
-    //   output_command->attitude_rate.x = t[0];
-    //   output_command->attitude_rate.y = t[1];
-    //   output_command->attitude_rate.z = t[2];
-
-    //   output_command->mode_mask = output_command->MODE_ATTITUDE_RATE;
-
-    // } else if (output_mode == OUTPUT_ATTITUDE_QUATERNION) {
-
-    //   output_command->mode_mask = output_command->MODE_ATTITUDE;
-
-    //   ROS_WARN_THROTTLE(1.0, "[DergbryanTracker]: outputting desired orientation (this is not normal)");
-    // }
-
-    // output_command->desired_acceleration.x = desired_x_accel;
-    // output_command->desired_acceleration.y = desired_y_accel;
-    // output_command->desired_acceleration.z = desired_z_accel;
-
-    /*QUESTION: do we need rampup_active_ in traj prediction? now commented*/
-    // if (rampup_active_) {
-
-    //   // deactivate the rampup when the times up
-    //   if (fabs((ros::Time::now() - rampup_start_time_).toSec()) >= rampup_duration_) {
-
-    //     rampup_active_         = false;
-    //     output_command->thrust = thrust;
-
-    //     ROS_INFO("[DergbryanTracker]: rampup finished");
-
-    //   } else {
-
-    //     double rampup_dt = (ros::Time::now() - rampup_last_time_).toSec();
-
-    //     rampup_thrust_ += double(rampup_direction_) * _rampup_speed_ * rampup_dt;
-
-    //     rampup_last_time_ = ros::Time::now();
-
-    //     output_command->thrust = rampup_thrust_;
-
-    //     ROS_INFO_THROTTLE(0.1, "[DergbryanTracker]: ramping up thrust, %.4f", output_command->thrust);
-    //   }
-
-    // } else {
-    //   output_command->thrust = thrust;
-    // }
-    // output_command->thrust = thrust;
-    // /*QUESTION: do we need rampup_active_ in traj prediction? now commented*/
-    // // output_command->ramping_up = rampup_active_;
-
-    // output_command->mass_difference = uav_mass_difference_;
-    // output_command->total_mass      = total_mass;
-
-    // output_command->disturbance_bx_b = -Ib_b_[0];
-    // output_command->disturbance_by_b = -Ib_b_[1];
-
-    // output_command->disturbance_bx_w = -Ib_w[0];
-    // output_command->disturbance_by_w = -Ib_w[1];
-
-    // output_command->disturbance_wx_w = -Iw_w_[0];
-    // output_command->disturbance_wy_w = -Iw_w_[1];
-
-    // output_command->controller_enforcing_constraints = false;
-
-    // output_command->controller = "DergbryanTracker";
-
-    // last_attitude_cmd_ = output_command;
-
-    /*QUESTION: what to do now with the output_command?*/
-    //return output_command;
 
   return {thrust_force,attitude_rate_pred,theta};
 }
@@ -4526,8 +4229,8 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
     //     "%.2f, %.2f N",
     //     uav_mass_difference_, Ib_b_[0], Ib_b_[1], Iw_w_[0], Iw_w_[1]);
   /* NOTE: TILL HERE*/
-  double total_mass = common_handlers_->getMass(); //Get a local variable of the total estimated mass.
-
+  // double total_mass = common_handlers_->getMass(); //Get a local variable of the total estimated mass.
+  // ROS_INFO_STREAM("total_mass in prediction_general = \n" << total_mass);
   predicted_poses_out_.header.stamp = uav_state_.header.stamp; //ros::Time::now();
   predicted_poses_out_.header.frame_id = uav_state_.header.frame_id;
   predicted_velocities_out_.header.stamp = uav_state_.header.stamp; //ros::Time::now();
@@ -4830,16 +4533,17 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
 
     //------------------------Equations of motion part----------------------//
     if(_type_of_system_=="1uav_payload"&& payload_spawned_){ //1UAV and payload
-
+      double total_mass=common_handlers_->getMass()+_load_mass_;
+      // ROS_INFO_STREAM("total_mass in prediction loop \n"<<total_mass);//now correct
       Eigen::MatrixXd M_matrix = Eigen::MatrixXd(5, 5);
-      M_matrix(0,0) = _uav_mass_ + _load_mass_; M_matrix(0,1) = 0.0; M_matrix(0,2) = 0.0; 
+      M_matrix(0,0) = total_mass; M_matrix(0,1) = 0.0; M_matrix(0,2) = 0.0; 
       M_matrix(0,3) = 0.0; M_matrix(0,4) = _cable_length_*_load_mass_*cos(theta_load_cable);
       
-      M_matrix(1,0) = 0.0; M_matrix(1,1) = _uav_mass_ + _load_mass_; M_matrix(1,2) = 0.0; 
+      M_matrix(1,0) = 0.0; M_matrix(1,1) = total_mass; M_matrix(1,2) = 0.0; 
       M_matrix(1,3) = _cable_length_*_load_mass_*cos(phi_load_cable)*cos(theta_load_cable); 
       M_matrix(1,4) = -_cable_length_*_load_mass_*sin(phi_load_cable)*sin(theta_load_cable);
       
-      M_matrix(2,0) = 0.0; M_matrix(2,1) = 0.0; M_matrix(2,2) = _uav_mass_ + _load_mass_; 
+      M_matrix(2,0) = 0.0; M_matrix(2,1) = 0.0; M_matrix(2,2) = total_mass; 
       M_matrix(2,3) = _cable_length_*_load_mass_*cos(theta_load_cable)*sin(phi_load_cable); 
       M_matrix(2,4) = _cable_length_*_load_mass_*cos(phi_load_cable)*sin(theta_load_cable);
       
@@ -4879,7 +4583,7 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
       // ROS_INFO_STREAM("V = \n" << V_matrix);
 
       Eigen::MatrixXd G_vector = Eigen::MatrixXd(5, 1);
-      G_vector(0,0) = 0.0; G_vector(1,0) = 0.0; G_vector(2,0) = (_load_mass_+_uav_mass_)*common_handlers_->g; // g here is positif
+      G_vector(0,0) = 0.0; G_vector(1,0) = 0.0; G_vector(2,0) = (total_mass)*common_handlers_->g; // g here is positif
       G_vector(3,0) = _cable_length_*common_handlers_->g*_load_mass_*cos(theta_load_cable)*sin(phi_load_cable); 
       G_vector(4,0) = _cable_length_*common_handlers_->g*_load_mass_*cos(phi_load_cable)*sin(theta_load_cable);
 
@@ -4939,7 +4643,7 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
       // Bryan used thrust_force in eom instead of f as I did. what does it changes??? Thrust force takes attitude into action when my predictions assume that the attitude has been controller perfectly.
       
       //------EOM BRYAN :
-
+      double total_mass=common_handlers_->getMass();
       Eigen::Vector3d acceleration_uav = 1.0/total_mass * (thrust_force*R.col(2) + total_mass * (Eigen::Vector3d(0, 0, -common_handlers_->g)));
       // Eigen::Vector3d acceleration_uav = 1.0/total_mass * (thrust_force*Rd.col(2) + total_mass * (Eigen::Vector3d(0, 0, -common_handlers_->g))); --> do not use desired force
       custom_acceleration.position.x = acceleration_uav[0];
