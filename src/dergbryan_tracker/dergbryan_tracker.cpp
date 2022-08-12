@@ -139,8 +139,7 @@ private:
 
   // | ---------- thrust generation and mass estimation --------- |
 
-  double                        _uav_mass_;  // theoretical mass of the UAV (without payload always)
-  double                        _total_mass_; //Total estimated mass. Takes the load into account if it has spawned. Returned by the controller.
+  double                        uav_mass_;  // Estimated mass of the UAV (without payload always)
   // double                        uav_mass_difference_;  //To delete
   double                          _load_mass_; // TODO why not _load_mass_ as it's defined in yaml ?? Global shared variable with controller ? // Its is defined in the session.yaml of every test file, and the xacro used in Gazebo will take this value from this session file  as well.
   
@@ -759,18 +758,15 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   ros::NodeHandle nh2_(parent_nh, "dergbryan_tracker"); // NodeHandle 2 for DergbryanTracker, used to load tracker params
   _uav_name_       = uav_name; // this UAV
   /*TODO: how to load these paramters commented below as was done in the se3controller?*/
-  // _uav_mass_       = uav_mass; // now loaded later via getenv()
   ros::Time::waitForValid();
 
   // | ------------------- loading env (session/bashrc) parameters ------------------- |
   // TODO: as not all sessions already have these variables, updater all the (older) sessions as some do not work anymore
   // TODO: Explain why you need getenv and cannot use yaml.
   // stod to transforms string double
-  _uav_mass_          = std::stod(getenv("UAV_MASS")); // Theorical mass of the UAV.
-  _total_mass_        = common_handlers_->getMass(); //std::stod(getenv("UAV_MASS")); // TODO: why for load transport is UAV_MASS specificlaly loaded like this and not initialized used as before (what we did before adding load)? 
   _run_type_          = getenv("RUN_TYPE"); // =simulation if doing a simulation OR =uavID if hardware test, with ID being the number of the UAV(set in bashrc). Used to deal with the informations that are different in Gazebo and in practice, e.g. Payload position comes from 2 different callbacks depending on the type of test.
   _number_of_uav_     = getenv("NUMBER_OF_UAV"); // is exported in the session.yaml TODO: not in all, so adapt name to something more logical (as only used for modle type 2 uavs with payload) and update all sessions and autoload in bashrc for real exp
-  _load_gains_switch_ = getenv("LOAD_GAIN_SWITCH"); // TODO: explain its use
+  _load_gains_switch_ = getenv("LOAD_GAIN_SWITCH"); // TODO: delete once replaced everywhere by type_of_system conditions. Then do the same in controller when cleaning it.
   _cable_length_      = std::stod(getenv("CABLE_LENGTH")); //Length of the cable attached to the UAV when transporting a payload. 
   _load_mass_         = std::stod(getenv("LOAD_MASS")); // Loaded from the session file. In simulation, Gazebo will load the xacro file that will also load this from session.yaml.
   _type_of_system_    = getenv("TYPE_OF_SYSTEM"); // Can be : 1uav_no_payload, 1uav_payload, 2uavs_and_payload, depending on which predictions and controller you want to use.  
@@ -1170,7 +1166,7 @@ bool DergbryanTracker::resetStatic(void) {
 /*update()//{*/
 const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msgs::UavState::ConstPtr &                        uav_state,
                                                               [[maybe_unused]] const mrs_msgs::AttitudeCommand::ConstPtr &last_attitude_cmd) {
-    _total_mass_        = common_handlers_->getMass();
+    uav_mass_        = common_handlers_->getMass(); //update the estimated mass, stored in global variable as all part of the code will need it. 
   // ROS_INFO("[DergbryanTracker]: updating the DergbryanTracker of the controllers_brubotics package");
   // chatter_publisher_ example (disabled by default):
   if (false) {
@@ -2192,14 +2188,14 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
     //-------------based on new EOM with angles----------------//
 
     Eigen::MatrixXd M_matrix = Eigen::MatrixXd(5, 5);
-    M_matrix(0,0) = _uav_mass_ + _load_mass_; M_matrix(0,1) = 0.0; M_matrix(0,2) = 0.0; 
+    M_matrix(0,0) = uav_mass_ + _load_mass_; M_matrix(0,1) = 0.0; M_matrix(0,2) = 0.0; 
     M_matrix(0,3) = 0.0; M_matrix(0,4) = _cable_length_*_load_mass_*cos(theta_load_cable);
     
-    M_matrix(1,0) = 0.0; M_matrix(1,1) = _uav_mass_ + _load_mass_; M_matrix(1,2) = 0.0; 
+    M_matrix(1,0) = 0.0; M_matrix(1,1) = uav_mass_ + _load_mass_; M_matrix(1,2) = 0.0; 
     M_matrix(1,3) = _cable_length_*_load_mass_*cos(phi_load_cable)*cos(theta_load_cable); 
     M_matrix(1,4) = -_cable_length_*_load_mass_*sin(phi_load_cable)*sin(theta_load_cable);
     
-    M_matrix(2,0) = 0.0; M_matrix(2,1) = 0.0; M_matrix(2,2) = _uav_mass_ + _load_mass_; 
+    M_matrix(2,0) = 0.0; M_matrix(2,1) = 0.0; M_matrix(2,2) = uav_mass_ + _load_mass_; 
     M_matrix(2,3) = _cable_length_*_load_mass_*cos(theta_load_cable)*sin(phi_load_cable); 
     M_matrix(2,4) = _cable_length_*_load_mass_*cos(phi_load_cable)*sin(theta_load_cable);
     
@@ -2239,7 +2235,7 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
     // ROS_INFO_STREAM("V = \n" << V_matrix);
 
     Eigen::MatrixXd G_vector = Eigen::MatrixXd(5, 1);
-    G_vector(0,0) = 0.0; G_vector(1,0) = 0.0; G_vector(2,0) = (_load_mass_+_uav_mass_)*common_handlers_->g; // g here is positif
+    G_vector(0,0) = 0.0; G_vector(1,0) = 0.0; G_vector(2,0) = (_load_mass_+uav_mass_)*common_handlers_->g; // g here is positif
     G_vector(3,0) = _cable_length_*common_handlers_->g*_load_mass_*cos(theta_load_cable)*sin(phi_load_cable); 
     G_vector(4,0) = _cable_length_*common_handlers_->g*_load_mass_*cos(phi_load_cable)*sin(theta_load_cable);
 
@@ -2819,10 +2815,9 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
   // // R - current uav attitude
   // uav1_R = mrs_lib::AttitudeConverter(uav1_state.pose.orientation);
   // uav2_R = mrs_lib::AttitudeConverter(uav2_state.pose.orientation);
-  // total_mass=common_handlers_->getMass(); //Estimated total mass (UAV+its part of the payload)
-  // uav_mass=_total_mass-_load_mass_; 
-  double m1=_uav_mass_;//theoretical mass of the UAV. If steady state error in predictions change to estimated mass.
-  double m2=_uav_mass_;
+
+  double m1=uav_mass_;//estimated mass of the UAV1, updated in the update function. 
+  double m2=uav_mass_;
   double ml= _load_mass_*2.0; //As the _load_mass_ value exported in session file is half of the payload. As this is the value used in controller to control the anchoring point position.
   double d1=0.75;
   double d2=-0.75; //todo make these two modified in session file as for the load mass and other parameters that might vary.
@@ -3611,7 +3606,7 @@ std::tuple< double, Eigen::Vector3d,double> DergbryanTracker::SimulateSe3CopyCon
     // ROS_INFO_STREAM("Kdl = \n" << Kdl);
 
     // | --------------------- load the gains --------------------- |
-    // NOTE: do not move the gains outside the for loop! Due to "Kp = Kp * (_uav_mass_ + uav_mass_difference_);"
+    // NOTE: do not move the gains outside the for loop! Due to "Kp = Kp * (uav_mass_ + uav_mass_difference_);"
     /*NOTE: for now on disable the filterGains used in the original se3 controller*/
     /*QUESTION: shouldn't we add this back later?*/
     //filterGains(control_reference->disable_position_gains, dt);
@@ -3666,28 +3661,14 @@ std::tuple< double, Eigen::Vector3d,double> DergbryanTracker::SimulateSe3CopyCon
     
 
     
-    // | --------------- Thesis B --------------- | TODORAPHAEL : double total_mass = common_handlers_->getMass(); should contain the total mass with the payload ? Or should I add the payload mass to it ????
-    // double uav_mass_difference_ = 0.0; 
-    // double total_mass = 0.0;
-    double uav_mass = common_handlers_->getMass(); // estimated mass of the UAV, without the mass of the payload.
-    double total_mass =0.0;
-    if(_type_of_system_== "1uav_payload" ||_type_of_system_ == "2uavs_and_payload"){ //Get theoretical total mass TODORAPHAEL CHANGE ONCE I KNOW IF THE ESTIMATED MASS INCLUDES THE PAYLOAD MASS,NORMALLY YES. BUT HOW TO USE IT THEN?
-   
-      if (_run_type_ == "simulation"){ 
-        if(payload_spawned_){
-          total_mass = uav_mass + _load_mass_;
-
-        }else{
-          total_mass = uav_mass;
-
-        }
-      }else{
-        total_mass = uav_mass + _load_mass_ ;
-      }
+    // | --------------- load--------------- | 
+    double total_mass;
+    if((_type_of_system_== "1uav_payload" ||_type_of_system_ == "2uavs_and_payload")&& payload_spawned_){ // If system has a payload and this payload has already spawn, we add its mass to the UAV mass to get the total mass of the system.
+      total_mass = uav_mass_ + _load_mass_;
     }else{
-      total_mass =uav_mass; ///common_handlers_->getMass(); // Get estimated total mass from controller
+      total_mass =uav_mass_; //Either no payload in the system, or not yet spawned, total mass is then only the estimated mass of the UAV.
     }
-    // ROS_INFO_STREAM("total_mass in SimulateSe3controller = \n" << total_mass); //now correct
+    
     Kp = Kp * total_mass;
     Kv = Kv * total_mass;
 
@@ -4533,7 +4514,7 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
 
     //------------------------Equations of motion part----------------------//
     if(_type_of_system_=="1uav_payload"&& payload_spawned_){ //1UAV and payload
-      double total_mass=common_handlers_->getMass()+_load_mass_;
+      double total_mass=uav_mass_+_load_mass_;
       // ROS_INFO_STREAM("total_mass in prediction loop \n"<<total_mass);//now correct
       Eigen::MatrixXd M_matrix = Eigen::MatrixXd(5, 5);
       M_matrix(0,0) = total_mass; M_matrix(0,1) = 0.0; M_matrix(0,2) = 0.0; 
@@ -4643,7 +4624,7 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
       // Bryan used thrust_force in eom instead of f as I did. what does it changes??? Thrust force takes attitude into action when my predictions assume that the attitude has been controller perfectly.
       
       //------EOM BRYAN :
-      double total_mass=common_handlers_->getMass();
+      double total_mass=uav_mass_;
       Eigen::Vector3d acceleration_uav = 1.0/total_mass * (thrust_force*R.col(2) + total_mass * (Eigen::Vector3d(0, 0, -common_handlers_->g)));
       // Eigen::Vector3d acceleration_uav = 1.0/total_mass * (thrust_force*Rd.col(2) + total_mass * (Eigen::Vector3d(0, 0, -common_handlers_->g))); --> do not use desired force
       custom_acceleration.position.x = acceleration_uav[0];
@@ -4695,9 +4676,9 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
       // values taken from ~/mrs_workspace/src/simulation/ros_packages/mrs_simulation/models/mrs_robots_description/urdf/f450.xacro
       double inertia_body_radius = 0.20; // [m]
       double inertia_body_height = 0.05; // [m]
-      double Jxx = common_handlers_->getMass() * (3.0 * inertia_body_radius * inertia_body_radius + inertia_body_height * inertia_body_height) / 12.0;
-      double Jyy = common_handlers_->getMass() * (3.0 * inertia_body_radius * inertia_body_radius + inertia_body_height * inertia_body_height) / 12.0;
-      double Jzz = common_handlers_->getMass() * inertia_body_radius * inertia_body_radius / 2.0;
+      double Jxx = uav_mass_ * (3.0 * inertia_body_radius * inertia_body_radius + inertia_body_height * inertia_body_height) / 12.0;
+      double Jyy = uav_mass_ * (3.0 * inertia_body_radius * inertia_body_radius + inertia_body_height * inertia_body_height) / 12.0;
+      double Jzz = uav_mass_ * inertia_body_radius * inertia_body_radius / 2.0;
       double scale_inertia = 1.0; //1.0 for no scaling
       J(0,0) = Jxx*scale_inertia;
       J(1,1) = Jyy*scale_inertia;
