@@ -584,8 +584,7 @@ private:
   double _cable_length_; // Length of the cable attaching the payload to the UAV.
 
   std::string _run_type_; // simulation OR nucID (for hardware testing) .defined in bashrc or session.yaml.
-  Eigen::Vector3d acceleration_load_;
-      
+
 
   float encoder_angle_1_;
   float encoder_angle_2_;
@@ -902,9 +901,9 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   
   // single uav with suspended load //:
   // TODO: unlcear definitions what tracker_ publishers represent:
-  tracker_load_pose_publisher_   = nh2_.advertise<geometry_msgs::Pose>("tracker_load_pose",1); // TODO: this is computed in the controller and would be logical to publish there. // It is also computed in the tracker as the callback is the same. So I guess it's why they added tracker in the name, as it's the same info as in the controller. Probably just to check that the two are the same, and that there is no issues with this load callback.
-  tracker_load_vel_publisher_   = nh2_.advertise<geometry_msgs::Twist>("tracker_load_vel",1); // TODO: this is computed in the controller and would be logical to publish there
-  tracker_uav_state_publisher_   = nh2_.advertise<mrs_msgs::UavState>("tracker_uav_state",1); // TODO: a tracker can never be linked to a full UAV state, that why above I used applied_ref_pose_publisher_
+  // tracker_load_pose_publisher_   = nh2_.advertise<geometry_msgs::Pose>("tracker_load_pose",1); // TODO: this is computed in the controller and would be logical to publish there. // It is also computed in the tracker as the callback is the same. So I guess it's why they added tracker in the name, as it's the same info as in the controller. Probably just to check that the two are the same, and that there is no issues with this load callback.
+  // tracker_load_vel_publisher_   = nh2_.advertise<geometry_msgs::Twist>("tracker_load_vel",1); // TODO: this is computed in the controller and would be logical to publish there
+  // tracker_uav_state_publisher_   = nh2_.advertise<mrs_msgs::UavState>("tracker_uav_state",1); // TODO: a tracker can never be linked to a full UAV state, that why above I used applied_ref_pose_publisher_
   tracker_load_old_vel_publisher_   = nh2_.advertise<geometry_msgs::Vector3>("tracker_load_old_vel",1);// TODO: old??? Used to compute the dt of Gazebo, that returns the pose of the payload then used to compute acceleration of the payload. Don't think it's relevent informatoin to publish so I would delete it.
   predicted_load_pose_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_load_poses", 1);
   predicted_load_vel_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_load_vels", 1);
@@ -3298,7 +3297,6 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
     Eigen::Vector3d load_lin_vel = anchoring_pt_lin_vel_;
     Eigen::Vector3d load_pose_position = anchoring_pt_pose_position_ ;
     Eigen::Vector3d pred_old_load_lin_vel = Eigen::Vector3d::Zero(3);
-    Eigen::Vector3d acceleration_load = acceleration_load_;
     // Init the reference position for the payload, from the one of the UAV 
     Eigen::Vector3d Rpl = Eigen::Vector3d::Zero(3);
     if (position_cmd.use_position_vertical || position_cmd.use_position_horizontal) {
@@ -5889,6 +5887,7 @@ void DergbryanTracker::loadStatesCallback(const gazebo_msgs::LinkStatesConstPtr&
       }
     }
   }
+
   // Extract the value from the received loadmsg. 
   anchoring_pt_pose_= loadmsg->pose[anchoring_pt_index]; // Now that we know which index refers to the anchoring point we search for (depending on which system we have), we can use it to get the actual state of this point.  
   anchoring_pt_pose_position_[0] = anchoring_pt_pose_.position.x;
@@ -5900,6 +5899,30 @@ void DergbryanTracker::loadStatesCallback(const gazebo_msgs::LinkStatesConstPtr&
   anchoring_pt_lin_vel_[0]= anchoring_pt_velocity_.linear.x;
   anchoring_pt_lin_vel_[1]= anchoring_pt_velocity_.linear.y;
   anchoring_pt_lin_vel_[2]= anchoring_pt_velocity_.linear.z;
+
+//-------------------------------------------------//
+  // These are in my opignon useless, but if I don't put them the test files are no longer runnning...(See my mail 14/08 bryan, to see the error I had)
+  // I really don't know why. 
+  try {
+    tracker_load_pose_publisher_.publish(anchoring_pt_pose_); 
+  }
+  catch (...) {
+    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", tracker_load_pose_publisher_.getTopic().c_str());
+  }
+  try {
+    tracker_load_vel_publisher_.publish(anchoring_pt_velocity_); 
+  }
+  catch (...) {
+    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", tracker_load_vel_publisher_.getTopic().c_str());
+  }
+  try {
+    tracker_load_old_vel_publisher_.publish(old_load_lin_vel);
+  }
+  catch (...) {
+    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", tracker_load_old_vel_publisher_.getTopic().c_str());
+  }
+//-------------------------------------------------//
+  
 }
 
 // TODO: document this callback
