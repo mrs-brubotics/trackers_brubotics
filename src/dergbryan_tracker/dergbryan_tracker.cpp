@@ -1414,7 +1414,10 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
   return mrs_msgs::PositionCommand::ConstPtr(new mrs_msgs::PositionCommand(position_cmd));
 }
 //}
-void DergbryanTracker::do_predictions(mrs_msgs::PositionCommand position_cmd, double uav_heading, const mrs_msgs::AttitudeCommand::ConstPtr &last_attitude_cmd){ //mother function containing all the different cases, that depend on the _type_of_system_ of which we want to predict the behavior.
+void DergbryanTracker::do_predictions(mrs_msgs::PositionCommand position_cmd, double uav_heading, const mrs_msgs::AttitudeCommand::ConstPtr &last_attitude_cmd){ 
+  //mother function for the predictions. It contain all the different cases, that depend on the _type_of_system_, of which we want to predict the behavior.
+  //For the 2UAV+payload case it will also ensure the required information of UAV2 is published so that UAV1 can perform the predictions.
+
     if(_type_of_system_=="2uavs_payload"){ //Need that the payload has spawned
       publish_Payload_data_slave_for_2UAV_payload_predictions(position_cmd);
       if(uav2_payload_spawned_&& _uav_name_=="uav1"){ //When the first data of the slave UAV payload has been received, the predictions can start. If it don't wait, an error will be thrown as the position of the payload of the 2nd UAV will not be instantiated correctly in the prediction function.
@@ -1427,6 +1430,9 @@ void DergbryanTracker::do_predictions(mrs_msgs::PositionCommand position_cmd, do
 }
 
 void DergbryanTracker::publish_Payload_data_slave_for_2UAV_payload_predictions(mrs_msgs::PositionCommand position_cmd){
+// This function will ensure that the data of the UAV 2 (i.e. state of the uav, position cmd and the sate of the anchoring point) will be published, when the payload has spawned only. 
+// By only publishing after the payload has spawned we avoid that NaN are sent over with that topic, and that the callback of UAV1 will store as the actual data, and then try to perform simulation with these. 
+//This would result in an error in the simulation of the controller part, as NaN will make the computed thrust force go to infinity.
 
   if (_run_type_ == "simulation"){
     // to see how many UAVs there are
@@ -1864,7 +1870,6 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
 
     Eigen::Vector3d uav2_anchoring_point_position = uav2_anchoring_point_position_; //anchoring point 2
     Eigen::Vector3d uav2_anchoring_point_velocity = uav2_anchoring_point_velocity_;
-    Eigen::Vector3d pred_old_uav2_anchoring_point_velocity = Eigen::Vector3d::Zero(3);
 
     Eigen::Vector3d uav2_acc;
     // Beam payload position velocity (i.e. Center of mass of the beam. p_l,dot(p_l) in my thesis)
@@ -2193,6 +2198,7 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
       custom_uav1_pose.position.z=uav1_position[2];
 
       // Numerical integration of states of UAV2
+
       uav2_velocity=uav2_velocity + uav2_acc*_prediction_dt_;
       custom_uav2_vel.position.x=uav2_velocity[0];      //to publish as pose;
       custom_uav2_vel.position.y=uav2_velocity[1];
@@ -2578,16 +2584,8 @@ std::tuple< double, Eigen::Vector3d,double> DergbryanTracker::SimulateSe3CopyCon
     if(_type_of_system_== "1uav_payload" ||_type_of_system_ == "2uavs_and_payload"){
 
       if (_run_type_ == "simulation"){ //SIMULATION
-        if(payload_spawned_){
-            if(remove_offset_){
-              Epl = Rp - Opl; //Change Rp to Op
-              load_pose_position_offset = Epl;
-              // ROS_INFO_STREAM("Load_position_offset = " << load_pose_position_offset);
-              remove_offset_ = false;
-            } 
-        }
-      //Thesis B: step 5: calculate the errors
-        if (position_cmd.use_position_horizontal || position_cmd.use_position_vertical) {
+
+        if (position_cmd.use_position_horizontal || position_cmd.use_position_vertical) { //Compute the errors for the load part, taking the offset into account.
           Epl = Rp - Opl - load_pose_position_offset; // remove offset because the load does not spawn perfectly under drone
           //(position relative to base frame)
         }
@@ -2651,44 +2649,6 @@ std::tuple< double, Eigen::Vector3d,double> DergbryanTracker::SimulateSe3CopyCon
 
         //ROS_INFO_STREAM("gains" << std::endl << "activated");
       }
-      else{ //not needed as instantiated as 0 anyway. So if load => put a value different from 0, else, keep it equal to zero.
-      //   // gains desactivated
-      //   if (position_cmd.use_position_horizontal) {
-      //     Kpl[0] = 0.0; //7.0
-      //     Kpl[1] = Kpl[0];
-      //   } else {
-      //     Kpl[0] = 0.0;
-      //     Kpl[1] = 0.0;
-      //   }
-
-      //   if (position_cmd.use_velocity_horizontal) {
-      //     Kdl[0] = 0.0; //0.5
-      //     Kdl[1] = Kdl[0];
-      //   } else {
-      //     Kdl[0] = 0.0;
-      //     Kdl[1] = 0.0;
-      //   }
-
-      //   //ROS_INFO_STREAM("gains" << std::endl << "desactivated");
-      // }
-
-
-    // if (position_cmd.use_velocity_vertical) {
-    //   Kpl[2] = 0;
-    // } 
-    // else {
-    //   Kpl[2] = 0;
-    // }
-
-    // if (position_cmd.use_velocity_vertical) {
-    //   Kdl[2] = 0;
-    // } 
-    // else {
-    //   Kdl[2] = 0;
-    // }
-  }
-    // | ------------------------------------------ |
-// TODO Change the lines above, as useless if since it's redefined just after. Strange.
 
     // ROS_INFO_STREAM("Kpl = \n" << Kpl);
     // ROS_INFO_STREAM("Kdl = \n" << Kdl);
