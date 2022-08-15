@@ -213,7 +213,6 @@ private:
 
   // load, why this value ? Why diff than the other dt ? Is it a problem ?
   double load_vel_dt; //= 0.004;
-  //do_predictions(mrs_msgs::PositionCommand position_cmd, double uav_heading, const mrs_msgs::AttitudeCommand::ConstPtr &last_attitude_cmd)
 
 
   // ---------------
@@ -580,7 +579,7 @@ private:
   bool uav2_payload_spawned_ = false;
 
   bool remove_offset_ = true; // As the payload never spawn exactly below the COM of the UAV. This offset is taken out based on the error on the first instant of the controller. TODORAPHAEL : Needed in tracker ? OR only in controller???
-  Eigen::Vector3d load_pose_position_offset = Eigen::Vector3d::Zero(3);// The value of the offset is stored in this global var.
+  Eigen::Vector3d load_pose_position_offset_ = Eigen::Vector3d::Zero(3);// The value of the offset is stored in this global var.
 
   std::string _type_of_system_; // For the predictions, to know which model to simulate. Can be 1uav_no_payload, 1uav_payload or 2uavs_payload. Set in session.yaml file.
   double _cable_length_; // Length of the cable attaching the payload to the UAV.
@@ -595,7 +594,6 @@ private:
   double uav_heading; // Might be useless to deal with 2 var for this quantity. See which one to keep with uav_heading_
 
   // to merge Load_controller for 1 and 2 uavs
-  bool uav_id = false; // false = uav2, true = uav1
   std::string _number_of_uav_;
 
   //|-----------------UAV2 informations received to do predictions of 2UAV+beam system inside the tracker of UAV1--------|//
@@ -948,7 +946,6 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
 
   if (_type_of_system_ == "2uavs_payload"){
     if (_uav_name_ == "uav1"){  // to see which UAV it is
-        uav_id = true; //uav 1
         uav2_state_sub=nh_.subscribe("/uav2/control_manager/dergbryan_tracker/uav2_state", 1, &DergbryanTracker::uav2_state_callback, this, ros::TransportHints().tcpNoDelay());// get uav2 states
         uav2_anchoring_point_sub=nh_.subscribe("/uav2/control_manager/dergbryan_tracker/uav2_anchoring_point_state", 1, &DergbryanTracker::uav2_anchoring_point_callback, this, ros::TransportHints().tcpNoDelay());
         uav2_position_cmd_sub=nh_.subscribe("/uav2/control_manager/dergbryan_tracker/uav2_position_cmd", 1, &DergbryanTracker::uav2_position_cmd_callback, this, ros::TransportHints().tcpNoDelay());
@@ -1422,15 +1419,10 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
   return mrs_msgs::PositionCommand::ConstPtr(new mrs_msgs::PositionCommand(position_cmd));
 }
 //}
-<<<<<<< HEAD
 void DergbryanTracker::do_predictions(mrs_msgs::PositionCommand position_cmd, double uav_heading, const mrs_msgs::AttitudeCommand::ConstPtr &last_attitude_cmd){ 
   //mother function for the predictions. It contain all the different cases, that depend on the _type_of_system_, of which we want to predict the behavior.
   //For the 2UAV+payload case it will also ensure the required information of UAV2 is published so that UAV1 can perform the predictions.
 
-=======
-
-void DergbryanTracker::do_predictions(mrs_msgs::PositionCommand position_cmd, double uav_heading, const mrs_msgs::AttitudeCommand::ConstPtr &last_attitude_cmd){ //mother function containing all the different cases, that depend on the _type_of_system_ of which we want to predict the behavior.
->>>>>>> a41edef92a7a6aed78fd341ffa0b5eccf0c3edad
     if(_type_of_system_=="2uavs_payload"){ //Need that the payload has spawned
       publish_Payload_data_slave_for_2UAV_payload_predictions(position_cmd);
       if(uav2_payload_spawned_&& _uav_name_=="uav1"){ //When the first data of the slave UAV payload has been received, the predictions can start. If it don't wait, an error will be thrown as the position of the payload of the 2nd UAV will not be instantiated correctly in the prediction function.
@@ -2597,10 +2589,17 @@ std::tuple< double, Eigen::Vector3d,double> DergbryanTracker::SimulateSe3CopyCon
     if(_type_of_system_== "1uav_payload" ||_type_of_system_ == "2uavs_and_payload"){
 
       if (_run_type_ == "simulation"){ //SIMULATION
-
+         if(payload_spawned_){
+            if(remove_offset_){ //This is necessary as the payload is never exactly below the COM of the UAV. If this offset is not cancelled, the control actions computed for the com of the UAV and the position of the payload will be opposed when close to the reference.
+              Epl = Rp - Opl; //Do this in the first instant of the simulation, when payload is already there, when the UAV position is very close to what was asked.
+              load_pose_position_offset_ = Epl; //Store the offset in a global.
+              // ROS_INFO_STREAM("Load_position_offset = " << load_pose_position_offset_);
+              remove_offset_ = false;
+            } 
+        }
+      //Thesis B: step 5: calculate the errors
         if (position_cmd.use_position_horizontal || position_cmd.use_position_vertical) { //Compute the errors for the load part, taking the offset into account.
-          Epl = Rp - Opl - load_pose_position_offset; // remove offset because the load does not spawn perfectly under drone
-          //(position relative to base frame)
+          Epl = Rp - Opl - load_pose_position_offset_; 
         }
 
         if (position_cmd.use_velocity_horizontal || position_cmd.use_velocity_vertical ||
