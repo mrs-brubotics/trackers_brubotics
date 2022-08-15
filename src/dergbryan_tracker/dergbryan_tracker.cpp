@@ -105,10 +105,8 @@ public:
   std::tuple< Eigen::Vector3d, Eigen::Vector3d> getMinDistDirLineSegments(Eigen::Vector3d &point0_link0, Eigen::Vector3d &point1_link0, Eigen::Vector3d &point0_link1, Eigen::Vector3d &point1_link1);
  
   std::tuple< double, Eigen::Vector3d, double>  SimulateSe3CopyController(const mrs_msgs::UavState uavi_state, Eigen::Matrix3d uavi_R, Eigen::Vector3d Payloadposition_vector, Eigen::Vector3d Payloadvelocity_vector,mrs_msgs::PositionCommand uavi_position_cmd ,Eigen::Vector3d uavi_Rp,Eigen::Vector3d uavi_Rv,Eigen::Vector3d uavi_Rpl,Eigen::Vector3d uavi_Ra);
-  
   void publish_Payload_data_slave_for_2UAV_payload_predictions(mrs_msgs::PositionCommand position_cmd);
   void do_predictions(mrs_msgs::PositionCommand position_cmd, double uav_heading, const mrs_msgs::AttitudeCommand::ConstPtr &last_attitude_cmd); //mother function that calls the correct prediction function depending on the cases.
-
 private:
   ros::NodeHandle                                     nh_;
   ros::NodeHandle                                     nh2_;
@@ -217,6 +215,7 @@ private:
   double load_vel_dt; //= 0.004;
   //do_predictions(mrs_msgs::PositionCommand position_cmd, double uav_heading, const mrs_msgs::AttitudeCommand::ConstPtr &last_attitude_cmd)
 
+
   // ---------------
   // ROS Publishers:
   // ---------------
@@ -250,10 +249,10 @@ private:
   ros::Publisher predicted_phi_dot_dot_publisher_;
   ros::Publisher predicted_theta_dot_dot_publisher_;
   ros::Publisher predicted_load_position_errors_publisher_;
-  ros::Publisher tracker_load_pose_publisher_;
-  ros::Publisher tracker_load_vel_publisher_;
+  //ros::Publisher tracker_load_pose_publisher_;
+  //ros::Publisher tracker_load_vel_publisher_;
   ros::Publisher tracker_uav_state_publisher_;
-  ros::Publisher tracker_load_old_vel_publisher_;
+  //ros::Publisher tracker_load_old_vel_publisher_;
   ros::Publisher load_pose_experiments_publisher_;
   ros::Publisher load_pose_error_publisher_;
   ros::Publisher load_velocity_error_publisher_;
@@ -340,7 +339,7 @@ private:
  
   geometry_msgs::PoseArray predicted_load_position_errors_out;
   geometry_msgs::Pose anchoring_pt_pose_;
-  geometry_msgs::Vector3 old_load_lin_vel;
+  geometry_msgs::Vector3 old_load_lin_vel_;
 
   geometry_msgs::Twist anchoring_pt_velocity_;
   geometry_msgs::Vector3 load_pose_error;
@@ -406,8 +405,8 @@ private:
   std::vector<mrs_lib::SubscribeHandler<trackers_brubotics::FutureTrajectoryTube>> other_uav_subscribers4_;
 
 //|------------------------LOAD-----------------------------|//
-  ros::Subscriber load_state_sub;
-  ros::Subscriber data_payload_sub;
+  ros::Subscriber load_state_sub_;
+  ros::Subscriber data_payload_sub_;
       //for receiving the UAV2 inforlations, when 2UAV+BEAM payload model is simulated.
   ros::Subscriber uav2_state_sub;
   ros::Subscriber uav2_anchoring_point_sub;
@@ -727,7 +726,7 @@ private:
 /*initialize()//{*/
 void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unused]] const std::string uav_name,
                              [[maybe_unused]] std::shared_ptr<mrs_uav_managers::CommonHandlers_t> common_handlers) {
-  
+  ROS_INFO("[DergbryanTracker]: start of initialize");
   common_handlers_ = common_handlers;                          
   ros::NodeHandle nh_(parent_nh, "se3_copy_controller"); // NodeHandle 1 for Se3CopyController, used to load controller params
   ros::NodeHandle nh2_(parent_nh, "dergbryan_tracker"); // NodeHandle 2 for DergbryanTracker, used to load tracker params
@@ -739,15 +738,18 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   // TODO: as not all sessions already have these variables, updater all the (older) sessions as some do not work anymore
   // TODO: Explain why you need getenv and cannot use yaml. : Just simpler to overwrite these values in the session file of each test rather than in yaml files that are for more general parameters taht might not change between tests. The parameters defined in session files are more likely to change from one test to another (e.g. type of test, mass of load, length of cable)
   // stod to transforms string double
+  ROS_INFO("[DergbryanTracker]: before getenv");
   _run_type_          = getenv("RUN_TYPE"); // =simulation if doing a simulation OR =uavID if hardware test, with ID being the number of the UAV(set in bashrc). Used to deal with the informations that are different in Gazebo and in practice, e.g. Payload position comes from 2 different callbacks depending on the type of test.
+  ROS_INFO("[DergbryanTracker]: after _run_type_");
   _number_of_uav_     = getenv("NUMBER_OF_UAV"); // is exported in the session.yaml TODO: not in all, so adapt name to something more logical (as only used for modle type 2 uavs with payload) and update all sessions and autoload in bashrc for real exp
+  ROS_INFO("[DergbryanTracker]: after _number_of_uav_");
   _type_of_system_    = getenv("TYPE_OF_SYSTEM"); // Can be : 1uav_no_payload, 1uav_payload, 2uavs_payload, depending on which predictions and controller you want to use.  
-  
+  ROS_INFO("[DergbryanTracker]: before if with getenv");
   if(_type_of_system_=="1uav_payload" || _type_of_system_=="2uavs_payload"){ // Load the required variables for load transportation, only if the system contains a payload. If this was not done, the session files of the test with no payload would still need to specify these quantity, eventhought they are not used in their case.
     _cable_length_      = std::stod(getenv("CABLE_LENGTH")); //Length of the cable attached to the UAV when transporting a payload. 
     _load_mass_         = std::stod(getenv("LOAD_MASS")); // Loaded from the session file. In simulation, Gazebo will load the xacro file that will also load this from session.yaml.
   }
-
+    ROS_INFO("[DergbryanTracker]: after if with getenv");
   // | ------------------- loading .yaml parameters ------------------- |
   mrs_lib::ParamLoader param_loader(nh_, "Se3CopyController");
   param_loader.loadParam("version", _version_);
@@ -907,7 +909,7 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   // tracker_load_pose_publisher_   = nh2_.advertise<geometry_msgs::Pose>("tracker_load_pose",1); // TODO: this is computed in the controller and would be logical to publish there. // It is also computed in the tracker as the callback is the same. So I guess it's why they added tracker in the name, as it's the same info as in the controller. Probably just to check that the two are the same, and that there is no issues with this load callback.
   // tracker_load_vel_publisher_   = nh2_.advertise<geometry_msgs::Twist>("tracker_load_vel",1); // TODO: this is computed in the controller and would be logical to publish there
   // tracker_uav_state_publisher_   = nh2_.advertise<mrs_msgs::UavState>("tracker_uav_state",1); // TODO: a tracker can never be linked to a full UAV state, that why above I used applied_ref_pose_publisher_
-  tracker_load_old_vel_publisher_   = nh2_.advertise<geometry_msgs::Vector3>("tracker_load_old_vel",1);// TODO: old??? Used to compute the dt of Gazebo, that returns the pose of the payload then used to compute acceleration of the payload. Don't think it's relevent informatoin to publish so I would delete it.
+  //tracker_load_old_vel_publisher_   = nh2_.advertise<geometry_msgs::Vector3>("tracker_load_old_vel",1);// TODO: old??? Used to compute the dt of Gazebo, that returns the pose of the payload then used to compute acceleration of the payload. Don't think it's relevent informatoin to publish so I would delete it.
   predicted_load_pose_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_load_poses", 1);
   predicted_load_vel_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_load_vels", 1);
   predicted_load_acc_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_load_accs", 1);
@@ -946,6 +948,7 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
 
   if (_type_of_system_ == "2uavs_payload"){
     if (_uav_name_ == "uav1"){  // to see which UAV it is
+        uav_id = true; //uav 1
         uav2_state_sub=nh_.subscribe("/uav2/control_manager/dergbryan_tracker/uav2_state", 1, &DergbryanTracker::uav2_state_callback, this, ros::TransportHints().tcpNoDelay());// get uav2 states
         uav2_anchoring_point_sub=nh_.subscribe("/uav2/control_manager/dergbryan_tracker/uav2_anchoring_point_state", 1, &DergbryanTracker::uav2_anchoring_point_callback, this, ros::TransportHints().tcpNoDelay());
         uav2_position_cmd_sub=nh_.subscribe("/uav2/control_manager/dergbryan_tracker/uav2_position_cmd", 1, &DergbryanTracker::uav2_position_cmd_callback, this, ros::TransportHints().tcpNoDelay());
@@ -981,11 +984,11 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   // this uav subscribes to own (i.e., of this uav) load states:
   // TODO: this block was initially placed in update function above "get the current heading". Replacing it here, it works in sim, but to be tested on hardware. 
   if (_run_type_ == "simulation"){ // subscriber of the gazebo simulation
-    load_state_sub =  nh_.subscribe("/gazebo/link_states", 1, &DergbryanTracker::loadStatesCallback, this, ros::TransportHints().tcpNoDelay());
+    load_state_sub_ =  nh_.subscribe("/gazebo/link_states", 1, &DergbryanTracker::loadStatesCallback, this, ros::TransportHints().tcpNoDelay());
   }
   else if (_run_type_ == "uav"){ // subscriber of the hardware encoders
     std::string slash = "/";
-    data_payload_sub = nh_.subscribe(slash.append(_uav_name_.append("/serial/received_message")), 1, &DergbryanTracker::BacaCallback, this, ros::TransportHints().tcpNoDelay()); // TODO: explain how this is used for 2 uav hardware
+    data_payload_sub_ = nh_.subscribe(slash.append(_uav_name_.append("/serial/received_message")), 1, &DergbryanTracker::BacaCallback, this, ros::TransportHints().tcpNoDelay()); // TODO: explain how this is used for 2 uav hardware
   }
   else{ // undefined
     ROS_ERROR("[DergbryanTracker]: undefined _run_type_ used!");
@@ -1048,9 +1051,11 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   //_tilt_angle_failsafe_ = (_tilt_angle_failsafe_ / 180.0) * M_PI;
   
   // profiler:
+  ROS_INFO("[DergbryanTracker]: before profiler");
   profiler = mrs_lib::Profiler(nh2_, "DergbryanTracker", _profiler_enabled_);
   // setTrajectory functions similar to mpc_tracker
   // TODO: do we use it? How to choose update rate of tracker?
+  ROS_INFO("[DergbryanTracker]: after profiler");
   _dt1_ = dt_; //1.0 / _mpc_rate_;
   // mpc_x_heading_ = MatrixXd::Zero(_mpc_n_states_heading_, 1);
 
@@ -1286,8 +1291,9 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
     position_cmd.position.y     = applied_ref_y_;
     position_cmd.position.z     = applied_ref_z_;
     position_cmd.heading        = goal_heading_;
-
+    //tictoc_stack.push(clock());
     do_predictions(position_cmd, uav_heading, last_attitude_cmd);
+
     //ROS_INFO_STREAM("Prediction calculation took = \n "<< (double)(clock()- tictoc_stack.top())/CLOCKS_PER_SEC << "seconds.");
     //tictoc_stack.pop();
     DERG_computation(); // computes the applied_ref_ global variables
@@ -1302,10 +1308,12 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
     position_cmd.position.y     = goal_y_;
     position_cmd.position.z     = goal_z_;
     position_cmd.heading        = goal_heading_;
+
     // but always compute the predictions for analysis:
     do_predictions(position_cmd, uav_heading, last_attitude_cmd);
     //No DERG_computation() as bypass these. Meaning the applied ref will always be the initial targeted ref.
   }
+
   // Depending on the above case, the applied reference as output to the tracker and input to the controller:
   applied_ref_x_ = position_cmd.position.x;
   applied_ref_y_ = position_cmd.position.y;
@@ -1410,14 +1418,19 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
   //
   ComputationalTime_msg_.parts.clear();
   ComputationalTime_msg_.name_parts.clear();
-  //-----------------------------------//
+  
   return mrs_msgs::PositionCommand::ConstPtr(new mrs_msgs::PositionCommand(position_cmd));
 }
 //}
+<<<<<<< HEAD
 void DergbryanTracker::do_predictions(mrs_msgs::PositionCommand position_cmd, double uav_heading, const mrs_msgs::AttitudeCommand::ConstPtr &last_attitude_cmd){ 
   //mother function for the predictions. It contain all the different cases, that depend on the _type_of_system_, of which we want to predict the behavior.
   //For the 2UAV+payload case it will also ensure the required information of UAV2 is published so that UAV1 can perform the predictions.
 
+=======
+
+void DergbryanTracker::do_predictions(mrs_msgs::PositionCommand position_cmd, double uav_heading, const mrs_msgs::AttitudeCommand::ConstPtr &last_attitude_cmd){ //mother function containing all the different cases, that depend on the _type_of_system_ of which we want to predict the behavior.
+>>>>>>> a41edef92a7a6aed78fd341ffa0b5eccf0c3edad
     if(_type_of_system_=="2uavs_payload"){ //Need that the payload has spawned
       publish_Payload_data_slave_for_2UAV_payload_predictions(position_cmd);
       if(uav2_payload_spawned_&& _uav_name_=="uav1"){ //When the first data of the slave UAV payload has been received, the predictions can start. If it don't wait, an error will be thrown as the position of the payload of the 2nd UAV will not be instantiated correctly in the prediction function.
@@ -3225,7 +3238,7 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
   // if(_type_of_system_=="1uav_payload"){ // Init the payload states from the global variables (that are updated in the callbacks)
     Eigen::Vector3d load_lin_vel = anchoring_pt_lin_vel_;
     Eigen::Vector3d load_pose_position = anchoring_pt_pose_position_ ;
-    Eigen::Vector3d pred_old_load_lin_vel = Eigen::Vector3d::Zero(3);
+    //Eigen::Vector3d pred_old_load_lin_vel_ = Eigen::Vector3d::Zero(3); // TODO: seems not to be used
     // Init the reference position for the payload, from the one of the UAV 
     Eigen::Vector3d Rpl = Eigen::Vector3d::Zero(3);
     if (position_cmd.use_position_vertical || position_cmd.use_position_horizontal) {
@@ -5785,73 +5798,79 @@ std::tuple< Eigen::Vector3d, Eigen::Vector3d> DergbryanTracker::getMinDistDirLin
 // | ----------------- load subscribtion callback ---------------- |
 // TODO: streamline, account for prev comments and document the load callbacks below
 void DergbryanTracker::loadStatesCallback(const gazebo_msgs::LinkStatesConstPtr& loadmsg) {
-  // TODO: this function needs a big clean and more comments. It is also not clear how the load model is differently used for 1 vs 2 uavs.
-  // TODO: change variable names as defined before using 3 types of dynamic models
-  // TODO: explain the link_names
+  //if (!starting_bool_){//is_initialized_, is_active_
+    //ROS_INFO_THROTTLE(500.0,"[DergbryanTracker]: start of callback");
+    // TODO: this function needs a big clean and more comments. It is also not clear how the load model is differently used for 1 vs 2 uavs.
+    // TODO: change variable names as defined before using 3 types of dynamic models
+    // TODO: explain the link_names
+    // TODO: moreover, as this callabck changes global load state variables at asynchronous and higher rates than the tracker update function, one needs to ensure that the global variables used for the state are always the same everywhere (avoid using different global information as the update function is sequentially executed). For this I think at the start of the update function one can "freeze" those global variables. So create 2 sets of global load variables and use everywhere except in this callabck the frozen variables.
 
-  //This callback function is only triggered when doing simulation, and will be used to unpack the data coming from the Gazebo topics.
-  // Everything is called
-  int anchoring_pt_index; //Will be used to store the index at which the payload appears in the message that is received from Gazebo. 
-  std::vector<std::string> link_names = loadmsg->name; // Take a vector containing the name of each link in the simulation. Among these there is the links that are related to the payload. 
-  for(size_t i = 0; i < link_names.size(); i++){ // Go through all the link names
+    //This callback function is only triggered when doing simulation, and will be used to unpack the data coming from the Gazebo topics.
+    // Everything is called
+    int anchoring_pt_index; //Will be used to store the index at which the payload appears in the message that is received from Gazebo. 
+    std::vector<std::string> link_names = loadmsg->name; // Take a vector containing the name of each link in the simulation. Among these there is the links that are related to the payload. 
+    for(size_t i = 0; i < link_names.size(); i++){ // Go through all the link names
 
-    if (_type_of_system_=="1uav_payload"){
-      if(link_names[i] == "bar::link_01"){ //link_01 is the point mass payload link. When the link_name correspond to the one of the payload, defined in the URDF/xacro files of the testing folder.
-        anchoring_pt_index = i; //Store the index of the name, as it will be used as the index to access all the states of this link, in the loadmsg later.
-        payload_spawned_ = true; //Notify that the payload has spawned. This will only be triggered once, and allow predictions to start.
-      }
-    }
-    if (_type_of_system_ == "2uavs_payload"){ // 2UAV transporting beam payload case. Need to return different link if this UAV is the uav1 or 2. 
-      if (_uav_name_=="uav1"){
-        if(link_names[i] == "bar::link_04"){ //link_04 correspond to the anchoring point of uav1
-            anchoring_pt_index = i;
-            payload_spawned_ = true;
+      if (_type_of_system_ == "1uav_payload"){
+        if(link_names[i] == "bar::link_01"){ //link_01 is the point mass payload link. When the link_name correspond to the one of the payload, defined in the URDF/xacro files of the testing folder.
+          anchoring_pt_index = i; //Store the index of the name, as it will be used as the index to access all the states of this link, in the loadmsg later.
+          payload_spawned_ = true; //Notify that the payload has spawned. This will only be triggered once, and allow predictions to start.
         }
       }
-      else if (_uav_name_=="uav2") { // for uav2
-        if(link_names[i] == "bar::link_01"){ //link_01 correspond to the anchoring point of uav1
-            anchoring_pt_index = i;
-            payload_spawned_ = true;
+      if (_type_of_system_ == "2uavs_payload"){ // 2UAV transporting beam payload case. Need to return different link if this UAV is the uav1 or 2. 
+        if (_uav_name_=="uav1"){
+          if(link_names[i] == "bar::link_04"){ //link_04 correspond to the anchoring point of uav1
+              anchoring_pt_index = i;
+              payload_spawned_ = true;
+          }
+        }
+        else if (_uav_name_=="uav2") { // for uav2
+          if(link_names[i] == "bar::link_01"){ //link_01 correspond to the anchoring point of uav1
+              anchoring_pt_index = i;
+              payload_spawned_ = true;
+          }
         }
       }
     }
-  }
+    //std::cout << "anchoring_pt_index = " << anchoring_pt_index << "\n";
+    //anchoring_pt_pose_= loadmsg->pose[-1];
+    // Extract the value from the received loadmsg. 
+    anchoring_pt_pose_= loadmsg->pose[anchoring_pt_index]; // Now that we know which index refers to the anchoring point we search for (depending on which system we have), we can use it to get the actual state of this point.  
+    anchoring_pt_pose_position_[0] = anchoring_pt_pose_.position.x;
+    anchoring_pt_pose_position_[1] = anchoring_pt_pose_.position.y;
+    anchoring_pt_pose_position_[2] = anchoring_pt_pose_.position.z;
 
-  // Extract the value from the received loadmsg. 
-  anchoring_pt_pose_= loadmsg->pose[anchoring_pt_index]; // Now that we know which index refers to the anchoring point we search for (depending on which system we have), we can use it to get the actual state of this point.  
-  anchoring_pt_pose_position_[0] = anchoring_pt_pose_.position.x;
-  anchoring_pt_pose_position_[1] = anchoring_pt_pose_.position.y;
-  anchoring_pt_pose_position_[2] = anchoring_pt_pose_.position.z;
+    anchoring_pt_velocity_ = loadmsg->twist[anchoring_pt_index];
+    // TODO: why only the linear velocity of the load is required and what about rotational velocity in the case of beam load used in 2UAV model? THis is anchoring point, it will be used to deduce rot velocity of the beam in the first iteration of the prediction
+    anchoring_pt_lin_vel_[0]= anchoring_pt_velocity_.linear.x;
+    anchoring_pt_lin_vel_[1]= anchoring_pt_velocity_.linear.y;
+    anchoring_pt_lin_vel_[2]= anchoring_pt_velocity_.linear.z;
 
-  anchoring_pt_velocity_ = loadmsg->twist[anchoring_pt_index];
-  // TODO: why only the linear velocity of the load is required and what about rotational velocity in the case of beam load used in 2UAV model? THis is anchoring point, it will be used to deduce rot velocity of the beam in the first iteration of the prediction
-  anchoring_pt_lin_vel_[0]= anchoring_pt_velocity_.linear.x;
-  anchoring_pt_lin_vel_[1]= anchoring_pt_velocity_.linear.y;
-  anchoring_pt_lin_vel_[2]= anchoring_pt_velocity_.linear.z;
-
-//-------------------------------------------------//
-  // These are in my opignon useless, but if I don't put them the test files are no longer runnning...(See my mail 14/08 bryan, to see the error I had)
-  // I really don't know why. 
-  try {
-    tracker_load_pose_publisher_.publish(anchoring_pt_pose_); 
-  }
-  catch (...) {
-    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", tracker_load_pose_publisher_.getTopic().c_str());
-  }
-  try {
-    tracker_load_vel_publisher_.publish(anchoring_pt_velocity_); 
-  }
-  catch (...) {
-    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", tracker_load_vel_publisher_.getTopic().c_str());
-  }
-  try {
-    tracker_load_old_vel_publisher_.publish(old_load_lin_vel);
-  }
-  catch (...) {
-    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", tracker_load_old_vel_publisher_.getTopic().c_str());
-  }
-//-------------------------------------------------//
-  
+  //-------------------------------------------------//
+    // These are in my opignon useless, but if I don't put them the test files are no longer runnning...(See my mail 14/08 bryan, to see the error I had)
+    // I really don't know why. 
+    // try {
+    //   tracker_load_pose_publisher_.publish(anchoring_pt_pose_); 
+    // }
+    // catch (...) {
+    //   ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", tracker_load_pose_publisher_.getTopic().c_str());
+    // }
+    // try {
+    //   tracker_load_vel_publisher_.publish(anchoring_pt_velocity_); 
+    // }
+    // catch (...) {
+    //   ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", tracker_load_vel_publisher_.getTopic().c_str());
+    // }
+    //ROS_INFO("[DergbryanTracker]: before try catch of tracker_load_old_vel_publisher_");
+    // try {
+    //   tracker_load_old_vel_publisher_.publish(old_load_lin_vel_);
+    // }
+    // catch (...) {
+    //   ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", tracker_load_old_vel_publisher_.getTopic().c_str());
+    // }
+    // if we don't print something, we get an error. TODO: figure out why, see emails with Raphael.
+    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: publish this here or you get strange error");
+  //} 
 }
 
 // TODO: document this callback
