@@ -2591,7 +2591,7 @@ std::tuple< double, Eigen::Vector3d,double> DergbryanTracker::SimulateSe3CopyCon
       if (_run_type_ == "simulation"){ //SIMULATION
          if(payload_spawned_){
             if(remove_offset_){ //This is necessary as the payload is never exactly below the COM of the UAV. If this offset is not cancelled, the control actions computed for the com of the UAV and the position of the payload will be opposed when close to the reference.
-              Epl = Rp - Opl; //Do this in the first instant of the simulation, when payload is already there, when the UAV position is very close to what was asked.
+              Epl = Op - Opl; //Do this in the first instant of the simulation, when payload is already there, when the UAV position is very close to what was asked.
               load_pose_position_offset_ = Epl; //Store the offset in a global.
               // ROS_INFO_STREAM("Load_position_offset = " << load_pose_position_offset_);
               remove_offset_ = false;
@@ -2599,7 +2599,7 @@ std::tuple< double, Eigen::Vector3d,double> DergbryanTracker::SimulateSe3CopyCon
         }
       //Thesis B: step 5: calculate the errors
         if (position_cmd.use_position_horizontal || position_cmd.use_position_vertical) { //Compute the errors for the load part, taking the offset into account.
-          Epl = Rp - Opl - load_pose_position_offset_; 
+          Epl = Op - Opl - load_pose_position_offset_; 
         }
 
         if (position_cmd.use_velocity_horizontal || position_cmd.use_velocity_vertical ||
@@ -5831,8 +5831,6 @@ void DergbryanTracker::loadStatesCallback(const gazebo_msgs::LinkStatesConstPtr&
         }
       }
     }
-    //std::cout << "anchoring_pt_index = " << anchoring_pt_index << "\n";
-    //anchoring_pt_pose_= loadmsg->pose[-1];
     // Extract the value from the received loadmsg. 
     anchoring_pt_pose_= loadmsg->pose[anchoring_pt_index]; // Now that we know which index refers to the anchoring point we search for (depending on which system we have), we can use it to get the actual state of this point.  
     anchoring_pt_pose_position_[0] = anchoring_pt_pose_.position.x;
@@ -5846,27 +5844,6 @@ void DergbryanTracker::loadStatesCallback(const gazebo_msgs::LinkStatesConstPtr&
     anchoring_pt_lin_vel_[2]= anchoring_pt_velocity_.linear.z;
 
   //-------------------------------------------------//
-    // These are in my opignon useless, but if I don't put them the test files are no longer runnning...(See my mail 14/08 bryan, to see the error I had)
-    // I really don't know why. 
-    // try {
-    //   tracker_load_pose_publisher_.publish(anchoring_pt_pose_); 
-    // }
-    // catch (...) {
-    //   ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", tracker_load_pose_publisher_.getTopic().c_str());
-    // }
-    // try {
-    //   tracker_load_vel_publisher_.publish(anchoring_pt_velocity_); 
-    // }
-    // catch (...) {
-    //   ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", tracker_load_vel_publisher_.getTopic().c_str());
-    // }
-    //ROS_INFO("[DergbryanTracker]: before try catch of tracker_load_old_vel_publisher_");
-    // try {
-    //   tracker_load_old_vel_publisher_.publish(old_load_lin_vel_);
-    // }
-    // catch (...) {
-    //   ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", tracker_load_old_vel_publisher_.getTopic().c_str());
-    // }
     // if we don't print something, we get an error. TODO: figure out why, see emails with Raphael.
     ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: publish this here or you get strange error");
   //} 
