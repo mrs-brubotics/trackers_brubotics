@@ -3693,7 +3693,7 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
       // ROS_INFO_STREAM("zB"<<zB);
 
       swing_angle=acos((mu.dot(zB))/(mu.norm()*zB.norm())); //Compute this twist angle (positive only, between 0 and pi)
-      ROS_INFO_STREAM("swing_angle"<<swing_angle);
+      // ROS_INFO_STREAM("swing_angle"<<swing_angle);
       swing_angle_to_publish.position.x=swing_angle;
       predicted_swing_angle_out_.poses.push_back(swing_angle_to_publish); 
 
