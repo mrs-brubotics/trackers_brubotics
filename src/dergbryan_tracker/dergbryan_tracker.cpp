@@ -236,7 +236,7 @@ private:
   ros::Publisher predicted_tiltangle_publisher_;
 
 //|-----------------------------LOAD--------------------------------|//
-
+  ros::Publisher predicted_swing_angle_publisher_;
   ros::Publisher predicted_load_pose_publisher_;
   ros::Publisher predicted_load_vel_publisher_;
   ros::Publisher predicted_load_acc_publisher_; 
@@ -343,7 +343,9 @@ private:
   geometry_msgs::Twist anchoring_pt_velocity_;
   geometry_msgs::Vector3 load_pose_error;
   geometry_msgs::Vector3 load_velocity_error;
-
+  
+  // geometry_msgs::PoseArray predicted_tension_cabble_out_;  // array of Tension force Tc in cable, predictions
+  geometry_msgs::PoseArray predicted_swing_angle_out_; //Array of the swing angle (i.e.) angle between cable of the payload and -z_B 
 //-----------------------------LOAD2UAV----------------------//
   // transfer information of UAV2 to UAV1
   mrs_msgs::UavState uav2_state_msg;//to send to uav1
@@ -921,6 +923,7 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   predicted_phi_dot_dot_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_phi_dot_dot", 1);
   predicted_theta_dot_dot_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_theta_dot_dot", 1);
   predicted_load_position_errors_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_load_position_errors", 1); // The error vector of the load position, predicted.
+  predicted_swing_angle_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_swing_angle", 1);
 
   /// two uavs with suspended load:
   // TODO: it is not good to explicitely use a uav id  (e.g., uav 1 , uav2) in the names as with the hardware (nuc and nimbro) you won't be able to choose the uav id (these are hardcoded in the nuc and must not be changed). There is just one "leader" (what you call uav1) and one "follower" (what you call uav2). I would advice to always use the highest priority uav as the leader. So do a check on _avoidance_other_uav_names_ defined above to see which uavs are defined and add an extra requirement that there may be at most 2 uavs specified in the list, else return a ROS_ERROR.
@@ -1397,6 +1400,8 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
   predicted_phi_dot_dot.poses.clear();
   predicted_theta_dot_dot.poses.clear();
   predicted_load_position_errors_out.poses.clear();
+  // predicted_tension_cabble_out_.poses.clear();
+  predicted_swing_angle_out_.poses.clear();
 
   //-----------2UAV pred-----------//
   predicted_uav1_poses_out_.poses.clear();
@@ -3297,8 +3302,10 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
     predicted_phi_dot_dot.header.stamp = uav_state_.header.stamp;
     predicted_theta_dot_dot.header.stamp = uav_state_.header.stamp;
     predicted_load_position_errors_out.header.stamp=uav_state.header.stamp;
-  // }
-
+    // predicted_tension_cabble_out_.header.stamp = uav_state_.header.stamp; 
+    // predicted_tension_cabble_out_.header.frame_id = uav_state_.header.frame_id;
+    predicted_swing_angle_out_.header.stamp = uav_state_.header.stamp;
+    predicted_swing_angle_out_.header.frame_id = uav_state_.header.frame_id;
 
   geometry_msgs::Pose custom_pose;
   geometry_msgs::Pose custom_vel;
@@ -3335,6 +3342,9 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
     double theta_dot_dot_load_cable;
     double phi_dot_dot_load_cable;
 
+    //ERG : swing angle
+    double swing_angle;
+    geometry_msgs::Pose swing_angle_to_publish;
     // }
   //
 
@@ -3465,6 +3475,9 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
         custom_load_vel.position.y = load_lin_vel[1];
         custom_load_vel.position.z = load_lin_vel[2];
         // Acceleration is not computed as not needed. If want it to monitor its values for debuging reasons, must be put here : 
+
+        //compute swing angle prediction
+
       }
 
 
@@ -3533,6 +3546,7 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
       predicted_phi_dot_dot.poses.push_back(phi_dot_dot_load_to_publish);
       predicted_theta_dot_dot.poses.push_back(theta_dot_dot_load_to_publish);
       predicted_load_accelerations_out_.poses.push_back(custom_load_acceleration);
+
     }
     
     // |---------------------- Controller part ---------------------------|
@@ -3666,6 +3680,22 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
       predicted_q_state_dot_dot_uav.position.z = acceleration_uav[2];
       predicted_q_state_dot_dot_load.position.x = phi_dot_dot_load_cable;
       predicted_q_state_dot_dot_load.position.y = theta_dot_dot_load_cable;
+
+      //Compute twist angle predictions. If//
+      Eigen::Vector3d uav_position(uav_state.pose.position.x,uav_state.pose.position.y,uav_state.pose.position.z); //get a vector of the UAV position to ease the following computations.
+      Eigen::Vector3d mu; //Unit vector indicating cable orientation.
+      Eigen::Vector3d zB; //unit vector z_B of the UAV body frame
+      
+      mu=(uav_position-load_pose_position).normalized();
+      // ROS_INFO_STREAM("mu after norm"<<mu);
+      
+      zB=R.col(2);
+      // ROS_INFO_STREAM("zB"<<zB);
+
+      swing_angle=acos((mu.dot(zB))/(mu.norm()*zB.norm())); //Compute this twist angle (positive only, between 0 and pi)
+      ROS_INFO_STREAM("swing_angle"<<swing_angle);
+      swing_angle_to_publish.position.x=swing_angle;
+      predicted_swing_angle_out_.poses.push_back(swing_angle_to_publish); 
 
     }
     else{ //1UAV no payload equations
@@ -3836,6 +3866,12 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
   }
   catch (...) {
     ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_load_acc_publisher_.getTopic().c_str());
+  }
+  try {
+  predicted_swing_angle_publisher_.publish(predicted_swing_angle_out_);
+  }
+  catch (...) {
+    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_swing_angle_publisher_.getTopic().c_str());
   }
   // try {
   //   tracker_load_pose_publisher_.publish(anchoring_pt_pose_position_);
