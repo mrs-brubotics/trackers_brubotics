@@ -108,15 +108,14 @@ private:
   ros::NodeHandle                                     nh2_;
   std::shared_ptr<mrs_uav_managers::CommonHandlers_t> common_handlers_;
   std::string _uav_name_;
-
-  // | ------------------- loading env (session/bashrc) parameters ------------------- |
-  std::string _run_type_;       // set to "simulation" (for Gaeebo simulation) OR "uav" (for hardware testing) defined in bashrc or session.yaml.
-  std::string _number_of_uav_;  // TODO: do we need this? to merge Load_controller for 1 and 2 uavs
-  std::string _type_of_system_; // defines the dynamic system model to simulate: can be 1uav_no_payload, 1uav_payload or 2uavs_payload. Set in session.yaml file.
-  double _cable_length_;        // length of the cable attaching the payload to the UAV
+ 
+  // | ------------------- declaring env (session/bashrc) parameters ------------------- |
+  std::string _run_type_;       // set to "simulation" (for Gazebo simulation) OR "uav" (for hardware testing) defined in bashrc or session.yaml. Used for payload transport as payload position comes from two different callbacks depending on how the test is ran (in sim or on real UAV).
+  std::string _type_of_system_; // defines the dynamic system model to simulate in the prediction using the related controller: can be 1uav_no_payload, 1uav_payload or 2uavs_payload. Set in session.yaml file.
+  double _cable_length_;        // length of the cable between payload COM / anchoring point and COM of the UAV
   double _load_mass_;           // feedforward load mass defined in the session.yaml of every test file (session variable also used by the xacro for Gazebo simulation)
   
-  // | ------------------- loading .yaml parameters ------------------- |
+  // | ------------------- declaring .yaml parameters ------------------- |
   // Se3CopyController:
   std::string _version_;
   bool   _profiler_enabled_ = false;
@@ -631,25 +630,19 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   ros::NodeHandle nh_(parent_nh, "se3_copy_controller"); // NodeHandle 1 for Se3CopyController, used to load controller params
   ros::NodeHandle nh2_(parent_nh, "dergbryan_tracker"); // NodeHandle 2 for DergbryanTracker, used to load tracker params
   _uav_name_       = uav_name; // this UAV
-  /*TODO: how to load these paramters commented below as was done in the se3controller?*/
   ros::Time::waitForValid();
 
   // | ------------------- loading env (session/bashrc) parameters ------------------- |
+  ROS_INFO("[DergbryanTracker]: start loading envirenment (session/bashrc) parameters");
   // TODO: as not all sessions already have these variables, updater all the (older) sessions as some do not work anymore
-  // TODO: Explain why you need getenv and cannot use yaml. : Just simpler to overwrite these values in the session file of each test rather than in yaml files that are for more general parameters taht might not change between tests. The parameters defined in session files are more likely to change from one test to another (e.g. type of test, mass of load, length of cable)
-  // stod to transforms string double
-  ROS_INFO("[DergbryanTracker]: before getenv");
-  _run_type_          = getenv("RUN_TYPE"); // =simulation if doing a simulation OR =uavID if hardware test, with ID being the number of the UAV(set in bashrc). Used to deal with the informations that are different in Gazebo and in practice, e.g. Payload position comes from 2 different callbacks depending on the type of test.
-  ROS_INFO("[DergbryanTracker]: after _run_type_");
-  _number_of_uav_     = getenv("NUMBER_OF_UAV"); // is exported in the session.yaml TODO: not in all, so adapt name to something more logical (as only used for modle type 2 uavs with payload) and update all sessions and autoload in bashrc for real exp
-  ROS_INFO("[DergbryanTracker]: after _number_of_uav_");
-  _type_of_system_    = getenv("TYPE_OF_SYSTEM"); // Can be : 1uav_no_payload, 1uav_payload, 2uavs_payload, depending on which predictions and controller you want to use.  
-  ROS_INFO("[DergbryanTracker]: before if with getenv");
-  if(_type_of_system_=="1uav_payload" || _type_of_system_=="2uavs_payload"){ // Load the required variables for load transportation, only if the system contains a payload. If this was not done, the session files of the test with no payload would still need to specify these quantity, eventhought they are not used in their case.
-    _cable_length_      = std::stod(getenv("CABLE_LENGTH")); //Length of the cable attached to the UAV when transporting a payload. 
-    _load_mass_         = std::stod(getenv("LOAD_MASS")); // Loaded from the session file. In simulation, Gazebo will load the xacro file that will also load this from session.yaml.
+  _run_type_          = getenv("RUN_TYPE");
+  _type_of_system_    = getenv("TYPE_OF_SYSTEM"); 
+  if(_type_of_system_=="1uav_payload" || _type_of_system_=="2uavs_payload"){ // load the required load transportation paramters only if the test is configured for it
+    _cable_length_      = std::stod(getenv("CABLE_LENGTH")); 
+    _load_mass_         = std::stod(getenv("LOAD_MASS")); 
   }
-    ROS_INFO("[DergbryanTracker]: after if with getenv");
+  ROS_INFO("[DergbryanTracker]: finished loading environment (session/bashrc) parameters");
+
   // | ------------------- loading .yaml parameters ------------------- |
   mrs_lib::ParamLoader param_loader(nh_, "Se3CopyController");
   param_loader.loadParam("version", _version_);
@@ -667,14 +660,14 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   param_loader.loadParam("default_gains/horizontal/kib", kibxy_);
   param_loader.loadParam("default_gains/horizontal/kiw_lim", kiwxy_lim_);
   param_loader.loadParam("default_gains/horizontal/kib_lim", kibxy_lim_);
-  // Lateral gains for load damping part of the controller:
+  // lateral gains for load damping part of the controller:
   param_loader.loadParam("default_gains/horizontal/kpl", kplxy_);
   param_loader.loadParam("default_gains/horizontal/kvl", kvlxy_);
-  // height gains:
+  // vertical gains:
   param_loader.loadParam("default_gains/vertical/kp", kpz_);
   param_loader.loadParam("default_gains/vertical/kv", kvz_);
   param_loader.loadParam("default_gains/vertical/ka", kaz_);
-  // mass estimator (height) gains and limits:
+  // mass estimator (vertical) gains and limits:
   param_loader.loadParam("default_gains/mass_estimator/km", km_);
   param_loader.loadParam("default_gains/mass_estimator/km_lim", km_lim_);
   // attitude gains:
@@ -788,10 +781,10 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   ROS_INFO("[DergbryanTracker]: _avoidance_other_uav_names_ contains IDs of all other UAVs.");
 
   // | ------------------- create publishers ------------------- |
-  // TODO: change below to correct msg types (e.g., do not use PoseArray for a thrust or angle)
-  // example //:
+  // TODO bryan: change below to correct msg types (e.g., do not use PoseArray for a thrust or angle)
+  // EXAMPLE:
   chatter_publisher_ = nh2_.advertise<std_msgs::String>("chatter", 1);
-  // uav //:
+  // UAV:
   goal_pose_publisher_ = nh2_.advertise<mrs_msgs::ReferenceStamped>("goal_pose", 1);
   applied_ref_pose_publisher_ = nh2_.advertise<mrs_msgs::ReferenceStamped>("applied_ref_pose", 1);
   uav_state_publisher_ = nh2_.advertise<mrs_msgs::UavState>("uav_state", 1);
@@ -804,7 +797,7 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   predicted_tiltangle_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_tiltangle", 1);
   // TODO: create topic similar to predicted_load_position_errors_publisher_
   
-  // single uav with suspended load //:
+  // LOAD:
   // TODO: unlcear definitions what tracker_ publishers represent:
   // tracker_load_pose_publisher_   = nh2_.advertise<geometry_msgs::Pose>("tracker_load_pose",1); // TODO: this is computed in the controller and would be logical to publish there. // It is also computed in the tracker as the callback is the same. So I guess it's why they added tracker in the name, as it's the same info as in the controller. Probably just to check that the two are the same, and that there is no issues with this load callback.
   // tracker_load_vel_publisher_   = nh2_.advertise<geometry_msgs::Twist>("tracker_load_vel",1); // TODO: this is computed in the controller and would be logical to publish there
@@ -824,7 +817,7 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   predicted_load_position_errors_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_load_position_errors", 1); // The error vector of the load position, predicted.
   predicted_swing_angle_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_swing_angle", 1);
 
-  /// two uavs with suspended load:
+  // 2UAVsLOAD:
   // TODO: it is not good to explicitely use a uav id  (e.g., uav 1 , uav2) in the names as with the hardware (nuc and nimbro) you won't be able to choose the uav id (these are hardcoded in the nuc and must not be changed). There is just one "leader" (what you call uav1) and one "follower" (what you call uav2). I would advice to always use the highest priority uav as the leader. So do a check on _avoidance_other_uav_names_ defined above to see which uavs are defined and add an extra requirement that there may be at most 2 uavs specified in the list, else return a ROS_ERROR.
   predicted_uav1_poses_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav1_pose", 1);
   predicted_uav2_poses_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav2_pose", 1);
