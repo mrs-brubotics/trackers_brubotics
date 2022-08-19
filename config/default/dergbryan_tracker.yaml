@@ -39,6 +39,7 @@ dynamic_safety_margin: # BE CAREFUL!
     w: 27
     o: 27 
     swinc_c: 1.0
+    Tc: 1.0
   enable_dsm:
     constant_dsm: -1.0 # 10 # used dsm if all dsms below are disabled or if the value is >= 0.0
     sT: true
@@ -47,6 +48,7 @@ dynamic_safety_margin: # BE CAREFUL!
     w: false
     o: false
     swing_c: true
+    Tc: true
 navigation_field:
   attraction:
     smoothing_ratio: 0.10 # smoothing factor

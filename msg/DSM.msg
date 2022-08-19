@@ -6,3 +6,4 @@ float64 DSM_a
 float64 DSM_o
 float64 DSM_w
 float64 DSM_swing_c
+float64 DSM_Tc

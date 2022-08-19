@@ -155,6 +155,8 @@ private:
   double _kappa_w_;  // kappa parameter of the DSM_w
   double _kappa_o_;  // kappa parameter of the DSM_o
   double _kappa_swing_c_; //kappa parameter of the DSM_swing_c_;
+  double _kappa_Tc_; //kappa parameter of the DSM_swing_c_;
+
   double _constant_dsm_;
   bool _enable_dsm_sT_;
   bool _enable_dsm_sw_;
@@ -162,6 +164,7 @@ private:
   bool _enable_dsm_w_;
   bool _enable_dsm_o_;
   bool _enable_dsm_swing_c_; //DSM for the swing angle of the cable transporting the payload. TODO set this via config file.
+  bool _enable_dsm_Tc_;
   double _T_min_; // lower saturation limit of total thrust
   double _extra_thrust_saturation_ratio_;
   int _DERG_strategy_id_;
@@ -460,7 +463,8 @@ private:
   double DSM_sw_; // for the (desired or actual) angular body rates 
   // finish added by bryan
   double DSM_swing_c_; //Dynamic Safety Margin for swing angle.
-  
+  double DSM_Tc_; //Dynamic Safety Margin for tension in the cable.
+
   double constraint_swing_c=0.9; //Rad //Hardcoded for now, ask bryan what to modify in constraint_manager.yaml. 
   // Static obstacle avoidance 
   double DSM_o_; // Dynamic Safety Margin for static obstacle avoidance
@@ -715,6 +719,7 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   param_loader2.loadParam("dynamic_safety_margin/kappa/w", _kappa_w_);
   param_loader2.loadParam("dynamic_safety_margin/kappa/o", _kappa_o_);
   param_loader2.loadParam("dynamic_safety_margin/kappa/swing_c", _kappa_swing_c_);
+  param_loader2.loadParam("dynamic_safety_margin/kappa/Tc", _kappa_Tc_);
   param_loader2.loadParam("dynamic_safety_margin/enable_dsm/constant_dsm", _constant_dsm_);
   param_loader2.loadParam("dynamic_safety_margin/enable_dsm/sT", _enable_dsm_sT_);
   param_loader2.loadParam("dynamic_safety_margin/enable_dsm/sw", _enable_dsm_sw_);
@@ -722,6 +727,7 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   param_loader2.loadParam("dynamic_safety_margin/enable_dsm/w", _enable_dsm_w_);
   param_loader2.loadParam("dynamic_safety_margin/enable_dsm/o", _enable_dsm_o_);
   param_loader2.loadParam("dynamic_safety_margin/enable_dsm/swing_c", _enable_dsm_swing_c_);
+  param_loader2.loadParam("dynamic_safety_margin/enable_dsm/Tc", _enable_dsm_Tc_);
   param_loader2.loadParam("constraints/total_thrust/min", _T_min_);
   param_loader2.loadParam("constraints/total_thrust/extra_saturation_ratio", _extra_thrust_saturation_ratio_);
   param_loader2.loadParam("strategy_id", _DERG_strategy_id_);
@@ -3974,7 +3980,7 @@ void DergbryanTracker::DERG_computation(){
      DSM_msg_.DSM_s = DSM_sT_;
 
 
-    if(_type_of_system_=="1uav_payload"&&payload_spawned_&&_enable_dsm_swing_c_){
+    if(_type_of_system_=="1uav_payload"&&payload_spawned_&&_enable_dsm_swing_c_){ //Swing angle DSM
       double diff_alpha_min=constraint_swing_c; //init the difference as the highest possible value
       for (size_t i = 0; i < _num_pred_samples_; i++) {
         double diff_alpha = constraint_swing_c - predicted_swing_angle_out_.poses[i].position.x;
@@ -3984,6 +3990,17 @@ void DergbryanTracker::DERG_computation(){
       }
       DSM_swing_c_=_kappa_swing_c_*diff_alpha_min;
       DSM_msg_.DSM_swing_c = DSM_swing_c_;
+    }
+
+    if(_type_of_system_=="1uav_payload"&&payload_spawned_&&_enable_dsm_Tc_){ // Tension cable DSM
+      double min_Tc=1000.0; //init at high value;
+      for (size_t i = 0; i < _num_pred_samples_; i++) {
+        if (predicted_Tc_out_.poses[i].position.x < min_Tc) { //if we find a lower value we store it
+        min_Tc = predicted_Tc_out_.poses[i].position.x;  //diff_alpha_min will be the minimal value we get over the whole prediction horizon.
+        }
+      }
+    DSM_Tc_=_kappa_Tc_*min_Tc;
+    DSM_msg_.DSM_Tc = DSM_Tc_;
     }
   }
   //ROS_INFO_STREAM("DSM_sT_ = \n" << DSM_sT_);
@@ -5314,6 +5331,10 @@ void DergbryanTracker::DERG_computation(){
   
   if((DSM_swing_c_ <= DSM_total_) && _enable_dsm_swing_c_ && payload_spawned_){
     DSM_total_ = DSM_swing_c_;
+  }
+
+  if((DSM_Tc_ <= DSM_total_) && _enable_dsm_Tc_ && payload_spawned_){
+    DSM_total_ = DSM_Tc_;
   }
 
   if((!_enable_dsm_sT_ && !_enable_dsm_sw_ && !_enable_dsm_a_) || (_constant_dsm_>=0.0)){ // if all of the DSMs are disabled or a positive cosntant DSM is added, TODO add other DSMs here
