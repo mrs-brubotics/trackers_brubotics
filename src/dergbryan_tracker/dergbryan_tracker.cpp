@@ -256,6 +256,7 @@ private:
   ros::Publisher predicted_theta_dot_dot_publisher_;         // predicted LOAD absolute cable-world theta angular acceleration (not encoder acceleration)
   ros::Publisher predicted_load_position_errors_publisher_;  // predicted LOAD position errors
   ros::Publisher predicted_swing_angle_publisher_;           // predicted LOAD swing angles relative to body frame (between cable -mu and -z_B )
+  ros::Publisher predicted_Tc_publisher_;                   // predicted LOAD tension in the cable, alongside mu
   //|------------------2UAVsLOAD------------------------|//
   // TODO: check after 1 UAV works
   // For communication between uav1 (leader) and uav2 (follower):
@@ -321,7 +322,8 @@ private:
   geometry_msgs::PoseArray predicted_theta_dot_dot;             // array of predicted LOAD absolute cable-world theta angular accelerations (not encoder accelerations)
   geometry_msgs::PoseArray predicted_load_position_errors_out;  // array of predicted LOAD position errors
   geometry_msgs::PoseArray predicted_swing_angle_out_;          // array of predicted LOAD swing angles relative to body frame (between cable -mu and -z_B )
-  // geometry_msgs::PoseArray predicted_tension_cabble_out_;    // TODO: array of Tension force Tc in cable, predictions
+  geometry_msgs::PoseArray predicted_Tc_out_;                  // array of predicted LOAD tension of the cable; alongside mu. If positive => tension, if negative => compression (to be avoided with ERG)
+
   //|-----------------------------2UAVsLOAD----------------------|//
   // TODO: check after 1 UAV works
   // transfer information of UAV2 to UAV1
@@ -822,6 +824,7 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   predicted_theta_dot_dot_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_theta_dot_dot", 1);
   predicted_load_position_errors_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_load_position_errors", 1); // The error vector of the load position, predicted.
   predicted_swing_angle_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_swing_angle", 1);
+  predicted_Tc_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_Tc", 1);
   // 2UAVsLOAD:
   // TODO: it is not good to explicitely use a uav id  (e.g., uav 1 , uav2) in the names as with the hardware (nuc and nimbro) you won't be able to choose the uav id (these are hardcoded in the nuc and must not be changed). There is just one "leader" (what you call uav1) and one "follower" (what you call uav2). I would advice to always use the highest priority uav as the leader. So do a check on _avoidance_other_uav_names_ defined above to see which uavs are defined and add an extra requirement that there may be at most 2 uavs specified in the list, else return a ROS_ERROR.
   predicted_uav1_poses_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav1_pose", 1);
@@ -1299,7 +1302,7 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
   predicted_load_position_errors_out.poses.clear();
   // predicted_tension_cabble_out_.poses.clear();
   predicted_swing_angle_out_.poses.clear();
-
+  predicted_Tc_out_.poses.clear();
   //-----------2UAV pred-----------//
   predicted_uav1_poses_out_.poses.clear();
   predicted_uav2_poses_out_.poses.clear();
@@ -3203,6 +3206,8 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
     // predicted_tension_cabble_out_.header.frame_id = uav_state_.header.frame_id;
     predicted_swing_angle_out_.header.stamp = uav_state_.header.stamp;
     predicted_swing_angle_out_.header.frame_id = uav_state_.header.frame_id;
+    predicted_Tc_out_.header.stamp = uav_state_.header.stamp;
+    predicted_Tc_out_.header.frame_id = uav_state_.header.frame_id;
 
   geometry_msgs::Pose custom_pose;
   geometry_msgs::Pose custom_vel;
@@ -3242,6 +3247,9 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
     //ERG : swing angle
     double swing_angle;
     geometry_msgs::Pose swing_angle_to_publish;
+
+    double Tc; //Tension in the cable
+    geometry_msgs::Pose Tc_to_publish;
     // }
   //
 
@@ -3585,15 +3593,18 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
       
       mu=(uav_position-load_pose_position).normalized();
       // ROS_INFO_STREAM("mu after norm"<<mu);
-      
       zB=R.col(2);
       // ROS_INFO_STREAM("zB"<<zB);
-
       swing_angle=acos((mu.dot(zB))/(mu.norm()*zB.norm())); //Compute this twist angle (positive only, between 0 and pi)
       // ROS_INFO_STREAM("swing_angle"<<swing_angle);
       swing_angle_to_publish.position.x=swing_angle;
       predicted_swing_angle_out_.poses.push_back(swing_angle_to_publish); 
 
+      //Compute tension in the cable
+      double mq= total_mass-_load_mass_;// Mass of the UAV
+      Tc=(-mq*acceleration_uav+mq*(Eigen::Vector3d(0, 0, -common_handlers_->g))+f).dot(mu.transpose());
+      Tc_to_publish.position.x=Tc;
+      predicted_Tc_out_.poses.push_back(Tc_to_publish); 
     }
     else{ //1UAV no payload equations
 
@@ -3770,6 +3781,13 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
   catch (...) {
     ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_swing_angle_publisher_.getTopic().c_str());
   }
+  try {
+  predicted_Tc_publisher_.publish(predicted_Tc_out_);
+  }
+  catch (...) {
+    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_Tc_publisher_.getTopic().c_str());
+  }
+  
   // try {
   //   tracker_load_pose_publisher_.publish(anchoring_pt_pose_position_);
   // }
