@@ -154,12 +154,17 @@ private:
   double _kappa_a_;
   double _kappa_w_;  // kappa parameter of the DSM_w
   double _kappa_o_;  // kappa parameter of the DSM_o
+  double _kappa_swing_c_; //kappa parameter of the DSM_swing_c_;
+  double _kappa_Tc_; //kappa parameter of the DSM_swing_c_;
+
   double _constant_dsm_;
   bool _enable_dsm_sT_;
   bool _enable_dsm_sw_;
   bool _enable_dsm_a_;
   bool _enable_dsm_w_;
   bool _enable_dsm_o_;
+  bool _enable_dsm_swing_c_; //DSM for the swing angle of the cable transporting the payload. TODO set this via config file.
+  bool _enable_dsm_Tc_;
   double _T_min_; // lower saturation limit of total thrust
   double _extra_thrust_saturation_ratio_;
   int _DERG_strategy_id_;
@@ -254,6 +259,7 @@ private:
   ros::Publisher predicted_theta_dot_dot_publisher_;         // predicted LOAD absolute cable-world theta angular acceleration (not encoder acceleration)
   ros::Publisher predicted_load_position_errors_publisher_;  // predicted LOAD position errors
   ros::Publisher predicted_swing_angle_publisher_;           // predicted LOAD swing angles relative to body frame (between cable -mu and -z_B )
+  ros::Publisher predicted_Tc_publisher_;                   // predicted LOAD tension in the cable, alongside mu
   //|------------------2UAVsLOAD------------------------|//
   // TODO: check after 1 UAV works
   // For communication between uav1 (leader) and uav2 (follower):
@@ -319,7 +325,8 @@ private:
   geometry_msgs::PoseArray predicted_theta_dot_dot;             // array of predicted LOAD absolute cable-world theta angular accelerations (not encoder accelerations)
   geometry_msgs::PoseArray predicted_load_position_errors_out;  // array of predicted LOAD position errors
   geometry_msgs::PoseArray predicted_swing_angle_out_;          // array of predicted LOAD swing angles relative to body frame (between cable -mu and -z_B )
-  // geometry_msgs::PoseArray predicted_tension_cabble_out_;    // TODO: array of Tension force Tc in cable, predictions
+  geometry_msgs::PoseArray predicted_Tc_out_;                  // array of predicted LOAD tension of the cable; alongside mu. If positive => tension, if negative => compression (to be avoided with ERG)
+
   //|-----------------------------2UAVsLOAD----------------------|//
   // TODO: check after 1 UAV works
   // transfer information of UAV2 to UAV1
@@ -455,6 +462,10 @@ private:
   double DSM_sT_; // Dynamic Safety Margin for total thrust saturation
   double DSM_sw_; // for the (desired or actual) angular body rates 
   // finish added by bryan
+  double DSM_swing_c_; //Dynamic Safety Margin for swing angle.
+  double DSM_Tc_; //Dynamic Safety Margin for tension in the cable.
+
+  double constraint_swing_c=0.9; //Rad //Hardcoded for now, ask bryan what to modify in constraint_manager.yaml. 
   // Static obstacle avoidance 
   double DSM_o_; // Dynamic Safety Margin for static obstacle avoidance
   // wall avoidance 
@@ -707,12 +718,16 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   param_loader2.loadParam("dynamic_safety_margin/kappa/a", _kappa_a_);
   param_loader2.loadParam("dynamic_safety_margin/kappa/w", _kappa_w_);
   param_loader2.loadParam("dynamic_safety_margin/kappa/o", _kappa_o_);
+  param_loader2.loadParam("dynamic_safety_margin/kappa/swing_c", _kappa_swing_c_);
+  param_loader2.loadParam("dynamic_safety_margin/kappa/Tc", _kappa_Tc_);
   param_loader2.loadParam("dynamic_safety_margin/enable_dsm/constant_dsm", _constant_dsm_);
   param_loader2.loadParam("dynamic_safety_margin/enable_dsm/sT", _enable_dsm_sT_);
   param_loader2.loadParam("dynamic_safety_margin/enable_dsm/sw", _enable_dsm_sw_);
   param_loader2.loadParam("dynamic_safety_margin/enable_dsm/a", _enable_dsm_a_);
   param_loader2.loadParam("dynamic_safety_margin/enable_dsm/w", _enable_dsm_w_);
   param_loader2.loadParam("dynamic_safety_margin/enable_dsm/o", _enable_dsm_o_);
+  param_loader2.loadParam("dynamic_safety_margin/enable_dsm/swing_c", _enable_dsm_swing_c_);
+  param_loader2.loadParam("dynamic_safety_margin/enable_dsm/Tc", _enable_dsm_Tc_);
   param_loader2.loadParam("constraints/total_thrust/min", _T_min_);
   param_loader2.loadParam("constraints/total_thrust/extra_saturation_ratio", _extra_thrust_saturation_ratio_);
   param_loader2.loadParam("strategy_id", _DERG_strategy_id_);
@@ -815,6 +830,7 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   predicted_theta_dot_dot_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_theta_dot_dot", 1);
   predicted_load_position_errors_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_load_position_errors", 1); // The error vector of the load position, predicted.
   predicted_swing_angle_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_swing_angle", 1);
+  predicted_Tc_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_Tc", 1);
   // 2UAVsLOAD:
   // TODO: it is not good to explicitely use a uav id  (e.g., uav 1 , uav2) in the names as with the hardware (nuc and nimbro) you won't be able to choose the uav id (these are hardcoded in the nuc and must not be changed). There is just one "leader" (what you call uav1) and one "follower" (what you call uav2). I would advice to always use the highest priority uav as the leader. So do a check on _avoidance_other_uav_names_ defined above to see which uavs are defined and add an extra requirement that there may be at most 2 uavs specified in the list, else return a ROS_ERROR.
   predicted_uav1_poses_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav1_pose", 1);
@@ -1292,7 +1308,7 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
   predicted_load_position_errors_out.poses.clear();
   // predicted_tension_cabble_out_.poses.clear();
   predicted_swing_angle_out_.poses.clear();
-
+  predicted_Tc_out_.poses.clear();
   //-----------2UAV pred-----------//
   predicted_uav1_poses_out_.poses.clear();
   predicted_uav2_poses_out_.poses.clear();
@@ -3196,6 +3212,8 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
     // predicted_tension_cabble_out_.header.frame_id = uav_state_.header.frame_id;
     predicted_swing_angle_out_.header.stamp = uav_state_.header.stamp;
     predicted_swing_angle_out_.header.frame_id = uav_state_.header.frame_id;
+    predicted_Tc_out_.header.stamp = uav_state_.header.stamp;
+    predicted_Tc_out_.header.frame_id = uav_state_.header.frame_id;
 
   geometry_msgs::Pose custom_pose;
   geometry_msgs::Pose custom_vel;
@@ -3235,6 +3253,9 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
     //ERG : swing angle
     double swing_angle;
     geometry_msgs::Pose swing_angle_to_publish;
+
+    double Tc; //Tension in the cable
+    geometry_msgs::Pose Tc_to_publish;
     // }
   //
 
@@ -3578,15 +3599,18 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
       
       mu=(uav_position-load_pose_position).normalized();
       // ROS_INFO_STREAM("mu after norm"<<mu);
-      
       zB=R.col(2);
       // ROS_INFO_STREAM("zB"<<zB);
-
       swing_angle=acos((mu.dot(zB))/(mu.norm()*zB.norm())); //Compute this twist angle (positive only, between 0 and pi)
       // ROS_INFO_STREAM("swing_angle"<<swing_angle);
       swing_angle_to_publish.position.x=swing_angle;
       predicted_swing_angle_out_.poses.push_back(swing_angle_to_publish); 
 
+      //Compute tension in the cable
+      double mq= total_mass-_load_mass_;// Mass of the UAV
+      Tc=(-mq*acceleration_uav+mq*(Eigen::Vector3d(0, 0, -common_handlers_->g))+f).dot(mu.transpose());
+      Tc_to_publish.position.x=Tc;
+      predicted_Tc_out_.poses.push_back(Tc_to_publish); 
     }
     else{ //1UAV no payload equations
 
@@ -3763,6 +3787,13 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
   catch (...) {
     ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_swing_angle_publisher_.getTopic().c_str());
   }
+  try {
+  predicted_Tc_publisher_.publish(predicted_Tc_out_);
+  }
+  catch (...) {
+    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_Tc_publisher_.getTopic().c_str());
+  }
+  
   // try {
   //   tracker_load_pose_publisher_.publish(anchoring_pt_pose_position_);
   // }
@@ -3947,6 +3978,30 @@ void DergbryanTracker::DERG_computation(){
     }
     DSM_sT_ = _kappa_sT_*diff_T/(0.5*(thrust_saturation_physical_ - _T_min_)); // scaled DSM in _kappa_sT_*[0, 1] from the average between the lower and upper limit to the respective limits
      DSM_msg_.DSM_s = DSM_sT_;
+
+
+    if(_type_of_system_=="1uav_payload"&&payload_spawned_&&_enable_dsm_swing_c_){ //Swing angle DSM
+      double diff_alpha_min=constraint_swing_c; //init the difference as the highest possible value
+      for (size_t i = 0; i < _num_pred_samples_; i++) {
+        double diff_alpha = constraint_swing_c - predicted_swing_angle_out_.poses[i].position.x;
+        if (diff_alpha < diff_alpha_min) { //if we find a lower value we store it
+        diff_alpha_min = diff_alpha;  //diff_alpha_min will be the minimal value we get over the whole prediction horizon.
+        }
+      }
+      DSM_swing_c_=_kappa_swing_c_*diff_alpha_min;
+      DSM_msg_.DSM_swing_c = DSM_swing_c_;
+    }
+
+    if(_type_of_system_=="1uav_payload"&&payload_spawned_&&_enable_dsm_Tc_){ // Tension cable DSM
+      double min_Tc=1000.0; //init at high value;
+      for (size_t i = 0; i < _num_pred_samples_; i++) {
+        if (predicted_Tc_out_.poses[i].position.x < min_Tc) { //if we find a lower value we store it
+        min_Tc = predicted_Tc_out_.poses[i].position.x;  //diff_alpha_min will be the minimal value we get over the whole prediction horizon.
+        }
+      }
+    DSM_Tc_=_kappa_Tc_*min_Tc;
+    DSM_msg_.DSM_Tc = DSM_Tc_;
+    }
   }
   //ROS_INFO_STREAM("DSM_sT_ = \n" << DSM_sT_);
 
@@ -5272,6 +5327,14 @@ void DergbryanTracker::DERG_computation(){
 
   if((DSM_a_ <= DSM_total_) && _enable_dsm_a_){
     DSM_total_ = DSM_a_;
+  }
+  
+  if((DSM_swing_c_ <= DSM_total_) && _enable_dsm_swing_c_ && payload_spawned_){
+    DSM_total_ = DSM_swing_c_;
+  }
+
+  if((DSM_Tc_ <= DSM_total_) && _enable_dsm_Tc_ && payload_spawned_){
+    DSM_total_ = DSM_Tc_;
   }
 
   if((!_enable_dsm_sT_ && !_enable_dsm_sw_ && !_enable_dsm_a_) || (_constant_dsm_>=0.0)){ // if all of the DSMs are disabled or a positive cosntant DSM is added, TODO add other DSMs here
