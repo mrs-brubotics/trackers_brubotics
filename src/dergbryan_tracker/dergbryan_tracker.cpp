@@ -5723,21 +5723,18 @@ std::tuple< Eigen::Vector3d, Eigen::Vector3d> DergbryanTracker::getMinDistDirLin
 // | ----------------- load subscribtion callback ---------------- |
 // TODO: streamline, account for prev comments and document the load callbacks below
 void DergbryanTracker::loadStatesCallback(const gazebo_msgs::LinkStatesConstPtr& loadmsg) {
-  //if (!starting_bool_){//is_initialized_, is_active_
-    //ROS_INFO_THROTTLE(500.0,"[DergbryanTracker]: start of callback");
     // TODO: this function needs a big clean and more comments. It is also not clear how the load model is differently used for 1 vs 2 uavs.
     // TODO: change variable names as defined before using 3 types of dynamic models
     // TODO: explain the link_names
     // TODO: moreover, as this callabck changes global load state variables at asynchronous and higher rates than the tracker update function, one needs to ensure that the global variables used for the state are always the same everywhere (avoid using different global information as the update function is sequentially executed). For this I think at the start of the update function one can "freeze" those global variables. So create 2 sets of global load variables and use everywhere except in this callabck the frozen variables.
 
-    //This callback function is only triggered when doing simulation, and will be used to unpack the data coming from the Gazebo topics.
-    // Everything is called
-    int anchoring_pt_index; //Will be used to store the index at which the payload appears in the message that is received from Gazebo. 
+    // This callback function is only triggered when doing simulation, and will be used to unpack the data coming from the Gazebo topics.
+    int anchoring_pt_index; // Stores the index at which the anchoring point appears in the message that is received from Gazebo. 
     std::vector<std::string> link_names = loadmsg->name; // Take a vector containing the name of each link in the simulation. Among these there is the links that are related to the payload. 
     for(size_t i = 0; i < link_names.size(); i++){ // Go through all the link names
 
       if (_type_of_system_ == "1uav_payload"){
-        if(link_names[i] == "bar::link_01"){ //link_01 is the point mass payload link. When the link_name correspond to the one of the payload, defined in the URDF/xacro files of the testing folder.
+        if(link_names[i] == "bar::link_01"){ //link_01 is the point mass payload link. When the link_name corresponds to the one of the payload, defined in the URDF/xacro files of the testing folder.
           anchoring_pt_index = i; //Store the index of the name, as it will be used as the index to access all the states of this link, in the loadmsg later.
           payload_spawned_ = true; //Notify that the payload has spawned. This will only be triggered once, and allow predictions to start.
         }
@@ -5770,9 +5767,8 @@ void DergbryanTracker::loadStatesCallback(const gazebo_msgs::LinkStatesConstPtr&
     anchoring_pt_lin_vel_[2]= anchoring_pt_velocity_.linear.z;
 
   //-------------------------------------------------//
-    // if we don't print something, we get an error. TODO: figure out why, see emails with Raphael.
-    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: publish this here or you get strange error");
-  //} 
+  // if we don't print something, we get an error. TODO: figure out why, see emails with Raphael.
+  ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: publish this here or you get strange error");
 }
 
 // TODO: document this callback
