@@ -376,14 +376,14 @@ private:
   //|------------------------LOAD-----------------------------|//
   // TODO: the subscriber names below (load_state_sub_ & data_payload_sub_) are not chosen well. Why not using a common name and add simulation and uav?
   ros::Subscriber load_state_sub_;
-  void loadStatesCallback(const gazebo_msgs::LinkStatesConstPtr& loadmsg); // TODO: document
+  void GazeboLoadStatesCallback(const gazebo_msgs::LinkStatesConstPtr& loadmsg); // TODO: document
   bool payload_spawned_ = false;                             // TODO: document
   geometry_msgs::Pose anchoring_pt_pose_;                    // anchoring point/payload pose 
   Eigen::Vector3d anchoring_pt_pose_position_ = Eigen::Vector3d::Zero(3); // TODO why must it be inititliazed to zero here?
   geometry_msgs::Twist anchoring_pt_velocity_;               // anchoring point/payload velocity 
   Eigen::Vector3d anchoring_pt_lin_vel_ = Eigen::Vector3d::Zero(3); // TODO why must it be inititliazed to zero here?
   ros::Subscriber data_payload_sub_;
-  void BacaCallback(const mrs_msgs::BacaProtocolConstPtr& msg);            // TODO: document
+  void BacaLoadStatesCallback(const mrs_msgs::BacaProtocolConstPtr& msg);            // TODO: document
   // TODO: unclear names used for these global variables, change names and add documentation
   float encoder_angle_1_;
   float encoder_angle_2_;
@@ -896,11 +896,11 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   // this uav subscribes to own (i.e., of this uav) load states:
   // TODO: this block was initially placed in update function above "get the current heading". Replacing it here, it works in sim, but to be tested on hardware. 
   if (_run_type_ == "simulation"){ // subscriber of the gazebo simulation
-    load_state_sub_ =  nh_.subscribe("/gazebo/link_states", 1, &DergbryanTracker::loadStatesCallback, this, ros::TransportHints().tcpNoDelay());
+    load_state_sub_ =  nh_.subscribe("/gazebo/link_states", 1, &DergbryanTracker::GazeboLoadStatesCallback, this, ros::TransportHints().tcpNoDelay());
   }
   else if (_run_type_ == "uav"){ // subscriber of the hardware encoders
     std::string slash = "/";
-    data_payload_sub_ = nh_.subscribe(slash.append(_uav_name_.append("/serial/received_message")), 1, &DergbryanTracker::BacaCallback, this, ros::TransportHints().tcpNoDelay()); // TODO: explain how this is used for 2 uav hardware
+    data_payload_sub_ = nh_.subscribe(slash.append(_uav_name_.append("/serial/received_message")), 1, &DergbryanTracker::BacaLoadStatesCallback, this, ros::TransportHints().tcpNoDelay()); // TODO: explain how this is used for 2 uav hardware
   }
   else{ // undefined
     ROS_ERROR("[DergbryanTracker]: undefined _run_type_ used!");
@@ -5791,32 +5791,28 @@ std::tuple< Eigen::Vector3d, Eigen::Vector3d> DergbryanTracker::getMinDistDirLin
 // | ---------------------------LOAD----------------------------------------------- | 
 // | ----------------- load subscribtion callback ---------------- |
 // TODO: streamline, account for prev comments and document the load callbacks below
-void DergbryanTracker::loadStatesCallback(const gazebo_msgs::LinkStatesConstPtr& loadmsg) {
-    // TODO: this function needs a big clean and more comments. It is also not clear how the load model is differently used for 1 vs 2 uavs.
-    // TODO: change variable names as defined before using 3 types of dynamic models
-    // TODO: explain the link_names
+void DergbryanTracker::GazeboLoadStatesCallback(const gazebo_msgs::LinkStatesConstPtr& loadmsg) {
     // TODO: moreover, as this callabck changes global load state variables at asynchronous and higher rates than the tracker update function, one needs to ensure that the global variables used for the state are always the same everywhere (avoid using different global information as the update function is sequentially executed). For this I think at the start of the update function one can "freeze" those global variables. So create 2 sets of global load variables and use everywhere except in this callabck the frozen variables.
-
     // This callback function is only triggered when doing simulation, and will be used to unpack the data coming from the Gazebo topics.
     int anchoring_pt_index; // Stores the index at which the anchoring point appears in the message that is received from Gazebo. 
     std::vector<std::string> link_names = loadmsg->name; // Take a vector containing the name of each link in the simulation. Among these there is the links that are related to the payload. 
     for(size_t i = 0; i < link_names.size(); i++){ // Go through all the link names
 
       if (_type_of_system_ == "1uav_payload"){
-        if(link_names[i] == "bar::link_01"){ //link_01 is the point mass payload link. When the link_name corresponds to the one of the payload, defined in the URDF/xacro files of the testing folder.
+        if(link_names[i] == "point_mass::link_01"){ //link_01 is the point mass payload link (see mass_point.xacro). When the link_name corresponds to the one of the payload, defined in simulation/models/suspended_payload xacro files of the testing folder.
           anchoring_pt_index = i; //Store the index of the name, as it will be used as the index to access all the states of this link, in the loadmsg later.
-          payload_spawned_ = true; //Notify that the payload has spawned. This will only be triggered once, and allow predictions to start.
+          payload_spawned_ = true; //Notify that the payload has spawned. This will only be triggered once and allow predictions to start.
         }
       }
-      if (_type_of_system_ == "2uavs_payload"){ // 2UAV transporting beam payload case. Need to return different link if this UAV is the uav1 or 2. 
+      if (_type_of_system_ == "2uavs_payload"){ // 2UAVs transporting beam payload case. Need to return different link if this UAV is the uav1 or 2. 
         if (_uav_name_=="uav1"){
-          if(link_names[i] == "bar::link_04"){ //link_04 correspond to the anchoring point of uav1
+          if(link_names[i] == "bar::link_04"){ //link_04 corresponds to the anchoring point of uav1 (see bar.xacro)
               anchoring_pt_index = i;
               payload_spawned_ = true;
           }
         }
         else if (_uav_name_=="uav2") { // for uav2
-          if(link_names[i] == "bar::link_01"){ //link_01 correspond to the anchoring point of uav1
+          if(link_names[i] == "bar::link_01"){ //link_01 corresponds to the anchoring point of uav1 (see bar.xacro)
               anchoring_pt_index = i;
               payload_spawned_ = true;
           }
@@ -5830,18 +5826,20 @@ void DergbryanTracker::loadStatesCallback(const gazebo_msgs::LinkStatesConstPtr&
     anchoring_pt_pose_position_[2] = anchoring_pt_pose_.position.z;
 
     anchoring_pt_velocity_ = loadmsg->twist[anchoring_pt_index];
-    // TODO: why only the linear velocity of the load is required and what about rotational velocity in the case of beam load used in 2UAV model? THis is anchoring point, it will be used to deduce rot velocity of the beam in the first iteration of the prediction
+    // This is anchoring point linear velocity, it will be used to deduce rotational velocity of the beam in the first iteration of the prediction
     anchoring_pt_lin_vel_[0]= anchoring_pt_velocity_.linear.x;
     anchoring_pt_lin_vel_[1]= anchoring_pt_velocity_.linear.y;
     anchoring_pt_lin_vel_[2]= anchoring_pt_velocity_.linear.z;
 
+    // TODO: if we want to measure other variables (e.g., 2uav bar load COM linear and rotatinal velocity)
   //-------------------------------------------------//
   // if we don't print something, we get an error. TODO: figure out why, see emails with Raphael.
   ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: publish this here or you get strange error");
 }
 
-// TODO: document this callback
-  void DergbryanTracker::BacaCallback(const mrs_msgs::BacaProtocolConstPtr& msg) {
+// TODO: document and test if this works on hardware
+// TODO: combine with BacaLoadStatesCallback of controller as (almost) same code
+  void DergbryanTracker::BacaLoadStatesCallback(const mrs_msgs::BacaProtocolConstPtr& msg) {
     int message_id;
     int payload_1;
     int payload_2;
