@@ -113,7 +113,7 @@ private:
   std::string _run_type_;       // set to "simulation" (for Gazebo simulation) OR "uav" (for hardware testing) defined in bashrc or session.yaml. Used for payload transport as payload position comes from two different callbacks depending on how the test is ran (in sim or on real UAV).
   std::string _type_of_system_; // defines the dynamic system model to simulate in the prediction using the related controller: can be 1uav_no_payload, 1uav_payload or 2uavs_payload. Set in session.yaml file.
   double _cable_length_;        // length of the cable between payload COM / anchoring point and COM of the UAV
-  double _load_mass_;           // feedforward load mass defined in the session.yaml of every test file (session variable also used by the xacro for Gazebo simulation)
+  double _load_mass_;           // feedforward load mass per uav  defined in the session.yaml of every test file (session variable also used by the xacro for Gazebo simulation)
   
   // | ------------------- declaring .yaml parameters ------------------- |
   // Se3CopyController:
@@ -650,7 +650,12 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   _type_of_system_    = getenv("TYPE_OF_SYSTEM"); 
   if(_type_of_system_=="1uav_payload" || _type_of_system_=="2uavs_payload"){ // load the required load transportation paramters only if the test is configured for it
     _cable_length_      = std::stod(getenv("CABLE_LENGTH")); 
-    _load_mass_         = std::stod(getenv("LOAD_MASS")); 
+    if (_type_of_system_=="1uav_payload"){
+      _load_mass_         = std::stod(getenv("LOAD_MASS")); // LOAD_MASS is the total load mass of the to be transported object
+    }
+    else if (_type_of_system_=="2uavs_payload"){ 
+      _load_mass_ = 0.50 * std::stod(getenv("LOAD_MASS")); // in case of 2uavs, each uav takes only half of the total load
+    } 
   }
   ROS_INFO("[DergbryanTracker]: finished loading environment (session/bashrc) parameters");
 
@@ -1965,7 +1970,7 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
 
   double m1=uav_mass_;//estimated mass of the UAV1, updated in the update function. 
   double m2=uav_mass_;
-  double ml= _load_mass_*2.0; //As the _load_mass_ value exported in session file is half of the payload. As this is the value used in controller to control the anchoring point position.
+  double ml= _load_mass_*2.0; //As the _load_mass_ is half of the payload. As this is the value used in controller to control the anchoring point position.
   double d1=0.75;
   double d2=-0.75; //todo make these two modified in session file as for the load mass and other parameters that might vary.
 
