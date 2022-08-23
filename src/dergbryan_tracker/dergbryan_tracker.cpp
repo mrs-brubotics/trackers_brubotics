@@ -114,7 +114,7 @@ private:
   std::string _type_of_system_; // defines the dynamic system model to simulate in the prediction using the related controller: can be 1uav_no_payload, 1uav_payload or 2uavs_payload. Set in session.yaml file.
   double _cable_length_;        // length of the cable between payload COM / anchoring point and COM of the UAV
   double _load_mass_;           // feedforward load mass per uav  defined in the session.yaml of every test file (session variable also used by the xacro for Gazebo simulation)
-  
+  double _load_length_;         // length of bar load transported by 2uavs
   // | ------------------- declaring .yaml parameters ------------------- |
   // Se3CopyController:
   std::string _version_;
@@ -655,6 +655,7 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
     }
     else if (_type_of_system_=="2uavs_payload"){ 
       _load_mass_ = 0.50 * std::stod(getenv("LOAD_MASS")); // in case of 2uavs, each uav takes only half of the total load
+      _load_length_ = std::stod(getenv("LOAD_LENGTH"));
     } 
   }
   ROS_INFO("[DergbryanTracker]: finished loading environment (session/bashrc) parameters");
@@ -1971,8 +1972,8 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
   double m1=uav_mass_;//estimated mass of the UAV1, updated in the update function. 
   double m2=uav_mass_;
   double ml= _load_mass_*2.0; //As the _load_mass_ is half of the payload. As this is the value used in controller to control the anchoring point position.
-  double d1=0.75;
-  double d2=-0.75; //todo make these two modified in session file as for the load mass and other parameters that might vary.
+  double d1=_load_length_/2.0;
+  double d2=-_load_length_/2.0;
 
 
   // Eigen::MatrixXd x_full_state = Eigen::MatrixXd(5, 5);
