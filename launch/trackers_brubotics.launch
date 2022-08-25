@@ -9,7 +9,6 @@
 <arg name="custom_config_mpc_copy_tracker" default="" />
 <!-- <arg name="custom_config_bypass_tracker" default="" /> -->
 <arg name="custom_config_dergbryan_tracker" default="" />
-<arg name="custom_config_dergPm_tracker" default="" />
 <arg name="custom_config_uav_names" default="" />
 
 
@@ -44,12 +43,6 @@
 <param name="$(env UAV_NAME)/control_manager/dergbryan_tracker/enable_profiler" type="bool" value="$(arg PROFILER)" />
 <remap from="~$(env UAV_NAME)/control_manager/dergbryan_tracker/profiler" to="profiler" />
 
-<!-- dergPm_tracker -->
-<rosparam ns="$(env UAV_NAME)/control_manager/dergPm_tracker" file="$(find trackers_brubotics)/config/default/dergPm_tracker.yaml" />
-<rosparam ns="$(env UAV_NAME)/control_manager/dergPm_tracker" file="$(find trackers_brubotics)/config/$(arg RUN_TYPE)/$(arg UAV_TYPE)/dergPm_tracker.yaml" />
-<rosparam if="$(eval not arg('custom_config_dergPm_tracker') == '')" ns="$(env UAV_NAME)/control_manager/dergPm_tracker" file="$(arg custom_config_dergPm_tracker)" />
-<param name="$(env UAV_NAME)/control_manager/dergPm_tracker/enable_profiler" type="bool" value="$(arg PROFILER)" />
-<remap from="~$(env UAV_NAME)/control_manager/dergPm_tracker/profiler" to="profiler" />
 
 <!-- Address loading -->
 <rosparam ns="$(env UAV_NAME)/control_manager" file="$(find trackers_brubotics)/config/address.yaml" />

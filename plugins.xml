@@ -15,9 +15,3 @@
     <description>This is the DergbryanTracker which is an implementation of the Distributed Explicit Reference Governor.</description>
   </class>
 </library>
-
-<library path="lib/libDergPmTracker">
-  <class name="trackers_brubotics/DergPmTracker" type="mrs_uav_trackers::dergPm_tracker::DergPmTracker" base_class_type="mrs_uav_managers::Tracker">
-    <description>Modification of DergbryanTracker to account for the load.</description>
-  </class>
-</library>

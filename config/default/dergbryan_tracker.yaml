@@ -14,6 +14,8 @@ constraints:
     min: 0.0
     # max thrust can be changed via _thrust_saturation_ ratio [0, 1] in the se3_brubotics.yaml
     extra_saturation_ratio: 0.92 #0.90 # ratio [0, 1] allows some overshoot over the hard thrust limit _thrust_saturation_ to reduce the chance of triggering the emergency controller after 1s of saturation
+  payload:
+    swing: 1.72787596 # rad, max swing angle
   # other constraints need to be set in the constraint_manager.yaml
 
 #TODO bring strategy_id inside agent collision constraints under constraints
@@ -38,8 +40,8 @@ dynamic_safety_margin: # BE CAREFUL!
     a: 27 #27 # 10 15 20 25 # agent collision avoidance
     w: 27
     o: 27 
-    swinc_c: 1.0
-    Tc: 1.0
+    swinc_c: 15.0
+    Tc: 15.0
   enable_dsm:
     constant_dsm: -1.0 # 10 # used dsm if all dsms below are disabled or if the value is >= 0.0
     sT: true

@@ -100,7 +100,7 @@ public:
   Eigen::Vector3d calcCirculationField(std::string type, double dist_x, double dist_y, double dist_z, double dist);
   double getLambda(Eigen::Vector3d &point_link_0, Eigen::Vector3d &point_link_1, Eigen::Vector3d &point_sphere);
   std::tuple< Eigen::Vector3d, Eigen::Vector3d> getMinDistDirLineSegments(Eigen::Vector3d &point0_link0, Eigen::Vector3d &point1_link0, Eigen::Vector3d &point0_link1, Eigen::Vector3d &point1_link1);
-  std::tuple< double, Eigen::Vector3d, double>  SimulateSe3CopyController(const mrs_msgs::UavState uavi_state, Eigen::Matrix3d uavi_R, Eigen::Vector3d Payloadposition_vector, Eigen::Vector3d Payloadvelocity_vector,mrs_msgs::PositionCommand uavi_position_cmd ,Eigen::Vector3d uavi_Rp,Eigen::Vector3d uavi_Rv,Eigen::Vector3d uavi_Rpl,Eigen::Vector3d uavi_Ra);
+  std::tuple< double, Eigen::Vector3d, double>  ComputeSe3CopyController(const mrs_msgs::UavState uavi_state, Eigen::Matrix3d uavi_R, Eigen::Vector3d Payloadposition_vector, Eigen::Vector3d Payloadvelocity_vector,mrs_msgs::PositionCommand uavi_position_cmd ,Eigen::Vector3d uavi_Rp,Eigen::Vector3d uavi_Rv,Eigen::Vector3d uavi_Rpl,Eigen::Vector3d uavi_Ra);
   void publish_Payload_data_slave_for_2UAV_payload_predictions(mrs_msgs::PositionCommand position_cmd);
   void do_predictions(mrs_msgs::PositionCommand position_cmd, double uav_heading, const mrs_msgs::AttitudeCommand::ConstPtr &last_attitude_cmd); //mother function that calls the correct prediction function depending on the cases.
 private:
@@ -167,6 +167,8 @@ private:
   bool _enable_dsm_Tc_;
   double _T_min_; // lower saturation limit of total thrust
   double _extra_thrust_saturation_ratio_;
+  double _constraint_swing_c_; // rad, swing angle constaint payload
+
   int _DERG_strategy_id_;
   bool _use_distance_xy_;
   // TODO bryan: clean comments below
@@ -318,15 +320,15 @@ private:
   geometry_msgs::PoseArray predicted_load_poses_out_;           // array of predicted LOAD poses
   geometry_msgs::PoseArray predicted_load_velocities_out_;      // array of predicted LOAD velocities
   geometry_msgs::PoseArray predicted_load_accelerations_out_;   // array of predicted LOAD accelerations
-  geometry_msgs::PoseArray predicted_phi;                       // array of predicted LOAD absolute cable-world phi angles (not encoder angles)
-  geometry_msgs::PoseArray predicted_theta;                     // array of predicted LOAD absolute cable-world theta angles (not encoder angles)
-  geometry_msgs::PoseArray predicted_phi_dot;                   // array of predicted LOAD absolute cable-world phi angular velocities (not encoder velocities)
-  geometry_msgs::PoseArray predicted_theta_dot;                 // array of predicted LOAD absolute cable-world theta angular velocities (not encoder velocities)
-  geometry_msgs::PoseArray predicted_phi_dot_dot;               // array of predicted LOAD absolute cable-world phi angular accelerations (not encoder accelerations)
-  geometry_msgs::PoseArray predicted_theta_dot_dot;             // array of predicted LOAD absolute cable-world theta angular accelerations (not encoder accelerations)
-  geometry_msgs::PoseArray predicted_load_position_errors_out;  // array of predicted LOAD position errors
+  geometry_msgs::PoseArray predicted_phi_out_;                  // array of predicted LOAD absolute cable-world phi angles (not encoder angles)
+  geometry_msgs::PoseArray predicted_theta_out_;                // array of predicted LOAD absolute cable-world theta angles (not encoder angles)
+  geometry_msgs::PoseArray predicted_phi_dot_out_;              // array of predicted LOAD absolute cable-world phi angular velocities (not encoder velocities)
+  geometry_msgs::PoseArray predicted_theta_dot_out_;            // array of predicted LOAD absolute cable-world theta angular velocities (not encoder velocities)
+  geometry_msgs::PoseArray predicted_phi_dot_dot_out_;          // array of predicted LOAD absolute cable-world phi angular accelerations (not encoder accelerations)
+  geometry_msgs::PoseArray predicted_theta_dot_dot_out_;        // array of predicted LOAD absolute cable-world theta angular accelerations (not encoder accelerations)
+  geometry_msgs::PoseArray predicted_load_position_errors_out_; // array of predicted LOAD position errors
   geometry_msgs::PoseArray predicted_swing_angle_out_;          // array of predicted LOAD swing angles relative to body frame (between cable -mu and -z_B )
-  geometry_msgs::PoseArray predicted_Tc_out_;                  // array of predicted LOAD tension of the cable; alongside mu. If positive => tension, if negative => compression (to be avoided with ERG)
+  geometry_msgs::PoseArray predicted_Tc_out_;                   // array of predicted LOAD tension of the cable; alongside mu. If positive => tension, if negative => compression (to be avoided with ERG)
 
   //|-----------------------------2UAVsLOAD----------------------|//
   // TODO: check after 1 UAV works
@@ -466,7 +468,7 @@ private:
   double DSM_swing_c_; //Dynamic Safety Margin for swing angle.
   double DSM_Tc_; //Dynamic Safety Margin for tension in the cable.
 
-  double constraint_swing_c=0.9; //Rad //Hardcoded for now, ask bryan what to modify in constraint_manager.yaml. 
+  
   // Static obstacle avoidance 
   double DSM_o_; // Dynamic Safety Margin for static obstacle avoidance
   // wall avoidance 
@@ -494,8 +496,8 @@ private:
   Eigen::Vector3d rel_load_pose_position = Eigen::Vector3d::Zero(3);
   Eigen::Vector3d Difference_load_drone_position = Eigen::Vector3d::Zero(3);
 
-  bool remove_offset_ = true; // As the payload never spawn exactly below the COM of the UAV. This offset is taken out based on the error on the first instant of the controller. TODORAPHAEL : Needed in tracker ? OR only in controller???
-  Eigen::Vector3d load_pose_position_offset_ = Eigen::Vector3d::Zero(3);// The value of the offset is stored in this global var.
+  //bool remove_offset_ = true; // As the payload never spawn exactly below the COM of the UAV. This offset is taken out based on the error on the first instant of the controller. TODORAPHAEL : Needed in tracker ? OR only in controller???
+  //Eigen::Vector3d load_pose_position_offset_ = Eigen::Vector3d::Zero(3);// The value of the offset is stored in this global var.
 
   //|-----------------UAV2 informations received to do predictions of 2UAV+beam system inside the tracker of UAV1--------|//
   trackers_brubotics::DSM DSM_msg_;
@@ -656,7 +658,16 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
     else if (_type_of_system_=="2uavs_payload"){ 
       _load_mass_ = 0.50 * std::stod(getenv("LOAD_MASS")); // in case of 2uavs, each uav takes only half of the total load
       _load_length_ = std::stod(getenv("LOAD_LENGTH"));
-    } 
+    }
+    // Sanity checks:
+    if(_cable_length_ <=0){
+      ROS_ERROR("[DergbryanTracker]: _cable_length_ <=0, use a value > 0!");
+      ros::requestShutdown();
+    }
+    if(_load_mass_<=0){
+      ROS_ERROR("[DergbryanTracker]: _load_mass_ <=0, use a value > 0!");
+      ros::requestShutdown();
+    }
   }
   ROS_INFO("[DergbryanTracker]: finished loading environment (session/bashrc) parameters");
 
@@ -736,6 +747,7 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   param_loader2.loadParam("dynamic_safety_margin/enable_dsm/Tc", _enable_dsm_Tc_);
   param_loader2.loadParam("constraints/total_thrust/min", _T_min_);
   param_loader2.loadParam("constraints/total_thrust/extra_saturation_ratio", _extra_thrust_saturation_ratio_);
+  param_loader2.loadParam("constraints/payload/swing", _constraint_swing_c_);
   param_loader2.loadParam("strategy_id", _DERG_strategy_id_);
   param_loader2.loadParam("use_distance_xy", _use_distance_xy_);
   param_loader2.loadParam("agent_collision_volumes/sphere/radius", _Sa_max_);
@@ -1088,6 +1100,7 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
     position_cmd.position.z     = goal_z_;
     position_cmd.heading        = goal_heading_;
 
+    // Currently we hardcode as follows:
     position_cmd.use_position_vertical   = 1;
     position_cmd.use_position_horizontal = 1;
     position_cmd.use_velocity_vertical   = 1;
@@ -1096,6 +1109,7 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
     position_cmd.use_jerk                = 0;
     position_cmd.use_heading             = 1;
     position_cmd.use_heading_rate        = 1;
+  
 
     
 
@@ -1169,7 +1183,7 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
 
   uav_heading_ = uav_heading;
 
-  
+  // Currently we hardcode as follows:
   position_cmd.use_position_vertical   = 1;
   position_cmd.use_position_horizontal = 1;
   position_cmd.use_velocity_vertical   = 1;
@@ -1299,15 +1313,13 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
   predicted_load_velocities_out_.poses.clear();
   predicted_load_accelerations_out_.poses.clear();
 
-  predicted_phi.poses.clear();
-  predicted_theta.poses.clear();
-  predicted_phi_dot.poses.clear();
-  predicted_theta_dot.poses.clear();
-
-  predicted_phi_dot_dot.poses.clear();
-  predicted_theta_dot_dot.poses.clear();
-  predicted_load_position_errors_out.poses.clear();
-  // predicted_tension_cabble_out_.poses.clear();
+  predicted_phi_out_.poses.clear();
+  predicted_theta_out_.poses.clear();
+  predicted_phi_dot_out_.poses.clear();
+  predicted_theta_dot_out_.poses.clear();
+  predicted_phi_dot_dot_out_.poses.clear();
+  predicted_theta_dot_dot_out_.poses.clear();
+  predicted_load_position_errors_out_.poses.clear();
   predicted_swing_angle_out_.poses.clear();
   predicted_Tc_out_.poses.clear();
   //-----------2UAV pred-----------//
@@ -1616,6 +1628,9 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
 //--------------------------------------------------------------------------//
 void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand position_cmd, double uav_heading, const mrs_msgs::AttitudeCommand::ConstPtr &last_attitude_cmd){
   
+  // TODO: as this function is running the controller updated to a pre-stabilized system model, it would make sense to put these into a library so that ti can be used in both controller and tracker. Merge this with simulate se3 controller
+
+  // TODO: check what is needed for computational time logging
   // Computational time:
   // // method Kelly:
   // start_pred_ = std::chrono::system_clock::now(); 
@@ -1632,8 +1647,15 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
   std::clock_t c_start = std::clock();
 
 
+  // | --------------------- initialize the state of the UAV (+PAYLOAD) --------------------- |
+  mrs_msgs::UavState uav_state = uav_state_; // uav_state represents the locally defined predicted state
+  // Opl - position load in global frame
+  // Ovl - velocity load in global frame
+  Eigen::Vector3d Opl = anchoring_pt_pose_position_;
+  Eigen::Vector3d Ovl = anchoring_pt_lin_vel_;
+
   // --------------------------------------------------------------
-  // |          load the control reference and estimates          | --> the reference is assumed constant over the prediction
+  // |          load the control reference and estimates          | --> the reference is assumed constant over the prediction horizon
   // --------------------------------------------------------------
   // Rp - position reference in global frame
   // Rv - velocity reference in global frame
@@ -1681,37 +1703,25 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
   } else {
     Ra << 0, 0, 0;
   }
-  /*VALIDATE: test streaming the references Rp, Rv, Ra when the drone is moving.*/
+  /* test streaming the references Rp, Rv, Ra when the uav is moving.*/
   // ROS_INFO_STREAM("Rp = \n" << Rp);
   // ROS_INFO_STREAM("Rv = \n" << Rv);
   // ROS_INFO_STREAM("Ra = \n" << Ra);
  
-  /*QUESTION: where to print Rw? When it is set*/
+  /*TODO: where to print Rw? When it is set*/
   // ROS_INFO_STREAM("Rw = \n" << Rw);
 
 
-  // | --------------------- initialize the state of the UAV --------------------- |
-  mrs_msgs::UavState uav_state = uav_state_; // uav_state represents the locally defined predicted state
-  
-  // | -------------------1UAV+PAYLOAD----------------- |
-  // if(_type_of_system_=="1uav_payload"){ // Init the payload states from the global variables (that are updated in the callbacks)
-    Eigen::Vector3d load_lin_vel = anchoring_pt_lin_vel_;
-    Eigen::Vector3d load_pose_position = anchoring_pt_pose_position_ ;
-    // Init the reference position for the payload, from the one of the UAV 
-    Eigen::Vector3d Rpl = Eigen::Vector3d::Zero(3);
-    if (position_cmd.use_position_vertical || position_cmd.use_position_horizontal) {
-
-      if (position_cmd.use_position_horizontal) {
-        Rpl[0] = position_cmd.position.x;
-        Rpl[1] = position_cmd.position.y;
-      } 
-
-      if (position_cmd.use_position_vertical) {
-        Rpl[2] = position_cmd.position.z - _cable_length_;
-      } 
-    }
-  // }
-  // Raphael : For me it's useless we can delete this as no integral action is predicted. I would have deleted it but it seems you added it for a reason ???
+  // | --------------------------LOAD--------------------------|
+  // --------------------------------------------------------------
+  // |          load the control reference and estimates          |
+  // --------------------------------------------------------------
+  // TODO: Rpl and Rvl not defined, nor used. Should be the uav ref cable length down. Not used in actual error of Pandolfo.
+  // Rpl - position reference load in global frame
+  // Rvl - velocity reference load in global frame
+  Eigen::Vector3d Rpl = Eigen::Vector3d::Zero(3); // TODO: bryan currently not used as we send reference of UAV
+    
+  // TODO Raphael : For me it's useless we can delete this as no integral action is predicted. I would have deleted it but it seems you added it for a reason ???
   // | --------------------- initialize body and world integrals --------------------- |
   /* NOTE: this part is added by Bryan, was originally in the controllers activate function */ 
   // Ib_b_[0] = -last_attitude_cmd->disturbance_bx_b;
@@ -1725,8 +1735,11 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
     //     "%.2f, %.2f N",
     //     uav_mass_difference_, Ib_b_[0], Ib_b_[1], Iw_w_[0], Iw_w_[1]);
   /* NOTE: TILL HERE*/
-  // double total_mass = common_handlers_->getMass(); //Get a local variable of the total estimated mass.
-  // ROS_INFO_STREAM("total_mass in prediction_general = \n" << total_mass);
+
+
+  // ----------------------------------------------------
+  // |          prepare variables for publishers        |
+  // ----------------------------------------------------
   predicted_poses_out_.header.stamp = uav_state_.header.stamp; //ros::Time::now();
   predicted_poses_out_.header.frame_id = uav_state_.header.frame_id;
   predicted_velocities_out_.header.stamp = uav_state_.header.stamp; //ros::Time::now();
@@ -1742,72 +1755,60 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
   predicted_tiltangle_out_.header.stamp = uav_state_.header.stamp;//ros::Time::now();
   predicted_tiltangle_out_.header.frame_id = uav_state_.header.frame_id;
   // | -------------------1UAV+PAYLOAD----------------- |
-  // if(_type_of_system_=="1uav_payload"){
-    predicted_load_poses_out_.header.stamp = uav_state_.header.stamp; 
-    predicted_load_poses_out_.header.frame_id = uav_state_.header.frame_id; 
-    predicted_load_velocities_out_.header.stamp = uav_state_.header.stamp; 
-    predicted_load_velocities_out_.header.frame_id = uav_state_.header.frame_id;
-    predicted_load_accelerations_out_.header.stamp = uav_state_.header.stamp;
-    predicted_load_accelerations_out_.header.frame_id = uav_state_.header.frame_id;
-    predicted_phi.header.stamp = uav_state_.header.stamp; 
-    predicted_theta.header.stamp = uav_state_.header.stamp;
-    predicted_phi_dot.header.stamp = uav_state_.header.stamp; 
-    predicted_theta_dot.header.stamp = uav_state_.header.stamp; 
-    predicted_phi_dot_dot.header.stamp = uav_state_.header.stamp;
-    predicted_theta_dot_dot.header.stamp = uav_state_.header.stamp;
-    predicted_load_position_errors_out.header.stamp=uav_state.header.stamp;
-    // predicted_tension_cabble_out_.header.stamp = uav_state_.header.stamp; 
-    // predicted_tension_cabble_out_.header.frame_id = uav_state_.header.frame_id;
-    predicted_swing_angle_out_.header.stamp = uav_state_.header.stamp;
-    predicted_swing_angle_out_.header.frame_id = uav_state_.header.frame_id;
-    predicted_Tc_out_.header.stamp = uav_state_.header.stamp;
-    predicted_Tc_out_.header.frame_id = uav_state_.header.frame_id;
-
-  geometry_msgs::Pose custom_pose;
-  geometry_msgs::Pose custom_vel;
-  geometry_msgs::Pose custom_acceleration;
+  predicted_load_poses_out_.header.stamp = uav_state_.header.stamp; 
+  predicted_load_poses_out_.header.frame_id = uav_state_.header.frame_id; 
+  predicted_load_velocities_out_.header.stamp = uav_state_.header.stamp; 
+  predicted_load_velocities_out_.header.frame_id = uav_state_.header.frame_id;
+  predicted_load_accelerations_out_.header.stamp = uav_state_.header.stamp;
+  predicted_load_accelerations_out_.header.frame_id = uav_state_.header.frame_id;
+  predicted_phi_out_.header.stamp = uav_state_.header.stamp; 
+  predicted_theta_out_.header.stamp = uav_state_.header.stamp;
+  predicted_phi_dot_out_.header.stamp = uav_state_.header.stamp; 
+  predicted_theta_dot_out_.header.stamp = uav_state_.header.stamp; 
+  predicted_phi_dot_dot_out_.header.stamp = uav_state_.header.stamp;
+  predicted_theta_dot_dot_out_.header.stamp = uav_state_.header.stamp;
+  predicted_load_position_errors_out_.header.stamp=uav_state.header.stamp;
+  predicted_swing_angle_out_.header.stamp = uav_state_.header.stamp;
+  predicted_swing_angle_out_.header.frame_id = uav_state_.header.frame_id;
+  predicted_Tc_out_.header.stamp = uav_state_.header.stamp;
+  predicted_Tc_out_.header.frame_id = uav_state_.header.frame_id;
+  geometry_msgs::Pose predicted_pose;
+  geometry_msgs::Pose predicted_vel;
+  geometry_msgs::Pose predicted_acc;
   geometry_msgs::Pose predicted_thrust; 
   geometry_msgs::Pose predicted_thrust_norm; 
   geometry_msgs::Pose predicted_attituderate;
   geometry_msgs::Pose predicted_des_attituderate;
   geometry_msgs::Pose predicted_tilt_angle; 
-
   // | -------------------1UAV+PAYLOAD----------------- |
-  // if(_type_of_system_=="1uav_payload"){
-    geometry_msgs::Pose custom_load_pose;
-    geometry_msgs::Pose custom_load_vel;
-    geometry_msgs::Pose custom_load_acceleration;
-    geometry_msgs::Pose custom_tension_force;
-    geometry_msgs::Pose theta_load_to_publish;
-    geometry_msgs::Pose phi_load_to_publish;
-    geometry_msgs::Pose theta_dot_load_to_publish;
-    geometry_msgs::Pose phi_dot_load_to_publish;
-    geometry_msgs::Pose predicted_q_state_dot_dot_uav;
-    geometry_msgs::Pose predicted_q_state_dot_dot_load;
-    geometry_msgs::Pose theta_dot_dot_load_to_publish;
-    geometry_msgs::Pose phi_dot_dot_load_to_publish;
-    geometry_msgs::Pose force_to_publish;
-    geometry_msgs::Pose predicted_load_position_errors_to_publish;
-    std_msgs::Float32 pos_difference_x;
-    std_msgs::Float32 pos_difference_y;
-    // Thesis b: Test 06/08 CHECK IF I NEED TO KEEP THESE
-    double theta_load_cable;
-    double phi_load_cable;  
-    double theta_dot_load_cable;
-    double phi_dot_load_cable;  
-    double theta_dot_dot_load_cable;
-    double phi_dot_dot_load_cable;
+  geometry_msgs::Pose predicted_load_pose;
+  geometry_msgs::Pose predicted_load_vel;
+  geometry_msgs::Pose predicted_load_acc;
+  geometry_msgs::Pose predicted_load_theta;
+  geometry_msgs::Pose predicted_load_phi;
+  geometry_msgs::Pose predicted_load_dot_theta;
+  geometry_msgs::Pose predicted_load_dot_phi;
+  geometry_msgs::Pose predicted_load_dot_dot_theta;
+  geometry_msgs::Pose predicted_load_dot_dot_phi;
+  geometry_msgs::Pose predicted_q_state_dot_dot_uav;
+  geometry_msgs::Pose predicted_q_state_dot_dot_load;
 
-    //ERG : swing angle
-    double swing_angle;
-    geometry_msgs::Pose swing_angle_to_publish;
+  //geometry_msgs::Pose force_to_publish;
+  //geometry_msgs::Pose predicted_load_position_errors_to_publish;
+  geometry_msgs::Pose predicted_swing_angle;
+  geometry_msgs::Pose predicted_Tc;
 
-    double Tc; //Tension in the cable
-    geometry_msgs::Pose Tc_to_publish;
-    // }
-  //
-
-
+  // ----------------------------------------------------
+  // |          prepare variables for predictions        |
+  // ----------------------------------------------------
+  double theta_load_cable;
+  double phi_load_cable;  
+  double theta_dot_load_cable;
+  double phi_dot_load_cable;  
+  double theta_dot_dot_load_cable;
+  double phi_dot_dot_load_cable;
+  double swing_angle;
+  double Tc; //Tension in the cable
   Eigen::Matrix3d R;
   //Eigen::Matrix3d Rdot;
   Eigen::Matrix3d skew_Ow;
@@ -1818,82 +1819,85 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
   Eigen::Vector3d torque_pred;
   Eigen::Vector3d attitude_acceleration_pred;
 
+  // ----------------------------------------------------
+  // |          start trajectory prediction loop        |
+  // ----------------------------------------------------
   for (int i = 0; i < _num_pred_samples_; i++) {
-    if(i == 0){
-      // ROS_INFO_STREAM("attitude_rate_pred = \n" << attitude_rate_pred);
-      //Initial conditions for first iteration
-      custom_pose.position.x = uav_state.pose.position.x;
-      custom_pose.position.y = uav_state.pose.position.y;
-      custom_pose.position.z = uav_state.pose.position.z;
-
-      custom_vel.position.x = uav_state.velocity.linear.x;
-      custom_vel.position.y = uav_state.velocity.linear.y;
-      custom_vel.position.z = uav_state.velocity.linear.z;
-
+    if(i == 0){  // first iteration
+      // TODO: generalize prediction function such that we can choose in which initital state we start to predict (for discrete time ERG)
+      // TODO: why have some defined Eigen variables and some ROS? Clean it.
+      // Use initial conditions for first iteration:
+      // Pose:
+      // Position:
+      predicted_pose.position.x = uav_state.pose.position.x;
+      predicted_pose.position.y = uav_state.pose.position.y;
+      predicted_pose.position.z = uav_state.pose.position.z;
       // R - current uav attitude
       R = mrs_lib::AttitudeConverter(uav_state.pose.orientation);
-      //R = Eigen::Matrix3d::Identity(3, 3); // fake attitude
-      // Ow - UAV angular rate
-      Eigen::Vector3d Ow(uav_state.velocity.angular.x, uav_state.velocity.angular.y, uav_state.velocity.angular.z);
-      attitude_rate_pred = Ow; // actual predicted attitude rate
-      
+      //R = Eigen::Matrix3d::Identity(3, 3); // fake attitude // TODO: needed?
+      // Velocity:
+      // Linear:
+      predicted_vel.position.x = uav_state.velocity.linear.x;
+      predicted_vel.position.y = uav_state.velocity.linear.y;
+      predicted_vel.position.z = uav_state.velocity.linear.z;
+      // Ow - UAV angular rate:
+      Eigen::Vector3d attitude_rate_pred(uav_state.velocity.angular.x, uav_state.velocity.angular.y, uav_state.velocity.angular.z); // actual predicted attitude rate
       if (_predicitons_use_body_inertia_){
-        Eigen::Vector3d Ow_prev(uav_state_prev_.velocity.angular.x, uav_state_prev_.velocity.angular.y, uav_state_prev_.velocity.angular.z);
-        attitude_rate_pred_prev = Ow_prev;
+        Eigen::Vector3d attitude_rate_pred_prev(uav_state_prev_.velocity.angular.x, uav_state_prev_.velocity.angular.y, uav_state_prev_.velocity.angular.z);
       }
-      // ROS_INFO_STREAM("R (i=0)  = \n" << R);
-      // ROS_INFO_STREAM("attitude_rate_pred (i=0)  = \n" << attitude_rate_pred);
-      // ROS_INFO_STREAM("Ow (i=0) = \n" << Ow);
-      if(_type_of_system_=="1uav_payload"&& payload_spawned_){
-        // Encode the sate of the load into the custom quantities, to be published as pose array.
-        custom_load_pose.position.x = load_pose_position[0];
-        custom_load_pose.position.y = load_pose_position[1];
-        custom_load_pose.position.z = load_pose_position[2];
-
-        custom_load_vel.position.x = load_lin_vel[0];
-        custom_load_vel.position.y = load_lin_vel[1];
-        custom_load_vel.position.z = load_lin_vel[2];
-        // Corrected IK to get angles phi and theta used in prediction model, Raphael:
-        theta_load_cable = asin((load_pose_position[0] - uav_state.pose.position.x)/_cable_length_); //was already good
-        phi_load_cable = asin((load_pose_position[1] - uav_state.pose.position.y)/(_cable_length_*cos(theta_load_cable)));
-
-
-        theta_dot_load_cable = pow(1.0 - pow((load_pose_position[0] - uav_state.pose.position.x)/_cable_length_,2.0),-1.0/2.0) 
-        * ((load_lin_vel[0] - uav_state.velocity.linear.x)/_cable_length_); //was already good
-        phi_dot_load_cable = ((load_lin_vel[1] - uav_state.velocity.linear.y)*cos(theta_load_cable) + (load_pose_position[1] - uav_state.pose.position.y)*theta_dot_load_cable*sin(theta_load_cable))/(_cable_length_*pow(cos(theta_load_cable),2.0)*pow(1.0-pow((load_pose_position[1] - uav_state.pose.position.y)/(_cable_length_*cos(theta_load_cable)),2),0.5));
+      // LOAD
+      if(_type_of_system_=="1uav_payload" && payload_spawned_){
+        // Encode the state of the load into the custom quantities, to be published as pose array.
+        // Position:
+        predicted_load_pose.position.x = Opl[0];
+        predicted_load_pose.position.y = Opl[1];
+        predicted_load_pose.position.z = Opl[2];
+        // Velocity:
+        predicted_load_vel.position.x = Ovl[0];
+        predicted_load_vel.position.y = Ovl[1];
+        predicted_load_vel.position.z = Ovl[2];
+        // Corrected IK to get angles phi and theta used in prediction model thesis Raphael:
+        // Cable angles:
+        theta_load_cable = asin((Opl[0] - uav_state.pose.position.x)/_cable_length_); 
+        phi_load_cable = asin((Opl[1] - uav_state.pose.position.y)/(_cable_length_*cos(theta_load_cable)));
+        // Cable angular rates:
+        theta_dot_load_cable = pow(1.0 - pow((Opl[0] - uav_state.pose.position.x)/_cable_length_,2.0),-1.0/2.0) 
+        * ((Ovl[0] - uav_state.velocity.linear.x)/_cable_length_);
+        phi_dot_load_cable = ((Ovl[1] - uav_state.velocity.linear.y)*cos(theta_load_cable) + (Opl[1] - uav_state.pose.position.y)*theta_dot_load_cable*sin(theta_load_cable))/(_cable_length_*pow(cos(theta_load_cable),2.0)*pow(1.0-pow((Opl[1] - uav_state.pose.position.y)/(_cable_length_*cos(theta_load_cable)),2),0.5));
 
         //Custom quantity to publish. TODO change it to a double instead of a pose.
-        theta_load_to_publish.position.x = theta_load_cable;
-        phi_load_to_publish.position.x = phi_load_cable;
-        theta_dot_load_to_publish.position.x = theta_dot_load_cable;
-        phi_dot_load_to_publish.position.x = phi_dot_load_cable;
-        }
-      
+        predicted_load_theta.position.x = theta_load_cable;
+        predicted_load_phi.position.x = phi_load_cable;
+        predicted_load_dot_theta.position.x = theta_dot_load_cable;
+        predicted_load_dot_phi.position.x = phi_dot_load_cable;
+      }
     } 
-    else{
+    else{ // after first iteration
       // Discrete trajectory prediction using the Euler formula's
-      // TODO: in control predictions define custom_acceleration also via uav_state
-      uav_state.velocity.linear.x = uav_state.velocity.linear.x + custom_acceleration.position.x*_prediction_dt_;
-      custom_vel.position.x = uav_state.velocity.linear.x;
+      // TODO: in control predictions define predicted_acc also via uav_state
+      // TODO: why are we suing two variables to update the states? Make it simpler.
+      uav_state.velocity.linear.x = uav_state.velocity.linear.x + predicted_acc.position.x*_prediction_dt_;
+      predicted_vel.position.x = uav_state.velocity.linear.x;
 
-      uav_state.velocity.linear.y = uav_state.velocity.linear.y + custom_acceleration.position.y*_prediction_dt_;
-      custom_vel.position.y = uav_state.velocity.linear.y;
+      uav_state.velocity.linear.y = uav_state.velocity.linear.y + predicted_acc.position.y*_prediction_dt_;
+      predicted_vel.position.y = uav_state.velocity.linear.y;
 
-      uav_state.velocity.linear.z = uav_state.velocity.linear.z + custom_acceleration.position.z*_prediction_dt_;
-      custom_vel.position.z = uav_state.velocity.linear.z;
+      uav_state.velocity.linear.z = uav_state.velocity.linear.z + predicted_acc.position.z*_prediction_dt_;
+      predicted_vel.position.z = uav_state.velocity.linear.z;
 
       uav_state.pose.position.x = uav_state.pose.position.x + uav_state.velocity.linear.x*_prediction_dt_;
-      custom_pose.position.x = uav_state.pose.position.x;
+      predicted_pose.position.x = uav_state.pose.position.x;
 
       uav_state.pose.position.y = uav_state.pose.position.y + uav_state.velocity.linear.y*_prediction_dt_;
-      custom_pose.position.y = uav_state.pose.position.y;
+      predicted_pose.position.y = uav_state.pose.position.y;
 
       uav_state.pose.position.z = uav_state.pose.position.z + uav_state.velocity.linear.z*_prediction_dt_;
-      custom_pose.position.z = uav_state.pose.position.z;
+      predicted_pose.position.z = uav_state.pose.position.z;
 
-      if(_type_of_system_=="1uav_payload"&& payload_spawned_){
-        _predicitons_use_body_inertia_=0; //For now don't use this with the payload.
-        //Step 4: Integrate the acceleration angles of the model, to find the velocity and position of these. 
+      // LOAD:
+      if(_type_of_system_=="1uav_payload" && payload_spawned_){
+        _predicitons_use_body_inertia_=0; //For now don't use this with the payload. TODO: should not be initialized here but in init function.
+        // Integrate the acceleration angles of the model, to find the velocity and position of these. 
         theta_dot_load_cable = theta_dot_load_cable + theta_dot_dot_load_cable*_prediction_dt_;
         phi_dot_load_cable = phi_dot_load_cable + phi_dot_dot_load_cable*_prediction_dt_;
         theta_load_cable = theta_load_cable + theta_dot_load_cable*_prediction_dt_;
@@ -1904,45 +1908,41 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
         // ROS_INFO_STREAM("phi_dot_load_cable  = \n" << phi_dot_load_cable);
         // ROS_INFO_STREAM("theta_dot_dot_load_cable  = \n" << theta_dot_dot_load_cable);
         // ROS_INFO_STREAM("phi_dot_dot_load_cable  = \n" << phi_dot_dot_load_cable);
-        theta_load_to_publish.position.x = theta_load_cable;
-        phi_load_to_publish.position.x = phi_load_cable;
-        theta_dot_load_to_publish.position.x = theta_dot_load_cable;
-        phi_dot_load_to_publish.position.x = phi_dot_load_cable;
-        theta_dot_dot_load_to_publish.position.x = theta_dot_dot_load_cable;
-        phi_dot_dot_load_to_publish.position.x = phi_dot_dot_load_cable;
-        // ROS_INFO_STREAM("theta_dot_load_cable  = \n" << theta_dot_load_cable);
-        // ROS_INFO_STREAM("phi_dot_load_cable  = \n" << phi_dot_load_cable);
-        // ROS_INFO_STREAM("theta_load_cable  = \n" << theta_load_cable);
-        // ROS_INFO_STREAM("phi_load_cable  = \n" << phi_load_cable);
-        
-        // Corrected FK, to get the position of the payload in cartesian coordinates instead of the minimal angles phi and theta,see Raphael thesis:
-        load_pose_position[0] = sin(theta_load_cable)*_cable_length_ + uav_state.pose.position.x; 
-        load_pose_position[1] = sin(phi_load_cable)*cos(theta_load_cable)*_cable_length_ + uav_state.pose.position.y; 
-        load_pose_position[2] = uav_state.pose.position.z - _cable_length_*cos(phi_load_cable)*cos(theta_load_cable);
+        predicted_load_theta.position.x = theta_load_cable;
+        predicted_load_phi.position.x = phi_load_cable;
+        predicted_load_dot_theta.position.x = theta_dot_load_cable;
+        predicted_load_dot_phi.position.x = phi_dot_load_cable;
+        predicted_load_dot_dot_theta.position.x = theta_dot_dot_load_cable;
+        predicted_load_dot_dot_phi.position.x = phi_dot_dot_load_cable;
+     
+        // FK, to get the position of the payload in Cartesian coordinates instead of the minimal angles phi and theta, see Raphael thesis:
+        Opl[0] = uav_state.pose.position.x + sin(theta_load_cable)*_cable_length_; 
+        Opl[1] = uav_state.pose.position.y + sin(phi_load_cable)*cos(theta_load_cable)*_cable_length_; 
+        Opl[2] = uav_state.pose.position.z - _cable_length_*cos(phi_load_cable)*cos(theta_load_cable);
 
-        custom_load_pose.position.x = load_pose_position[0];
-        custom_load_pose.position.y = load_pose_position[1];
-        custom_load_pose.position.z = load_pose_position[2];
+        predicted_load_pose.position.x = Opl[0];
+        predicted_load_pose.position.y = Opl[1];
+        predicted_load_pose.position.z = Opl[2];
 
-        load_lin_vel[0] = cos(theta_load_cable)*_cable_length_*theta_dot_load_cable + uav_state.velocity.linear.x;  
-        load_lin_vel[1] = cos(phi_load_cable)*cos(theta_load_cable)*_cable_length_*phi_dot_load_cable -_cable_length_*sin(phi_load_cable)*sin(theta_load_cable) * theta_dot_load_cable
+        Ovl[0] = cos(theta_load_cable)*_cable_length_*theta_dot_load_cable + uav_state.velocity.linear.x;  
+        Ovl[1] = cos(phi_load_cable)*cos(theta_load_cable)*_cable_length_*phi_dot_load_cable -_cable_length_*sin(phi_load_cable)*sin(theta_load_cable) * theta_dot_load_cable
         + uav_state.velocity.linear.y; 
-        load_lin_vel[2] = uav_state.velocity.linear.z + _cable_length_*(sin(phi_load_cable)*phi_dot_load_cable*cos(theta_load_cable) 
+        Ovl[2] = uav_state.velocity.linear.z + _cable_length_*(sin(phi_load_cable)*phi_dot_load_cable*cos(theta_load_cable) 
         + cos(phi_load_cable)*sin(theta_load_cable)*theta_dot_load_cable);
         
-        custom_load_vel.position.x = load_lin_vel[0];
-        custom_load_vel.position.y = load_lin_vel[1];
-        custom_load_vel.position.z = load_lin_vel[2];
+        predicted_load_vel.position.x = Ovl[0];
+        predicted_load_vel.position.y = Ovl[1];
+        predicted_load_vel.position.z = Ovl[2];
         // Acceleration is not computed as not needed. If want it to monitor its values for debuging reasons, must be put here : 
 
-        //compute swing angle prediction
+        //compute swing angle prediction // TODO: why not done?
 
       }
 
-
+      // UAV Attitude:
       if (!_predicitons_use_body_inertia_){
-      // if we ignore the body rate inertial dynamics:
-      // assumption made (inner loop is infinitely fast): desired_attitude_rate_pred = attitude_rate_pred
+        // if we ignore the body rate inertial dynamics:
+        // assumption made (inner loop is infinitely fast): desired_attitude_rate_pred = attitude_rate_pred
         skew_Ow_des << 0.0     , -desired_attitude_rate_pred(2), desired_attitude_rate_pred(1),
                   desired_attitude_rate_pred(2) , 0.0,       -desired_attitude_rate_pred(0),
                   -desired_attitude_rate_pred(1), desired_attitude_rate_pred(0),  0.0;
@@ -1951,7 +1951,7 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
         R = (I + skew_Ow_des*_prediction_dt_ + 1.0/2.0*skew_Ow_des*_prediction_dt_*skew_Ow_des*_prediction_dt_ + 1.0/6.0*skew_Ow_des*_prediction_dt_*skew_Ow_des*_prediction_dt_*skew_Ow_des*_prediction_dt_)*R;
       }
       else{
-      // if we include the body rate inertial dynamics:
+        // if we include the body rate inertial dynamics:
         attitude_rate_pred = attitude_rate_pred + attitude_acceleration_pred*_prediction_dt_;
         skew_Ow << 0.0     , -attitude_rate_pred(2), attitude_rate_pred(1),
                   attitude_rate_pred(2) , 0.0,       -attitude_rate_pred(0),
@@ -1972,15 +1972,13 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
         predicted_attituderate.position.z = attitude_rate_pred(2,0);
         predicted_attituderate_out_.poses.push_back(predicted_attituderate);
       }
-      
-      
-      // debug:
+      // debug UAV attitude:
       //ROS_INFO_STREAM("R(2) = \n" << R.col(2));
       Eigen::Vector3d temp = R.col(2);
       double normR2 = temp(0)*temp(0) + temp(1)*temp(1) + temp(2)*temp(2);
       if ((normR2 >=1.02) || (normR2 <=0.98))
       {
-        ROS_INFO_STREAM("normR2 = " << normR2);
+        ROS_INFO_STREAM("something is wrong: normR2 too far from 1= " << normR2);
       }
       
       // Update uav_state.pose.orientation from the current rotation matrix (used later for parasitic heading rate compensation)
@@ -1988,42 +1986,38 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
       // if (i == 5 || i == 50) {
       //   ROS_INFO_STREAM("uav_state.pose.orientation = " << uav_state.pose.orientation); // a quaternion
       // }
-
     } 
 
 
-    predicted_poses_out_.poses.push_back(custom_pose);
-    predicted_velocities_out_.poses.push_back(custom_vel);
+    predicted_poses_out_.poses.push_back(predicted_pose);
+    predicted_velocities_out_.poses.push_back(predicted_vel);
     
     if(_type_of_system_=="1uav_payload"){
-      predicted_load_poses_out_.poses.push_back(custom_load_pose);
-      predicted_load_velocities_out_.poses.push_back(custom_load_vel);
-      predicted_phi.poses.push_back(phi_load_to_publish);
-      predicted_theta.poses.push_back(theta_load_to_publish);
-      predicted_phi_dot.poses.push_back(phi_dot_load_to_publish);
-      predicted_theta_dot.poses.push_back(theta_dot_load_to_publish);
-      predicted_phi_dot_dot.poses.push_back(phi_dot_dot_load_to_publish);
-      predicted_theta_dot_dot.poses.push_back(theta_dot_dot_load_to_publish);
-      predicted_load_accelerations_out_.poses.push_back(custom_load_acceleration);
-
+      predicted_load_poses_out_.poses.push_back(predicted_load_pose);
+      predicted_load_velocities_out_.poses.push_back(predicted_load_vel);
+      predicted_phi_out_.poses.push_back(predicted_load_phi);
+      predicted_theta_out_.poses.push_back(predicted_load_theta);
+      predicted_phi_dot_out_.poses.push_back(predicted_load_dot_phi);
+      predicted_theta_dot_out_.poses.push_back(predicted_load_dot_theta);
+      predicted_phi_dot_dot_out_.poses.push_back(predicted_load_dot_dot_phi);
+      predicted_theta_dot_dot_out_.poses.push_back(predicted_load_dot_dot_theta);
+      predicted_load_accelerations_out_.poses.push_back(predicted_load_acc);
     }
-    
+
     // |---------------------- Controller part ---------------------------|
     double thrust_force; // The projection of the total thrust vector
     double theta;
-    if(_type_of_system_=="1uav_payload"&& payload_spawned_){
+    if(_type_of_system_=="1uav_payload" && payload_spawned_){
       // _predicitons_use_body_inertia_=0; // For now don't predict the attitude dynamic. => w_pred=wd_pref
-      Eigen::Vector3d Payloadposition_vector; // as the SimulateSe3CopyController function needs a Vector3d for the load pose (and not a pose type).
-      Payloadposition_vector[0]=load_pose_position[0];
-      Payloadposition_vector[1]=load_pose_position[1];
-      Payloadposition_vector[2]=load_pose_position[2];
-      std::tie(thrust_force,desired_attitude_rate_pred,theta)=SimulateSe3CopyController(uav_state, R, Payloadposition_vector , load_lin_vel ,position_cmd , Rp , Rv , Rpl , Ra );
+      Eigen::Vector3d Payloadposition_vector; // as the ComputeSe3CopyController function needs a Vector3d for the load pose (and not a pose type).
+      Payloadposition_vector[0]=Opl[0];
+      Payloadposition_vector[1]=Opl[1];
+      Payloadposition_vector[2]=Opl[2];
+      std::tie(thrust_force,desired_attitude_rate_pred,theta)=ComputeSe3CopyController(uav_state, R, Payloadposition_vector , Ovl ,position_cmd , Rp , Rv , Rpl , Ra );
+    } 
+    else{ // As there is no load, the arguments related to the payload, passed to the ComputeSe3CopyController function are null vector. This is to keep the same number of argument for both cases, and having one function only. 
+      std::tie(thrust_force,desired_attitude_rate_pred,theta)=ComputeSe3CopyController(uav_state, R, Eigen::Vector3d::Zero(3) , Eigen::Vector3d::Zero(3) ,position_cmd , Rp , Rv , Eigen::Vector3d::Zero(3) , Eigen::Vector3d::Zero(3) );
     }
-    else{ // As there is no load, the arguments related to the payload, passed to the SimulateSe3CopyController function are null vector. This is to keep the same number of argument for both cases, and having one function only. 
-      std::tie(thrust_force,desired_attitude_rate_pred,theta)=SimulateSe3CopyController(uav_state, R, Eigen::Vector3d::Zero(3) , Eigen::Vector3d::Zero(3) ,position_cmd , Rp , Rv , Eigen::Vector3d::Zero(3) , Eigen::Vector3d::Zero(3) );
-    }
-
-
       // Publish predicted tilt angle,hrust and attitude rate that were returned by the controller function//
       predicted_tilt_angle.position.x = theta; // change later to a non vec type
       predicted_tiltangle_out_.poses.push_back(predicted_tilt_angle);
@@ -2037,9 +2031,11 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
       predicted_des_attituderate_out_.poses.push_back(predicted_des_attituderate);
 
     //------------------------Equations of motion part----------------------//
-    if(_type_of_system_=="1uav_payload"&& payload_spawned_){ //1UAV and payload
-      double total_mass=uav_mass_+_load_mass_;
-      // ROS_INFO_STREAM("total_mass in prediction loop \n"<<total_mass);//now correct
+    if(_type_of_system_=="1uav_payload" && payload_spawned_){ //1UAV and payload
+      double total_mass = uav_mass_ + _load_mass_;
+      // ROS_INFO_STREAM("total_mass in prediction loop \n"<<total_mass);
+
+      // Mass matrix:
       Eigen::MatrixXd M_matrix = Eigen::MatrixXd(5, 5);
       M_matrix(0,0) = total_mass; M_matrix(0,1) = 0.0; M_matrix(0,2) = 0.0; 
       M_matrix(0,3) = 0.0; M_matrix(0,4) = _cable_length_*_load_mass_*cos(theta_load_cable);
@@ -2059,77 +2055,80 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
       M_matrix(4,0) = _cable_length_*_load_mass_*cos(theta_load_cable); 
       M_matrix(4,1) = -_cable_length_*_load_mass_*sin(phi_load_cable)*sin(theta_load_cable); 
       M_matrix(4,2) = _cable_length_*_load_mass_*cos(phi_load_cable)*sin(theta_load_cable); 
-      M_matrix(4,3) = 0.0; M_matrix(4,4) = pow(_cable_length_,2.0)*_load_mass_ ;
-      // ROS_INFO_STREAM("M_inverse = \n" << M_matrix.inverse());
+      M_matrix(4,3) = 0.0; M_matrix(4,4) = pow(_cable_length_,2.0)*_load_mass_;
+      // ROS_INFO_STREAM("M_matrix = \n" << M_matrix);
+      // ROS_INFO_STREAM("M_matrix inverse = \n" << M_matrix.inverse());
 
-      Eigen::MatrixXd V_matrix = Eigen::MatrixXd(5, 5);
-      V_matrix(0,0) = 0.0; V_matrix(0,1) = 0.0; V_matrix(0,2) = 0.0; V_matrix(0,3) = 0.0; 
-      V_matrix(0,4) = -_cable_length_*theta_dot_load_cable*_load_mass_*sin(theta_load_cable);
+      // Coriolis matrix:
+      Eigen::MatrixXd C_matrix = Eigen::MatrixXd(5, 5);
+      C_matrix(0,0) = 0.0; C_matrix(0,1) = 0.0; C_matrix(0,2) = 0.0; C_matrix(0,3) = 0.0; 
+      C_matrix(0,4) = -_cable_length_*theta_dot_load_cable*_load_mass_*sin(theta_load_cable);
 
-      V_matrix(1,0) = 0.0; V_matrix(1,1) = 0.0; V_matrix(1,2) = 0.0; 
-      V_matrix(1,3) = -_cable_length_*_load_mass_*(phi_dot_load_cable*sin(phi_load_cable)*cos(theta_load_cable) 
+      C_matrix(1,0) = 0.0; C_matrix(1,1) = 0.0; C_matrix(1,2) = 0.0; 
+      C_matrix(1,3) = -_cable_length_*_load_mass_*(phi_dot_load_cable*sin(phi_load_cable)*cos(theta_load_cable) 
       + theta_dot_load_cable*cos(phi_load_cable)*sin(theta_load_cable)); 
-      V_matrix(1,4) = -_cable_length_*_load_mass_*(phi_dot_load_cable*cos(phi_load_cable)*sin(theta_load_cable) 
+      C_matrix(1,4) = -_cable_length_*_load_mass_*(phi_dot_load_cable*cos(phi_load_cable)*sin(theta_load_cable) 
       + theta_dot_load_cable*sin(phi_load_cable)*cos(theta_load_cable));
 
-      V_matrix(2,0) = 0.0; V_matrix(2,1) = 0.0; V_matrix(2,2) = 0.0; 
-      V_matrix(2,3) = _cable_length_*_load_mass_*(phi_dot_load_cable*cos(phi_load_cable)*cos(theta_load_cable) 
+      C_matrix(2,0) = 0.0; C_matrix(2,1) = 0.0; C_matrix(2,2) = 0.0; 
+      C_matrix(2,3) = _cable_length_*_load_mass_*(phi_dot_load_cable*cos(phi_load_cable)*cos(theta_load_cable) 
       - theta_dot_load_cable*sin(phi_load_cable)*sin(theta_load_cable)); 
-      V_matrix(2,4) = _cable_length_*_load_mass_*(theta_dot_load_cable*cos(phi_load_cable)*cos(theta_load_cable) 
+      C_matrix(2,4) = _cable_length_*_load_mass_*(theta_dot_load_cable*cos(phi_load_cable)*cos(theta_load_cable) 
       - phi_dot_load_cable*sin(phi_load_cable)*sin(theta_load_cable));
 
-      V_matrix(3,0) = 0.0; V_matrix(3,1) = 0.0; V_matrix(3,2) = 0.0; 
-      V_matrix(3,3) = (-1.0/2.0)*pow(_cable_length_,2.0)*theta_dot_load_cable*_load_mass_*sin(2.0*theta_load_cable); 
-      V_matrix(3,4) = (-1.0/2.0)*pow(_cable_length_,2.0)*phi_dot_load_cable*_load_mass_*sin(2.0*theta_load_cable);
+      C_matrix(3,0) = 0.0; C_matrix(3,1) = 0.0; C_matrix(3,2) = 0.0; 
+      C_matrix(3,3) = (-1.0/2.0)*pow(_cable_length_,2.0)*theta_dot_load_cable*_load_mass_*sin(2.0*theta_load_cable); 
+      C_matrix(3,4) = (-1.0/2.0)*pow(_cable_length_,2.0)*phi_dot_load_cable*_load_mass_*sin(2.0*theta_load_cable);
       
-      V_matrix(4,0) = 0.0; V_matrix(4,1) = 0.0; V_matrix(4,2) = 0.0; 
-      V_matrix(4,3) = (1.0/2.0)*pow(_cable_length_,2.0)*phi_dot_load_cable*_load_mass_*sin(2.0*theta_load_cable); V_matrix(4,4) = 0.0;
+      C_matrix(4,0) = 0.0; C_matrix(4,1) = 0.0; C_matrix(4,2) = 0.0; 
+      C_matrix(4,3) = (1.0/2.0)*pow(_cable_length_,2.0)*phi_dot_load_cable*_load_mass_*sin(2.0*theta_load_cable); C_matrix(4,4) = 0.0;
+      // ROS_INFO_STREAM("C_matrix = \n" << C_matrix);
 
-      // ROS_INFO_STREAM("V = \n" << V_matrix);
-
+      // Gravity vector:
       Eigen::MatrixXd G_vector = Eigen::MatrixXd(5, 1);
       G_vector(0,0) = 0.0; G_vector(1,0) = 0.0; G_vector(2,0) = (total_mass)*common_handlers_->g; // g here is positif
       G_vector(3,0) = _cable_length_*common_handlers_->g*_load_mass_*cos(theta_load_cable)*sin(phi_load_cable); 
       G_vector(4,0) = _cable_length_*common_handlers_->g*_load_mass_*cos(phi_load_cable)*sin(theta_load_cable);
+      // ROS_INFO_STREAM("G_vector = \n" << G_vector);
 
-      // ROS_INFO_STREAM("G = \n" << G_vector);
-
+      // Damping (natural) matrix
+      // TODO: currently we assume no natural damping
       Eigen::MatrixXd D_matrix = Eigen::MatrixXd::Zero(5, 5); // Adding damping force created by air and non perfect joint.
       D_matrix(3,3)=0.0;//0.15;
       D_matrix(4,4)=0.0;//0.15;
+      //ROS_INFO_STREAM("D_matrix = \n" << D_matrix);
 
-      //ROS_INFO_STREAM("D = \n" << D_matrix);
-
+      // Generalized force vector:
       Eigen::MatrixXd u_vector = Eigen::MatrixXd(5, 1);
-      Eigen::Vector3d f=thrust_force*R.col(2); // applied thrust is the thrust vector projected on z_B. (= vertical up axis of the uav)
+      Eigen::Vector3d f = thrust_force*R.col(2); // applied thrust is the thrust vector projected on z_B. (= vertical up axis of the uav)
       u_vector(0,0) = f[0]; u_vector(1,0) = f[1];
       u_vector(2,0) = f[2]; u_vector(3,0) = 0.0; u_vector(4,0) = 0.0;
-
       // ROS_INFO_STREAM("u = \n" << u_vector);
 
+      // Generalized coordinates vector:
       Eigen::MatrixXd q_state = Eigen::MatrixXd(5, 1);
       Eigen::MatrixXd q_state_dot = Eigen::MatrixXd(5, 1);
       Eigen::MatrixXd q_state_dot_dot = Eigen::MatrixXd(5, 1);
-      // ROS_INFO_STREAM("q_state = \n" << q_state);
-      // ROS_INFO_STREAM("q_state_dot = \n" << q_state_dot);
-    
       q_state(0,0) = uav_state.pose.position.x; q_state(1,0) = uav_state.pose.position.y; 
       q_state(2,0) = uav_state.pose.position.z; q_state(3,0) = phi_load_cable; q_state(4,0) = theta_load_cable;
-
+      // ROS_INFO_STREAM("q_state = \n" << q_state);
       q_state_dot(0,0) = uav_state.velocity.linear.x; q_state_dot(1,0) = uav_state.velocity.linear.y; 
       q_state_dot(2,0) = uav_state.velocity.linear.z; q_state_dot(3,0) = phi_dot_load_cable; 
       q_state_dot(4,0) = theta_dot_load_cable;
-      
-      q_state_dot_dot = (M_matrix.inverse())*(u_vector - V_matrix*q_state_dot - G_vector - D_matrix*q_state_dot);
+      // ROS_INFO_STREAM("q_state_dot = \n" << q_state_dot);
+
+      // Model update:
+      q_state_dot_dot = (M_matrix.inverse())*(u_vector - (C_matrix + D_matrix)*q_state_dot - G_vector);
+      // ROS_INFO_STREAM("q_state_dot_dot = \n" << q_state_dot_dot);
 
       Eigen::Vector3d acceleration_uav;
 
       acceleration_uav[0] = q_state_dot_dot(0,0);
       acceleration_uav[1] = q_state_dot_dot(1,0);
       acceleration_uav[2] = q_state_dot_dot(2,0);
-      custom_acceleration.position.x = acceleration_uav[0];
-      custom_acceleration.position.y = acceleration_uav[1];
-      custom_acceleration.position.z = acceleration_uav[2];
+      predicted_acc.position.x = acceleration_uav[0];
+      predicted_acc.position.y = acceleration_uav[1];
+      predicted_acc.position.z = acceleration_uav[2];
 
       phi_dot_dot_load_cable = q_state_dot_dot(3,0);
       theta_dot_dot_load_cable= q_state_dot_dot(4,0);
@@ -2140,49 +2139,44 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
       predicted_q_state_dot_dot_load.position.x = phi_dot_dot_load_cable;
       predicted_q_state_dot_dot_load.position.y = theta_dot_dot_load_cable;
 
-      //Compute twist angle predictions. If//
+      // Compute swing angle predictions:
       Eigen::Vector3d uav_position(uav_state.pose.position.x,uav_state.pose.position.y,uav_state.pose.position.z); //get a vector of the UAV position to ease the following computations.
       Eigen::Vector3d mu; //Unit vector indicating cable orientation.
       Eigen::Vector3d zB; //unit vector z_B of the UAV body frame
       
-      mu=(uav_position-load_pose_position).normalized();
+      mu = (uav_position-Opl).normalized();
       // ROS_INFO_STREAM("mu after norm"<<mu);
-      zB=R.col(2);
+      zB = R.col(2);
       // ROS_INFO_STREAM("zB"<<zB);
-      swing_angle=acos((mu.dot(zB))/(mu.norm()*zB.norm())); //Compute this twist angle (positive only, between 0 and pi)
+      swing_angle = acos((mu.dot(zB))/(mu.norm()*zB.norm())); //Compute this swing angle (positive only, between 0 and pi)
       // ROS_INFO_STREAM("swing_angle"<<swing_angle);
-      swing_angle_to_publish.position.x=swing_angle;
-      predicted_swing_angle_out_.poses.push_back(swing_angle_to_publish); 
+      predicted_swing_angle.position.x = swing_angle;
+      predicted_swing_angle_out_.poses.push_back(predicted_swing_angle); 
 
-      //Compute tension in the cable
-      double mq= total_mass-_load_mass_;// Mass of the UAV
-      Tc=(-mq*acceleration_uav+mq*(Eigen::Vector3d(0, 0, -common_handlers_->g))+f).dot(mu.transpose());
-      Tc_to_publish.position.x=Tc;
-      predicted_Tc_out_.poses.push_back(Tc_to_publish); 
+      // Compute cable tension predictions:
+      double mq = total_mass - _load_mass_; // Mass of the UAV // TODO: why not just use uav_mass_?
+      Tc = (-mq*acceleration_uav + mq*(Eigen::Vector3d(0, 0, -common_handlers_->g)) + f).dot(mu.transpose());
+      predicted_Tc.position.x = Tc;
+      predicted_Tc_out_.poses.push_back(predicted_Tc); 
     }
-    else{ //1UAV no payload equations
-
-      // Bryan used thrust_force in eom instead of f as I did. what does it changes??? Thrust force takes attitude into action when my predictions assume that the attitude has been controller perfectly.
-      
-      //------EOM BRYAN :
-      double total_mass=uav_mass_;
+    else{ // 1UAV no payload equations
+      // TODO: the comme,nt below seems not correct as actually Raphael did same as Bryan: proejct total thrust force on zB.
+      // Rapahel: Bryan used thrust_force in eom instead of f as I did. what does it changes??? Thrust force takes attitude into action when my predictions assume that the attitude has been controller perfectly.
+      double total_mass = uav_mass_;
       Eigen::Vector3d acceleration_uav = 1.0/total_mass * (thrust_force*R.col(2) + total_mass * (Eigen::Vector3d(0, 0, -common_handlers_->g)));
       // Eigen::Vector3d acceleration_uav = 1.0/total_mass * (thrust_force*Rd.col(2) + total_mass * (Eigen::Vector3d(0, 0, -common_handlers_->g))); --> do not use desired force
-      custom_acceleration.position.x = acceleration_uav[0];
-      custom_acceleration.position.y = acceleration_uav[1];
-      custom_acceleration.position.z = acceleration_uav[2];
-      predicted_accelerations_out_.poses.push_back(custom_acceleration);
-
+      predicted_acc.position.x = acceleration_uav[0];
+      predicted_acc.position.y = acceleration_uav[1];
+      predicted_acc.position.z = acceleration_uav[2];
+      predicted_accelerations_out_.poses.push_back(predicted_acc);
     }
-    //--------
-    // if we ignore the body rate inertial dynamics:
-    
-    if (!_predicitons_use_body_inertia_) // TODO make user setting to include or not
+
+    // Attitude dynamics:
+    if (!_predicitons_use_body_inertia_)// if we ignore the body rate inertial dynamics:
     { 
       // do nothing
     }
     else { // if we include the body rate inertial dynamics:
-      
       // Compute the predicted torque:
       // See https://docs.px4.io/master/en/flight_stack/controller_diagrams.html, https://docs.px4.io/master/en/config_mc/pid_tuning_guide_multicopter.html#rate-controller
       // P-action:
@@ -2203,12 +2197,11 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
     
       // P+D-action:
       torque_pred = Kp_tau * tau_P_error.array() + Kd_tau * tau_D_error.array(); //TODO add derivative action
-      if (i==0 || i==1){
-        //ROS_INFO_STREAM("term = \n" << torque_pred);
-      }
+      // if (i==0 || i==1){
+      //   //ROS_INFO_STREAM("term = \n" << torque_pred);
+      // }
       
-
-      Eigen::Matrix3d J = Eigen::Matrix3d::Zero(3,3);
+      Eigen::Matrix3d J = Eigen::Matrix3d::Zero(3,3); // body inertia UAV
       // values taken from ~/mrs_workspace/src/simulation/ros_packages/mrs_simulation/models/mrs_robots_description/urdf/f450.xacro
       double inertia_body_radius = 0.20; // [m]
       double inertia_body_height = 0.05; // [m]
@@ -2225,9 +2218,6 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
                                 -attitude_rate_pred(1),  attitude_rate_pred(0),     0.0;
       attitude_acceleration_pred = J.inverse()*(-skew_attitude_rate_pred*J*attitude_rate_pred + torque_pred);
     }
-    
-    
-
   } // end for loop prediction
 
   // Computational time:
@@ -2250,13 +2240,13 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
   // // method: clock() CPU time, https://stackoverflow.com/questions/20167685/measuring-cpu-time-in-c/43800564:
   // std::clock_t c_end = std::clock();
   // ComputationalTime_msg_.trajectory_predictions = (c_end-c_start) / (double)CLOCKS_PER_SEC;
-
   std::clock_t c_end = std::clock();
   //std::setprecision(2);
   double part = 1000.0*(c_end-c_start) / (double)CLOCKS_PER_SEC;
   ComputationalTime_msg_.parts.push_back(part);
   std::string name_part = "trajectory prediction";
   ComputationalTime_msg_.name_parts.push_back(name_part);
+
   // Publishers:
   // avoid publishing all trajectory predictions since not required for control, only useful for post-analysis:
 
@@ -2269,8 +2259,8 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
     }
   }
   
+  // UAV
   if (_enable_trajectory_pub_) {
-    
     try {
       predicted_vel_publisher_.publish(predicted_velocities_out_);
     }
@@ -2308,107 +2298,106 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
       ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_tiltangle_publisher_.getTopic().c_str());
     }
   }
-
-  // -------------1UAV+payload-----------------------//
-  if(_type_of_system_=="1uav_payload"&& payload_spawned_){
-  try {
-    predicted_load_pose_publisher_.publish(predicted_load_poses_out_);
-  }
-  catch (...) {
-    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_load_pose_publisher_.getTopic().c_str());
-  }
-  try {
-    predicted_load_vel_publisher_.publish(predicted_load_velocities_out_);
-  }
-  catch (...) {
-    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_load_vel_publisher_.getTopic().c_str());
-  }
-  try {
-    predicted_load_acc_publisher_.publish(predicted_load_accelerations_out_);
-  }
-  catch (...) {
-    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_load_acc_publisher_.getTopic().c_str());
-  }
-  try {
-  predicted_swing_angle_publisher_.publish(predicted_swing_angle_out_);
-  }
-  catch (...) {
-    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_swing_angle_publisher_.getTopic().c_str());
-  }
-  try {
-  predicted_Tc_publisher_.publish(predicted_Tc_out_);
-  }
-  catch (...) {
-    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_Tc_publisher_.getTopic().c_str());
-  }
-  
-  // try {
-  //   tracker_load_pose_publisher_.publish(anchoring_pt_pose_position_);
-  // }
-  // catch (...) {
-  //   ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", tracker_load_pose_publisher_.getTopic().c_str());
-  // }
-  // try {
-  //   tracker_load_vel_publisher_.publish(anchoring_pt_lin_vel_); //not a ros msg ! gives strange error. Check if all graphs are still working without this and delete it if it is the case.
-  // }
-  // catch (...) {
-  //   ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", tracker_load_vel_publisher_.getTopic().c_str());
-  // }
   // try {
   //   tracker_uav_state_publisher_.publish(uav_state_);
   // }
   // catch (...) {
   //   ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", tracker_uav_state_publisher_.getTopic().c_str());
   // }
-  try {
-    predicted_phi_publisher_.publish(predicted_phi);
-  }
-  catch (...) {
-    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_phi_publisher_.getTopic().c_str());
-  }
-  try {
-    predicted_theta_publisher_.publish(predicted_theta);
-  }
-  catch (...) {
-    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_theta_publisher_.getTopic().c_str());
-  }
-  try {
-    predicted_phi_dot_publisher_.publish(predicted_phi_dot);
-  }
-  catch (...) {
-    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_phi_dot_publisher_.getTopic().c_str());
-  }
-  try {
-    predicted_theta_dot_publisher_.publish(predicted_theta_dot);
-  }
-  catch (...) {
-    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_theta_dot_publisher_.getTopic().c_str());
-  }
-  try {
-    predicted_phi_dot_dot_publisher_.publish(predicted_phi_dot_dot);
-  }
-  catch (...) {
-    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_phi_dot_dot_publisher_.getTopic().c_str());
-  }
-  try {
-    predicted_theta_dot_dot_publisher_.publish(predicted_theta_dot_dot);
-  }
-  catch (...) {
-    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_theta_dot_dot_publisher_.getTopic().c_str());
-  }
-  try {
-    predicted_load_position_errors_publisher_.publish(predicted_load_position_errors_out);
-  }
-  catch (...) {
-    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_load_position_errors_publisher_.getTopic().c_str());
-  }
 
+  // -------------1UAV+payload-----------------------//
+  if(_type_of_system_=="1uav_payload"&& payload_spawned_){
+    if (_enable_trajectory_pub_) {
+      try {
+        predicted_load_pose_publisher_.publish(predicted_load_poses_out_);
+      }
+      catch (...) {
+        ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_load_pose_publisher_.getTopic().c_str());
+      }
+      try {
+        predicted_load_vel_publisher_.publish(predicted_load_velocities_out_);
+      }
+      catch (...) {
+        ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_load_vel_publisher_.getTopic().c_str());
+      }
+      try {
+        predicted_load_acc_publisher_.publish(predicted_load_accelerations_out_);
+      }
+      catch (...) {
+        ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_load_acc_publisher_.getTopic().c_str());
+      }
+      try {
+      predicted_swing_angle_publisher_.publish(predicted_swing_angle_out_);
+      }
+      catch (...) {
+        ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_swing_angle_publisher_.getTopic().c_str());
+      }
+      try {
+      predicted_Tc_publisher_.publish(predicted_Tc_out_);
+      }
+      catch (...) {
+        ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_Tc_publisher_.getTopic().c_str());
+      }
+      try {
+        predicted_phi_publisher_.publish(predicted_phi_out_);
+      }
+      catch (...) {
+        ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_phi_publisher_.getTopic().c_str());
+      }
+      try {
+        predicted_theta_publisher_.publish(predicted_theta_out_);
+      }
+      catch (...) {
+        ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_theta_publisher_.getTopic().c_str());
+      }
+      try {
+        predicted_phi_dot_publisher_.publish(predicted_phi_dot_out_);
+      }
+      catch (...) {
+        ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_phi_dot_publisher_.getTopic().c_str());
+      }
+      try {
+        predicted_theta_dot_publisher_.publish(predicted_theta_dot_out_);
+      }
+      catch (...) {
+        ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_theta_dot_publisher_.getTopic().c_str());
+      }
+      try {
+        predicted_phi_dot_dot_publisher_.publish(predicted_phi_dot_dot_out_);
+      }
+      catch (...) {
+        ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_phi_dot_dot_publisher_.getTopic().c_str());
+      }
+      try {
+        predicted_theta_dot_dot_publisher_.publish(predicted_theta_dot_dot_out_);
+      }
+      catch (...) {
+        ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_theta_dot_dot_publisher_.getTopic().c_str());
+      }
+      try {
+        predicted_load_position_errors_publisher_.publish(predicted_load_position_errors_out_);
+      }
+      catch (...) {
+        ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_load_position_errors_publisher_.getTopic().c_str());
+      }
+    }
+    // try {
+    //   tracker_load_pose_publisher_.publish(anchoring_pt_pose_position_);
+    // }
+    // catch (...) {
+    //   ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", tracker_load_pose_publisher_.getTopic().c_str());
+    // }
+    // try {
+    //   tracker_load_vel_publisher_.publish(anchoring_pt_lin_vel_); //not a ros msg ! gives strange error. Check if all graphs are still working without this and delete it if it is the case.
+    // }
+    // catch (...) {
+    //   ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", tracker_load_vel_publisher_.getTopic().c_str());
+    // }
   }
-
 } // end of the prediction_general function.
 
 //---------------------------------LOAD 2UAV---------------------------------//
-  void DergbryanTracker::trajectory_prediction_general_load_2UAV(mrs_msgs::PositionCommand position_cmd, double uav_heading, const mrs_msgs::AttitudeCommand::ConstPtr &last_attitude_cmd){
+void DergbryanTracker::trajectory_prediction_general_load_2UAV(mrs_msgs::PositionCommand position_cmd, double uav_heading, const mrs_msgs::AttitudeCommand::ConstPtr &last_attitude_cmd){
     // --------------------------------------------------------------
     // |          load the control reference and estimates          | --> the reference is assumed constant over the prediction
 
@@ -2552,7 +2541,7 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
     }
 
     // | --------------------------------- |
-//We need vectors of the different states so it can be used in the matrix/vectorial expressions later. => get Eigen::Vector3d version of each variable 
+   //We need vectors of the different states so it can be used in the matrix/vectorial expressions later. => get Eigen::Vector3d version of each variable 
     // | --------------------- initialize the state of the UAV1 --------------------- |
 
     mrs_msgs::UavState uav1_state = uav_state_; // uav_state represents the locally defined predicted state
@@ -2684,7 +2673,7 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
   geometry_msgs::Pose custom_uav2_vel;
   geometry_msgs::Pose custom_uav2_acceleration;
   
-// AnchoringPoint of uav1
+ // AnchoringPoint of uav1
   geometry_msgs::Pose custom_uav1_anchoring_point_pose;
   geometry_msgs::Pose custom_uav1_anchoring_point_vel;
   geometry_msgs::Pose custom_uav1_anchoring_point_acceleration;
@@ -2717,19 +2706,18 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
   geometry_msgs::Pose custom_wl ;
   geometry_msgs::Pose custom_dotnl;
   geometry_msgs::Pose custom_dotwl;
-//to delete--
-  geometry_msgs::Pose theta_load_to_publish;
-  geometry_msgs::Pose phi_load_to_publish;
-  geometry_msgs::Pose theta_dot_load_to_publish;
-  geometry_msgs::Pose phi_dot_load_to_publish;
+  //to delete--
+  geometry_msgs::Pose predicted_load_theta;
+  geometry_msgs::Pose predicted_load_phi;
+  geometry_msgs::Pose predicted_load_dot_theta;
+  geometry_msgs::Pose predicted_load_dot_phi;
   geometry_msgs::Pose predicted_q_state_dot_dot_uav;
   geometry_msgs::Pose predicted_q_state_dot_dot_load;
   
 
-  geometry_msgs::Pose theta_dot_dot_load_to_publish;
-  geometry_msgs::Pose phi_dot_dot_load_to_publish;
+  geometry_msgs::Pose predicted_load_dot_dot_theta;
+  geometry_msgs::Pose predicted_load_dot_dot_phi;
   
-  geometry_msgs::Pose force_to_publish;
   geometry_msgs::Pose predicted_load_position_errors_to_publish;
 
   // Thesis b: Test 06/08
@@ -2744,7 +2732,7 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
 
   std_msgs::Float32 pos_difference_x;
   std_msgs::Float32 pos_difference_y;
-//--
+  //--
   Eigen::Matrix3d uav1_R;
   Eigen::Matrix3d uav1_Rdot;
   Eigen::Matrix3d uav1_skew_Ow;
@@ -2768,7 +2756,7 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
 
   // Eigen::MatrixXd x_full_state = Eigen::MatrixXd(5, 5);
 
-// Prediction loop (over 3sec horizon)
+  // Prediction loop (over 3sec horizon)
   for (int i = 0; i < _num_pred_samples_; i++) {
     if(i==0){
       //Initial conditions for first iteration + Fill in custom poses
@@ -2819,12 +2807,12 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
       custom_uav2_anchoring_point_vel.position.z=uav2_anchoring_point_velocity[2];
       
       // custom_Payload_position.position.x = load_pose_position.x;
-      // custom_load_pose.position.y = load_pose_position.y;
-      // custom_load_pose.position.z = load_pose_position.z;
+      // predicted_load_pose.position.y = load_pose_position.y;
+      // predicted_load_pose.position.z = load_pose_position.z;
 
       // custom_Payload_velocity.position.x = load_lin_vel[0];
-      // custom_load_vel.position.y = load_lin_vel[1];
-      // custom_load_vel.position.z = load_lin_vel[2];
+      // predicted_load_vel.position.y = load_lin_vel[1];
+      // predicted_load_vel.position.z = load_lin_vel[2];
 
       // FK : Beam payload center of mass position and velocity - Raphael
       Payload_position=(uav1_anchoring_point_position+uav2_anchoring_point_position)/2.0; // vector 3d.
@@ -3029,7 +3017,7 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
     // predicted_dotnl_out_.poses.push_back(custom_dotnl);
     // predicted_dotwl_out_.poses.push_back(custom_dotwl);
 
-//Commented as not published yet.
+    //Commented as not published yet.
 
     //------------------------Controller's part-----------------------//
     // Need to put the arguments of the SimulateSe3CopyFunction in the correct form, for both UAVs. 
@@ -3068,11 +3056,11 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
     // Eigen::Vector3d f1;
     double thrust_force1;
     double theta1;
-    std::tie(thrust_force1,uav1_attitude_rate_pred,theta1)=SimulateSe3CopyController(uav1_state, uav1_R, uav1_anchoring_point_position , uav1_anchoring_point_velocity ,position_cmd , Rp1 , Rv1 , Rpl1 , Ra1 );
+    std::tie(thrust_force1,uav1_attitude_rate_pred,theta1)=ComputeSe3CopyController(uav1_state, uav1_R, uav1_anchoring_point_position , uav1_anchoring_point_velocity ,position_cmd , Rp1 , Rv1 , Rpl1 , Ra1 );
     // ROS_INFO_STREAM("f1 = \n" << f1);
     double thrust_force2;
     double theta2;
-    std::tie(thrust_force2,uav2_attitude_rate_pred,theta2)=SimulateSe3CopyController(uav2_state, uav2_R, uav2_anchoring_point_position , uav2_anchoring_point_velocity ,uav2_position_cmd_received_ , Rp2 , Rv2 , Rpl2 , Ra2);
+    std::tie(thrust_force2,uav2_attitude_rate_pred,theta2)=ComputeSe3CopyController(uav2_state, uav2_R, uav2_anchoring_point_position , uav2_anchoring_point_velocity ,uav2_position_cmd_received_ , Rp2 , Rv2 , Rpl2 , Ra2);
     // ROS_INFO_STREAM("f2 = \n" << f2);
     //Compute the applied force, in direction of z_B
     Eigen::Vector3d f1=thrust_force1*uav1_R.col(2); //TODORAPHAEL change to T1,T2 and the tension below to Tc1 Tc2. or keep f.
@@ -3142,7 +3130,7 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
     // ROS_INFO_STREAM("T   = \n" << T_matrix);
         // EOM to get the accelerations.
     Eigen::Vector3d zw(0,0,1.0);
-////////////////
+    ////////////////
 
     Payload_acc=(1.0/ml)*T1*mu1+(1.0/ml)*T2*mu2-9.81*zw;
     dotnl = wl.cross(nl); 
@@ -3175,7 +3163,7 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
     custom_uav2_acceleration.position.y=uav2_acc[1];
     custom_uav2_acceleration.position.z=uav2_acc[2];
   } // end for loop prediction
-//Publish the PoseArray that have been filled during the predictions.
+  //Publish the PoseArray that have been filled during the predictions.
   // ROS_INFO_STREAM("Gets to the publishing");
   try {
     predicted_uav1_poses_publisher_.publish(predicted_uav1_poses_out_);
@@ -3229,634 +3217,640 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
     ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_uav2_anchoring_point_vel_publisher_.getTopic().c_str());
   }
 
+}
+
+std::tuple< double, Eigen::Vector3d,double> DergbryanTracker::ComputeSe3CopyController(const mrs_msgs::UavState uavi_state, Eigen::Matrix3d uavi_R, Eigen::Vector3d Payloadposition_vector, Eigen::Vector3d Payloadvelocity_vector,mrs_msgs::PositionCommand uavi_position_cmd ,Eigen::Vector3d uavi_Rp,Eigen::Vector3d uavi_Rv,Eigen::Vector3d uavi_Rpl,Eigen::Vector3d uavi_Ra){
+  // Computes the Se3CopyController for 1 UAV with or without payload.
+  // But since for 2 UAVs with payload, the control law is distributed, one can use this controller.
+  // Make sure to put as argument the data of this UAV, and in the correct type, and it will return the force vector (in frame W) and the attitude rate vector (also in frame W).
+  // As this is used for predictions, no integral action is added.
+  // The following is just the exact same lines as in the controller section, no additoinnal comments needed.
+  // |--------------------------------------------------------------------------------------|
+  // TODO: try to make this function using ony C++ eigen and all ROS specific (msg, pub/sub should be called in additional functions on if needed to simulate this.)
+  // TODO: Don't rely on globally defined vars, but get the required params from explicit argument assignment.
+  // TODO: Generalize I/O of this function such that get args on RobotState, RobotReference, RobotParams, ControlParams it returns based on model and  ControlAction
+  // TODO: implement functionaity to saturate variables or not.
+  // TODO: Make a lib so this function can be used both in the controller itself and in the tracker and there is only one place where changes are required.
+
+  // init arguments to correct type and name
+  
+  // | --------------------- define system states --------------------- |
+  mrs_msgs::UavState uav_state = uavi_state; // init the state of the UAV number i to a local var, from its pointer in the arguments.
+
+  // Op - position in global frame
+  // Ov - velocity in global frame
+  Eigen::Vector3d Op(uav_state.pose.position.x, uav_state.pose.position.y, uav_state.pose.position.z);
+  Eigen::Vector3d Ov(uav_state.velocity.linear.x, uav_state.velocity.linear.y, uav_state.velocity.linear.z);
+
+  // R - current uav attitude
+  // Eigen::Matrix3d R = mrs_lib::AttitudeConverter(uav_state.pose.orientation);
+  Eigen::Matrix3d R = uavi_R; //Orientation of the UAV, rotation matrix
+
+  // Ow - UAV angular rate
+  // Eigen::Vector3d Ow(uav_state.velocity.angular.x, uav_state.velocity.angular.y, uav_state.velocity.angular.z); // TODO: actually not used (see Se3Controller CTU)
+
+  // payload anchoring point state:
+
+  // Opl - position load in global frame
+  // Ovl - velocity load in global frame
+
+  // TODO: why here not using Eigen vectors for Opl and Ovl as in controller?
+  geometry_msgs::Vector3 load_pose_position; // transform the vector3d into a vector3, as its used like this after in the code. 
+  load_pose_position.x = Payloadposition_vector[0];
+  load_pose_position.y = Payloadposition_vector[1];
+  load_pose_position.z = Payloadposition_vector[2];
+  Eigen::Vector3d load_lin_vel = Payloadvelocity_vector;
+
+  Eigen::Vector3d Opl(load_pose_position.x, load_pose_position.y, load_pose_position.z);
+  Eigen::Vector3d Ovl(load_lin_vel[0], load_lin_vel[1], load_lin_vel[2]);
+
+  // --------------------------------------------------------------
+  // |          load the control reference and estimates          |
+  // --------------------------------------------------------------
+  
+  // Rp - position reference in global frame
+  // Rv - velocity reference in global frame
+  // Ra - velocity reference in global frame
+  // Rw - angular velocity reference
+
+  Eigen::Vector3d Rp = uavi_Rp;
+  Eigen::Vector3d Rv = uavi_Rv;
+  Eigen::Vector3d Ra = uavi_Ra;
+  Eigen::Vector3d Rw = Eigen::Vector3d::Zero(3); // TODO: add as input of function
+
+  mrs_msgs::PositionCommand position_cmd = uavi_position_cmd;
+  // TODO: why don't we put the if cases to construct Rp, Rv, Ra based on a position_cmd here? 
+
+  /* test streaming the references Rp, Rv, Ra when the uav is moving.*/
+  // ROS_INFO_STREAM("Rp = \n" << Rp);
+  // ROS_INFO_STREAM("Rv = \n" << Rv);
+  // ROS_INFO_STREAM("Ra = \n" << Ra);
+
+
+  // | -------------- calculate the control errors -------------- |
+  // position control error
+  Eigen::Vector3d Ep = Eigen::Vector3d::Zero(3);
+
+  if (position_cmd.use_position_horizontal || position_cmd.use_position_vertical) {
+    Ep = Op - Rp;
+  }
+  // velocity control error
+  Eigen::Vector3d Ev = Eigen::Vector3d::Zero(3);
+
+  if (position_cmd.use_velocity_horizontal || position_cmd.use_velocity_vertical ||
+      position_cmd.use_position_vertical) {  // even when use_position_vertical to provide dampening
+    Ev = Ov - Rv;
+  }
+  /*VALIDATE: test streaming the errors.*/
+  // ROS_INFO_STREAM("Ep = \n" << Ep);
+  // ROS_INFO_STREAM("Ev = \n" << Ev);
+
+  // | --------------------------LOAD--------------------------|
+  // --------------------------------------------------------------
+  // |          load the control reference and errors             |
+  // --------------------------------------------------------------
+  // TODO: Rpl and Rvl not defined, nor used. Should be the uav ref cable length down. Not used in actual error of Pandolfo.
+  // Rpl - position reference load in global frame
+  // Rvl - velocity reference load in global frame
+  //Eigen::Vector3d Rpl = uavi_Rpl; // actually not used any further as current Pandolfo controller does not require this.
+
+  Eigen::Vector3d Epl = Eigen::Vector3d::Zero(3); // Load position control error
+  Eigen::Vector3d Evl = Eigen::Vector3d::Zero(3); // Load velocity control error
+
+  if (_run_type_ == "simulation" && payload_spawned_){
+    // load position control error
+    if (position_cmd.use_position_horizontal || position_cmd.use_position_vertical) {
+      Eigen::Vector3d e3(0.0, 0.0, 1.0);
+      Epl = Op - _cable_length_*e3 - Opl; // relative to uav base frame poiting from the anchoring point to the stable equilibrium beneuth the uav, according to Pandolfo / thesis Raphael: Anchoring point realignment
+      // 2021 student said this : Op - Opl is super unstable!! However, this is the way Pandolfo thesis explained it. And I think what they did (Rp - Opl) will always be more unstable, as for a very far references, the control actions of the error of the UAV and the one of the Payload will superpose and generate a huge Td, which can easilly saturates the actuators and creates instability. 
+      // TODO: I thought Raphael only looks to the posiiton error in xy (ignoring z)? check this.
+    }
+    // load velocity control error
+    if (position_cmd.use_velocity_horizontal || position_cmd.use_velocity_vertical ||
+      position_cmd.use_position_vertical) {  // even when use_position_vertical to provide dampening
+      Evl = Ov - Ovl; // speed relative to base frame
+    }
+    // Epl[2] = 0;
+    // Evl[2] = 0;
+  } 
+  else if(_run_type_ == "uav" && payload_spawned_){ //HARDWARE - TODORAPHAEL FOR HARDWARE TESTING. ADAPTE IT. 
+      // load_pose_position.x = Op[0] + Difference_load_drone_position[0];
+      // load_pose_position.y = Op[1] + Difference_load_drone_position[1];
+      // load_pose_position.z = Op[2] + Difference_load_drone_position[2];
+
+      // if (position_cmd.use_position_horizontal || position_cmd.use_position_vertical) {
+      //   Epl[0] = Rpl[0] - load_pose_position.x; // since encoder gives offset from drone position (position relative to drone)
+      //   Epl[1] = Rpl[1] - load_pose_position.y;
+      //   Epl[2] = Rpl[2] - load_pose_position.z;
+      // }
+      // if (position_cmd.use_velocity_horizontal || position_cmd.use_velocity_vertical ||
+      //     position_cmd.use_position_vertical) {  // even when use_position_vertical to provide dampening
+      //   Evl = -Ovl; // if encoders don't move, there is no speed (speed relative to drone)
+      // }
+      // load_pose_error.x = -Epl[0];
+      // load_pose_error.y = -Epl[1];
+      // load_pose_error.z = -Epl[2];
+
+      // load_velocity_error.x = -Evl[0];
+      // load_velocity_error.y = -Evl[1];
+      // load_velocity_error.z = -Evl[2];
+
+      // load_pose_experiments_publisher_.publish(load_pose_position);
+      
+      // load_pose_error_publisher_.publish(load_pose_error);
+      // load_velocity_error_publisher_.publish(load_velocity_error);
+
+      // //ROS_INFO_STREAM("Se3BruboticsLoadController: load_pose_position = \n" << load_pose_position);
+      // //ROS_INFO_STREAM("Se3BruboticsLoadController: Epl (Rpl-load_pose)= \n" << Epl);
+      // Epl[2] = 0;
   }
 
-std::tuple< double, Eigen::Vector3d,double> DergbryanTracker::SimulateSe3CopyController(const mrs_msgs::UavState uavi_state, Eigen::Matrix3d uavi_R, Eigen::Vector3d Payloadposition_vector, Eigen::Vector3d Payloadvelocity_vector,mrs_msgs::PositionCommand uavi_position_cmd ,Eigen::Vector3d uavi_Rp,Eigen::Vector3d uavi_Rv,Eigen::Vector3d uavi_Rpl,Eigen::Vector3d uavi_Ra){
-    //Simulate the Se3_copy_Controller for 1 UAV.
-    //Just make sure to put as argument the data of this UAV, and in the correct type, and it will return the force vector (in frameW) and the attitude rate vector (also in frame W).
-    // As this is used for predictions, no integral action remains.
-    // The following is just the exact same lines as in the controller section, no additoinnal comments needed.
+  // Ignore small load position errors to deal with load offsets and prevent agressive actions on small errors
+  // TODO: make a yaml param of 0.05 threshold  
+  if(payload_spawned_ && Epl.norm() < 0.05){ // When the payload is very close to equilibrium vertical position, the error is desactivated so the UAV doesn't try to compensate and let it damp naturally.
+    Epl = Eigen::Vector3d::Zero(3);
+  }
+
+  // | --------------------- load the gains --------------------- |
+  // NOTE: do not move the gains outside the for loop or this function! Due to "Kp = Kp * (uav_mass_ + uav_mass_difference_);"
+  /*NOTE: for now on disable the filterGains used in the original se3 controller*/
+  /*QUESTION: shouldn't we add this back later?*/
+  //filterGains(control_reference->disable_position_gains, dt);
+
+  Eigen::Vector3d Ka = Eigen::Vector3d::Zero(3);
+  Eigen::Array3d  Kp = Eigen::Array3d::Zero(3);
+  Eigen::Array3d  Kv = Eigen::Array3d::Zero(3);
+  Eigen::Array3d  Kq = Eigen::Array3d::Zero(3);
+
+  {
+    std::scoped_lock lock(mutex_gains_);
+
+    if (position_cmd.use_position_horizontal) {
+      Kp[0] = kpxy_;
+      Kp[1] = kpxy_;
+    } else {
+      Kp[0] = 0;
+      Kp[1] = 0;
+    }
+
+    if (position_cmd.use_position_vertical) {
+      Kp[2] = kpz_;
+    } else {
+      Kp[2] = 0;
+    }
+
+    if (position_cmd.use_velocity_horizontal) {
+      Kv[0] = kvxy_;
+      Kv[1] = kvxy_;
+    } else {
+      Kv[0] = 0;
+      Kv[1] = 0;
+    }
     
-    // init arguments to correct type and name.
-    mrs_msgs::UavState uav_state=uavi_state; // init the state of the UAV number i to a local var, from its pointer in the arguments.
-    // Eigen::Vector3d payload_pos= *Payloadposition_vector;
-    geometry_msgs::Vector3 load_pose_position; //transform the vector3d into a vector3, as its used like this after in the code. 
-    load_pose_position.x=Payloadposition_vector[0];
-    load_pose_position.y=Payloadposition_vector[1];
-    load_pose_position.z=Payloadposition_vector[2];
-
-    Eigen::Vector3d load_lin_vel=Payloadvelocity_vector;
-    //Define positions_cmds from arguments.
-    Eigen::Vector3d Rp = uavi_Rp;
-    Eigen::Vector3d Rv = uavi_Rv;
-    Eigen::Vector3d Rpl = uavi_Rpl;
-    Eigen::Vector3d Ra = uavi_Ra;
-    Eigen::Matrix3d R = uavi_R; //Orientation of the UAV, rotation matrix
-    mrs_msgs::PositionCommand position_cmd=uavi_position_cmd;
-
-    // | --------------------- define system states --------------------- |
-    // Op - position in global frame
-    // Ov - velocity in global frame
-    Eigen::Vector3d Op(uav_state.pose.position.x, uav_state.pose.position.y, uav_state.pose.position.z);
-    Eigen::Vector3d Ov(uav_state.velocity.linear.x, uav_state.velocity.linear.y, uav_state.velocity.linear.z);
-    // // R - current uav attitude
-    // Eigen::Matrix3d R = mrs_lib::AttitudeConverter(uav_state.pose.orientation);
-    // // Ow - UAV angular rate
-    // Eigen::Vector3d Ow(uav_state.velocity.angular.x, uav_state.velocity.angular.y, uav_state.velocity.angular.z);
-
-    // // | -------------- calculate the control errors -------------- |
-    // position control error
-    Eigen::Vector3d Ep = Eigen::Vector3d::Zero(3);
-    if (position_cmd.use_position_horizontal || position_cmd.use_position_vertical) {
-      Ep = Op - Rp;
+    if (position_cmd.use_velocity_vertical) {
+      Kv[2] = kvz_;
+    } 
+    else if (position_cmd.use_position_vertical) {  // special case: want to control z-pos but not the velocity => at least provide z dampening
+      Kv[2] = kvz_;
+    } else {
+      Kv[2] = 0;
     }
-    // velocity control error
-    Eigen::Vector3d Ev = Eigen::Vector3d::Zero(3);
-    if (position_cmd.use_velocity_horizontal || position_cmd.use_velocity_vertical ||
-        position_cmd.use_position_vertical) {  // even when use_position_vertical to provide dampening
-      Ev = Ov - Rv;
+
+    if (position_cmd.use_acceleration) {
+      Ka << kaxy_, kaxy_, kaz_;
+    } else {
+      Ka << 0, 0, 0;
     }
-    /*VALIDATE: test streaming the references Op, Ov, R, Ow, Ep, Ev when the drone is moving.*/
-    // ROS_INFO_STREAM("Op = \n" << Op);
-    // ROS_INFO_STREAM("Ov = \n" << Ov);
-    // ROS_INFO_STREAM("R  = \n" << R);
-    // ROS_INFO_STREAM("Ow = \n" << Ow);
-    // ROS_INFO_STREAM("Ep = \n" << Ep);
-    // ROS_INFO_STREAM("Ev = \n" << Ev);
 
-    // | --------------------- Load --------------------- |
-    // Need to be instantiated before the if conditions to be visible after it.
-    Eigen::Array3d  Kpl = Eigen::Array3d::Zero(3); 
-    Eigen::Array3d  Kdl = Eigen::Array3d::Zero(3); 
-    Eigen::Vector3d Epl = Eigen::Vector3d::Zero(3); // Load position control error
-    Eigen::Vector3d Evl = Eigen::Vector3d::Zero(3); // Load velocity control error
-    Eigen::Vector3d Opl(load_pose_position.x, load_pose_position.y, load_pose_position.z);
-    Eigen::Vector3d Ovl(load_lin_vel[0], load_lin_vel[1], load_lin_vel[2]);
+    // Those gains are set regardless of control_reference setting,
+    // because we need to control the attitude.
+    Kq << kqxy_, kqxy_, kqz_;
+  }
+  // Print to test if the gains are loaded correctly:
+  // ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Ka_x = %f", Ka(0));
+  // ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Ka_y = %f", Ka(1));
+  // ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Ka_z = %f", Ka(2));
+  // ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kq_x = %f", Kq(0));
+  // ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kq_y = %f", Kq(1));
+  // ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kq_z = %f", Kq(2));
+  // ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kp_x = %f", Kp(0));
+  // ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kp_y = %f", Kp(1));
+  // ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kp_z = %f", Kp(2));
+  // ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kv_x = %f", Kv(0));
+  // ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kv_y = %f", Kv(1));
+  // ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kv_z = %f", Kv(2));
 
-    if(_type_of_system_== "1uav_payload" ||_type_of_system_ == "2uavs_and_payload"){
+  // | --------------------------LOAD--------------------------|
+  // Load the gains for the Anchoring point realignment method of Pandolfo: 
+  Eigen::Array3d  Kpl = Eigen::Array3d::Zero(3); 
+  Eigen::Array3d  Kdl = Eigen::Array3d::Zero(3); 
 
-      if (_run_type_ == "simulation"){ //SIMULATION
-         if(payload_spawned_){
-            if(remove_offset_){ //This is necessary as the payload is never exactly below the COM of the UAV. If this offset is not cancelled, the control actions computed for the com of the UAV and the position of the payload will be opposed when close to the reference.
-              Epl = Op - Opl; //Do this in the first instant of the simulation, when payload is already there, when the UAV position is very close to what was asked.
-              load_pose_position_offset_ = Epl; //Store the offset in a global.
-              // ROS_INFO_STREAM("Load_position_offset = " << load_pose_position_offset_);
-              remove_offset_ = false;
-            } 
-        }
-      //Thesis B: step 5: calculate the errors
-        if (position_cmd.use_position_horizontal || position_cmd.use_position_vertical) { //Compute the errors for the load part, taking the offset into account.
-          Epl = Op - Opl - load_pose_position_offset_; 
-        }
+  if(_type_of_system_ == "1uav_payload" ||_type_of_system_ == "2uavs_and_payload"){
+    if (position_cmd.use_position_horizontal) { //TODO load them in global variables as for the other param.  
+      Kpl[0] = kplxy_;
+      Kpl[1] = kplxy_;
+    } else {
+      Kpl[0] = 0.0;
+      Kpl[1] = 0.0;
+    }
 
-        if (position_cmd.use_velocity_horizontal || position_cmd.use_velocity_vertical ||
-            position_cmd.use_position_vertical) {  // even when use_position_vertical to provide dampening
-          Evl = Ov - Ovl;
-          //(speed relative to base frame)
-      }
-      Epl[2] = 0;
-      Evl[2] = 0;
-      }else{ //HARDWARE - TODORAPHAEL FOR HARDWARE TESTING. ADAPTE IT.
-          
-        // load_pose_position.x = Op[0] + Difference_load_drone_position[0];
-        // load_pose_position.y = Op[1] + Difference_load_drone_position[1];
-        // load_pose_position.z = Op[2] + Difference_load_drone_position[2];
-
-        // if (position_cmd.use_position_horizontal || position_cmd.use_position_vertical) {
-        //   Epl[0] = Rpl[0] - load_pose_position.x; // since encoder gives offset from drone position (position relative to drone)
-        //   Epl[1] = Rpl[1] - load_pose_position.y;
-        //   Epl[2] = Rpl[2] - load_pose_position.z;
-        // }
-        // if (position_cmd.use_velocity_horizontal || position_cmd.use_velocity_vertical ||
-        //     position_cmd.use_position_vertical) {  // even when use_position_vertical to provide dampening
-        //   Evl = -Ovl; // if encoders don't move, there is no speed (speed relative to drone)
-        // }
-        // load_pose_error.x = -Epl[0];
-        // load_pose_error.y = -Epl[1];
-        // load_pose_error.z = -Epl[2];
-
-        // load_velocity_error.x = -Evl[0];
-        // load_velocity_error.y = -Evl[1];
-        // load_velocity_error.z = -Evl[2];
-
-        // load_pose_experiments_publisher_.publish(load_pose_position);
-        
-        // load_pose_error_publisher_.publish(load_pose_error);
-        // load_velocity_error_publisher_.publish(load_velocity_error);
-
-        // //ROS_INFO_STREAM("Se3BruboticsLoadController: load_pose_position = \n" << load_pose_position);
-        // //ROS_INFO_STREAM("Se3BruboticsLoadController: Epl (Rpl-load_pose)= \n" << Epl);
-        // Epl[2] = 0;
-      }
-        // gains activated
-        if (position_cmd.use_position_horizontal) { //TODO load them in global variables as for the other param.  
-          // gains activated
-          Kpl[0] = kplxy_; //7.0
-          Kpl[1] = Kpl[0];
-        } else {
-          Kpl[0] = 0.0;
-          Kpl[1] = 0.0;
-        }
-
-        if (position_cmd.use_velocity_horizontal) {
-          Kdl[0] = kvlxy_; //0.5
-          Kdl[1] = Kdl[0];
-        } else {
-          Kdl[0] = 0.0;
-          Kdl[1] = 0.0;
-        }
-
-        //ROS_INFO_STREAM("gains" << std::endl << "activated");
-      }
-
+    if (position_cmd.use_velocity_horizontal) {
+      Kdl[0] = kvlxy_;
+      Kdl[1] = kvlxy_;
+    } else {
+      Kdl[0] = 0.0;
+      Kdl[1] = 0.0;
+    }  
+    // Do not compensate the anchoring point position/speed in the z direction, so its gains are kept on zero
+    
     // ROS_INFO_STREAM("Kpl = \n" << Kpl);
     // ROS_INFO_STREAM("Kdl = \n" << Kdl);
+  }
 
-    // | --------------------- load the gains --------------------- |
-    // NOTE: do not move the gains outside the for loop! Due to "Kp = Kp * (uav_mass_ + uav_mass_difference_);"
-    /*NOTE: for now on disable the filterGains used in the original se3 controller*/
-    /*QUESTION: shouldn't we add this back later?*/
-    //filterGains(control_reference->disable_position_gains, dt);
-
-    Eigen::Vector3d Ka = Eigen::Vector3d::Zero(3);
-    Eigen::Array3d  Kp = Eigen::Array3d::Zero(3);
-    Eigen::Array3d  Kv = Eigen::Array3d::Zero(3);
-    Eigen::Array3d  Kq = Eigen::Array3d::Zero(3);
-
-    {
-      std::scoped_lock lock(mutex_gains_);
-
-      if (position_cmd.use_position_horizontal) {
-        Kp[0] = kpxy_;
-        Kp[1] = kpxy_;
-      } else {
-        Kp[0] = 0;
-        Kp[1] = 0;
-      }
-
-      if (position_cmd.use_position_vertical) {
-        Kp[2] = kpz_;
-      } else {
-        Kp[2] = 0;
-      }
-
-      if (position_cmd.use_velocity_horizontal) {
-        Kv[0] = kvxy_;
-        Kv[1] = kvxy_;
-      } else {
-        Kv[0] = 0;
-        Kv[1] = 0;
-      }
-      // special case: want to control z-pos but not the velocity => at least provide z dampening
-      if (position_cmd.use_velocity_vertical || position_cmd.use_position_vertical) {
-        Kv[2] = kvz_;
-      } else {
-        Kv[2] = 0;
-      }
-
-      if (position_cmd.use_acceleration) {
-        Ka << kaxy_, kaxy_, kaz_;
-      } else {
-        Ka << 0, 0, 0;
-      }
-
-      // Those gains are set regardless of control_reference setting,
-      // because we need to control the attitude.
-      Kq << kqxy_, kqxy_, kqz_;
-    }
+  // | ------------------------compute total_mass --------------------------------------|
+  //ROS_INFO_STREAM("uav_mass_ \n" << uav_mass_ ); // uav_mass_ is set at the start of the update function and represents the estimated mass (includes uav_mass_difference_ computed in controller)
   
-    
-
-    
-    // | --------------- load--------------- | 
-    double total_mass;
-    if((_type_of_system_== "1uav_payload" ||_type_of_system_ == "2uavs_and_payload")&& payload_spawned_){ // If system has a payload and this payload has already spawn, we add its mass to the UAV mass to get the total mass of the system.
+  double total_mass;
+  if((_type_of_system_== "1uav_payload" ||_type_of_system_ == "2uavs_and_payload")&& payload_spawned_){ // If system has a payload and this payload has already spawn, we add its mass to the UAV mass to get the total mass of the system.
+    if(payload_spawned_){ // for simulation, but also on the hardware, when the controller activates, the load mass is always already suspended by the uav
       total_mass = uav_mass_ + _load_mass_;
+      //ROS_INFO_STREAM("payload spwaned" << std::endl << total_mass);
     }else{
-      total_mass =uav_mass_; //Either no payload in the system, or not yet spawned, total mass is then only the estimated mass of the UAV.
+      total_mass = uav_mass_; 
+      //ROS_INFO_STREAM("payload NOT spwaned" << std::endl << total_mass);
     }
+  }else{ // no load case
+    total_mass = uav_mass_; //Either no payload in the system, or not yet spawned, total mass is then only the estimated mass of the UAV.
+  }
+  
+  // Scale the gains with the total estimated mass of the system
+  Kp = Kp * total_mass;
+  Kv = Kv * total_mass;
+  Kpl = Kpl *total_mass;
+  Kdl = Kdl *total_mass;
 
-    Kp = Kp * total_mass;
-    Kv = Kv * total_mass;
+  // gains after being mutiplied with total_mass
+  ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kp_x*m = %f", Kp(0));
+  ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kp_y*m = %f", Kp(1));
+  ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kp_z*m = %f", Kp(2));
+  ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kv_x*m = %f", Kv(0));
+  ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kv_y*m = %f", Kv(1));
+  ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kv_z*m = %f", Kv(2));
+  ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kpl_x*m = %f", Kpl(0));
+  ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kpl_y*m= %f", Kpl(1));
+  ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kpl_z*m = %f", Kpl(2));
+  ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kvl_x*m = %f", Kdl(0));
+  ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kvl_y*m = %f", Kdl(1));
+  ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kvl_z*m = %f", Kdl(2));
+  
+  ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: uav_mass_ (estimated) = %f", uav_mass_);
+  if(_type_of_system_ == "1uav_payload" || _type_of_system_ == "2uavs_payload" ){
+    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: _load_mass_ = %f", _load_mass_);
+  }
+  ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: total_mass (estimated)= %f", total_mass);
+  
+  ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: n_motors = %d", common_handlers_->motor_params.n_motors);
+  ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: motor_params.A = %f", common_handlers_->motor_params.A);
+  ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: motor_params.B = %f", common_handlers_->motor_params.B);
 
-    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Ka_x = %f", Ka(0));
-    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Ka_y = %f", Ka(1));
-    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Ka_z = %f", Ka(2));
-    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kq_x = %f", Kq(0));
-    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kq_y = %f", Kq(1));
-    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kq_z = %f", Kq(2));
-    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kp_x = %f", Kp(0));
-    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kp_y = %f", Kp(1));
-    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kp_z = %f", Kp(2));
-    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kv_x = %f", Kv(0));
-    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kv_y = %f", Kv(1));
-    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kv_z = %f", Kv(2));
-// after mutiplied with mass
-    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kp_x*m = %f", Kp(0));
-    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kp_y*m = %f", Kp(1));
-    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kp_z*m = %f", Kp(2));
-    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kv_x*m = %f", Kv(0));
-    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kv_y*m = %f", Kv(1));
-    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kv_z*m = %f", Kv(2));
+  // | --------------- desired orientation matrix --------------- |
 
-    // | --------------- Thesis B --------------- |
-    
-    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kpl_x = %f", Kpl(0));
-    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kpl_y = %f", Kpl(1));
-    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kpl_z = %f", Kpl(2));
-    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kvl_x = %f", Kdl(0));
-    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kvl_y = %f", Kdl(1));
-    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kvl_z = %f", Kdl(2));
-    
-    //2e method pandolfo
+  // ignoring get body integral in the world frame
 
-    Kpl = Kpl *total_mass;
-    Kdl = Kdl *total_mass;
+  // construct the desired force vector
+  // Compute control actions 
+  Eigen::Vector3d feed_forward      = total_mass * (Eigen::Vector3d(0, 0, common_handlers_->g) + Ra);
+  Eigen::Vector3d position_feedback = -Kp * Ep.array(); // note: Ep was defined as current - desired
+  Eigen::Vector3d velocity_feedback = -Kv * Ev.array(); // note: Ev was defined as current - desired
+  Eigen::Vector3d integral_feedback;
+  integral_feedback << 0, 0, 0;// ignore integral feedback
 
-    // after mutiplied with mass
-    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kpl_x = %f", Kpl(0));
-    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kpl_y = %f", Kpl(1));
-    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kpl_z = %f", Kpl(2));
-    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kvl_x = %f", Kdl(0));
-    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kvl_y = %f", Kdl(1));
-    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kvl_z = %f", Kdl(2));
+  // Load errors were initialized to zero if load not spawned
+  Eigen::Vector3d load_position_feedback = -Kpl * Epl.array(); // pushes uav in opposed direction of the position error from anchoring point to load at equilibrium
+  Eigen::Vector3d load_velocity_feedback = -Kdl * Evl.array(); // pushes uav in opposed direction of the velocity error from anchoring point to load at equilibrium
 
-    // | ------------------------------ |
-    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: estimated total_mass = %f", common_handlers_->getMass());
-    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: n_motors = %d", common_handlers_->motor_params.n_motors);
-    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: motor_params.A = %f", common_handlers_->motor_params.A);
-    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: motor_params.B = %f", common_handlers_->motor_params.B);
-
-    // construct the desired force vector
-    
-    Eigen::Vector3d feed_forward      = total_mass * (Eigen::Vector3d(0, 0, common_handlers_->g) + Ra);
-    // ROS_INFO_STREAM("Ra = \n" << Ra);
-    Eigen::Vector3d position_feedback = -Kp * Ep.array();
-    Eigen::Vector3d velocity_feedback = -Kv * Ev.array();
-
-    // | --------------- Thesis B --------------- | 
-    if(_type_of_system_== "1uav_payload" ||_type_of_system_ == "2uavs_and_payload"){
-        for (int i = 0; i < 3; i++) // in order to set the error to 0 before the load spawn
-        {
-          if(!payload_spawned_) //IF the payload has not spawned yet, its error is set to 0.
-          {
-            Epl = Epl*0; 
-            Evl = Evl*0;
-          }
-          if(payload_spawned_ && abs(Epl[i]) < 0.05)
-          {
-            Epl[i] = Epl[i]*0;
-          }
-        }
-    }
-    
-    // publish errors
-    // predicted_load_position_errors_to_publish.position.x=Epl[0];
-    // predicted_load_position_errors_to_publish.position.y=Epl[1];
-    // predicted_load_position_errors_to_publish.position.z=Epl[2];
-
-    // predicted_load_position_errors_out.poses.push_back(predicted_load_position_errors_to_publish);
-
-    Eigen::Vector3d position_load_feedback = -Kpl * Epl.array();
-    Eigen::Vector3d velocity_load_feedback = -Kdl * Evl.array();
+  // | -------------------------------se3+load------------------------ | 
+  Eigen::Vector3d f = position_feedback + velocity_feedback + load_position_feedback + load_velocity_feedback + feed_forward;
+  ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: fx= %.2f, fy= %.2f, fz=%.2f ",f[0],f[1],f[2]);
 
 
-    Eigen::Vector3d f = position_load_feedback + velocity_load_feedback + position_feedback + velocity_feedback + feed_forward ;
-    // ROS_INFO_STREAM("f = \n" << f);
-    // force_to_publish.position.x=f[0];
-    // force_to_publish.position.y=f[1];
-    // force_to_publish.position.z=f[2];
+  // | ----------- limiting the downwards acceleration ---------- |
+  /* 
+  the downwards force produced by the position and the acceleration feedback should not be larger than the gravity
+  if the downwards part of the force is close to counter-act the gravity acceleration
+   */
+  // TODO: check with MPC guidage code if this actually makes sense as i remember to have improved it
+  if (f[2] < 0) {
 
-    // Add inner loop equations here:
-    //Eigen::Vector3d f = Eigen::Vector3d(predicted_thrust.position.x, predicted_thrust.position.y, predicted_thrust.position.z); //position_feedback + velocity_feedback + integral_feedback + feed_forward;
-    // | ----------- limiting the downwards acceleration ---------- |
-    // the downwards force produced by the position and the acceleration feedback should not be larger than the gravity
+    ROS_WARN_THROTTLE(1.0, "[DergbryanTracker]: the calculated downwards desired force is negative (%.2f) -> mitigating flip", f[2]);
 
-    // if the downwards part of the force is close to counter-act the gravity acceleration
-    if (f[2] < 0) {
+    f << 0, 0, 1;
+  }
+  // | ------------------ limit the tilt angle ------------------ |
 
-      ROS_WARN_THROTTLE(1.0, "[DergbryanTracker]: the calculated downwards desired force is negative (%.2f) -> mitigating flip", f[2]);
+  Eigen::Vector3d f_norm = f.normalized();
 
-      f << 0, 0, 1;
-    }
-    // | ------------------ limit the tilt angle ------------------ |
+  // calculate the force in spherical coordinates
+  double theta = acos(f_norm[2]);
+  double phi   = atan2(f_norm[1], f_norm[0]);
 
-    Eigen::Vector3d f_norm = f.normalized();
-
-    // calculate the force in spherical coordinates
-    double theta = acos(f_norm[2]);
-    double phi   = atan2(f_norm[1], f_norm[0]);
+  // ROS_INFO_STREAM("theta (deg) = \n" << theta*180/3.1415);
+  // ROS_INFO_STREAM("phi (deg) = \n" << phi*180/3.1415);
 
 
-    // ROS_INFO_STREAM("theta = \n" << theta*180/3.1415);
-    // ROS_INFO_STREAM("phi = \n" << phi*180/3.1415);
+  // check for the failsafe limit
+  if (!std::isfinite(theta)) {
 
-
-    // check for the failsafe limit
-    if (!std::isfinite(theta)) {
-
-      ROS_ERROR("[DergbryanTracker]: NaN detected in variable 'theta', returning null");
-
-      //TODO???   return mrs_msgs::AttitudeCommand::ConstPtr();
-    }
-
-    // TODO???
-    // if (_tilt_angle_failsafe_enabled_ && theta > _tilt_angle_failsafe_) {
-
-    //   ROS_ERROR("[DergbryanTracker]: the produced tilt angle (%.2f deg) would be over the failsafe limit (%.2f deg), returning null", (180.0 / M_PI) * theta,
-    //             (180.0 / M_PI) * _tilt_angle_failsafe_);
-    //   ROS_INFO("[DergbryanTracker]: f = [%.2f, %.2f, %.2f]", f[0], f[1], f[2]);
-    //   ROS_INFO("[DergbryanTracker]: position feedback: [%.2f, %.2f, %.2f]", position_feedback[0], position_feedback[1], position_feedback[2]);
-    //   ROS_INFO("[DergbryanTracker]: velocity feedback: [%.2f, %.2f, %.2f]", velocity_feedback[0], velocity_feedback[1], velocity_feedback[2]);
-    //   ROS_INFO("[DergbryanTracker]: integral feedback: [%.2f, %.2f, %.2f]", integral_feedback[0], integral_feedback[1], integral_feedback[2]);
-    //   ROS_INFO("[DergbryanTracker]: position_cmd: x: %.2f, y: %.2f, z: %.2f, heading: %.2f", control_reference->position.x, control_reference->position.y,
-    //            control_reference->position.z, control_reference->heading);
-    //   ROS_INFO("[DergbryanTracker]: odometry: x: %.2f, y: %.2f, z: %.2f, heading: %.2f", uav_state.pose.position.x, uav_state.pose.position.y,
-    //            uav_state.pose.position.z, uav_heading);
-
+    ROS_ERROR("[DergbryanTracker]: NaN detected in variable 'theta', predictions can't be trusted!!!!");
+    // TODO: as it is used here for predictions, we don't want to return as for controllers, but trow the error
     //   return mrs_msgs::AttitudeCommand::ConstPtr();
-    // }
+  }
+
+  // TODO: as it is used here for predictions, we don't want to return as for controllers, but print error
+  // if (_tilt_angle_failsafe_enabled_ && theta > _tilt_angle_failsafe_) {
+
+  //   ROS_ERROR("[DergbryanTracker]: the produced tilt angle (%.2f deg) would be over the failsafe limit (%.2f deg), returning null", (180.0 / M_PI) * theta,
+  //             (180.0 / M_PI) * _tilt_angle_failsafe_);
+  //   ROS_INFO("[DergbryanTracker]: f = [%.2f, %.2f, %.2f]", f[0], f[1], f[2]);
+  //   ROS_INFO("[DergbryanTracker]: position feedback: [%.2f, %.2f, %.2f]", position_feedback[0], position_feedback[1], position_feedback[2]);
+  //   ROS_INFO("[DergbryanTracker]: velocity feedback: [%.2f, %.2f, %.2f]", velocity_feedback[0], velocity_feedback[1], velocity_feedback[2]);
+  //   ROS_INFO("[DergbryanTracker]: integral feedback: [%.2f, %.2f, %.2f]", integral_feedback[0], integral_feedback[1], integral_feedback[2]);
+  //   ROS_INFO("[DergbryanTracker]: position_cmd: x: %.2f, y: %.2f, z: %.2f, heading: %.2f", control_reference->position.x, control_reference->position.y,
+  //            control_reference->position.z, control_reference->heading);
+  //   ROS_INFO("[DergbryanTracker]: odometry: x: %.2f, y: %.2f, z: %.2f, heading: %.2f", uav_state.pose.position.x, uav_state.pose.position.y,
+  //            uav_state.pose.position.z, uav_heading);
+
+  //   return mrs_msgs::AttitudeCommand::ConstPtr();
+  // }
 
 
-    // saturate the angle
+  // saturate the angle
+
+  auto constraints = mrs_lib::get_mutexed(mutex_constraints_, constraints_);
+
+  if (fabs(constraints.tilt) > 1e-3 && theta > constraints.tilt) {
+    ROS_WARN_THROTTLE(1.0, "[DergbryanTracker]: tilt is being saturated, desired: %.2f deg, saturated %.2f deg", (theta / M_PI) * 180.0,
+                      (constraints.tilt / M_PI) * 180.0);
+    theta = constraints.tilt;
+  }
+  //TODORAPHAEL predicted_tilt_angle to publish, do it in here ?? Put it as output ?
+  // ROS_INFO_STREAM("theta_sat = \n" << theta*180/3.1415);
+  
+
+  // reconstruct the vector
+  f_norm[0] = sin(theta) * cos(phi);
+  f_norm[1] = sin(theta) * sin(phi);
+  f_norm[2] = cos(theta);
+
+  // | ------------- construct the (desired) rotational matrix ------------ |
+
+  Eigen::Matrix3d Rd;
+
+  if (position_cmd.use_orientation) {
+    // ROS_INFO_STREAM("IF position_cmd.use_orientation = \n" << position_cmd.use_orientation);
+    // fill in the desired orientation based on the desired orientation from the control command
+    Rd = mrs_lib::AttitudeConverter(position_cmd.orientation);
+
+    if (position_cmd.use_heading) {
+      try {
+        Rd = mrs_lib::AttitudeConverter(Rd).setHeading(position_cmd.heading);
+      } catch (...) {
+        ROS_ERROR("[DergbryanTracker]: could not set the desired heading");
+      }
+    }
+
+  } else {
+    // ROS_INFO_STREAM("ELSE = \n" << position_cmd.use_orientation);
+    Eigen::Vector3d bxd;  // desired heading vector
+
+    if (position_cmd.use_heading) {
+      bxd << cos(position_cmd.heading), sin(position_cmd.heading), 0;
+      // ROS_INFO_STREAM("bxd = \n" << bxd);
+    } else {
+      ROS_ERROR_THROTTLE(1.0, "[DergbryanTracker]: desired heading was not specified, using current heading instead!");
+      double uav_heading = uav_heading_;
+      bxd << cos(uav_heading), sin(uav_heading), 0;
+    }
+
+    // fill in the desired orientation based on the state feedback
+    /* TODO: make it compatible with DRS, now skipped first if */
+    //if (drs_params.rotation_type == 0) {
+    if(0) {
+      // ROS_INFO_STREAM("if(0) = \n");
+      Rd.col(2) = f_norm;
+      Rd.col(1) = Rd.col(2).cross(bxd);
+      Rd.col(1).normalize();
+      Rd.col(0) = Rd.col(1).cross(Rd.col(2));
+      Rd.col(0).normalize();
+
+    } else {
+
+      // | ------------------------- body z ------------------------- |
+      Rd.col(2) = f_norm;
+
+      // | ------------------------- body x ------------------------- |
+
+      // construct the oblique projection
+      Eigen::Matrix3d projector_body_z_compl = (Eigen::Matrix3d::Identity(3, 3) - f_norm * f_norm.transpose());
+
+      // create a basis of the body-z complement subspace
+      Eigen::MatrixXd A = Eigen::MatrixXd(3, 2);
+      A.col(0)          = projector_body_z_compl.col(0);
+      A.col(1)          = projector_body_z_compl.col(1);
+
+      // create the basis of the projection null-space complement
+      Eigen::MatrixXd B = Eigen::MatrixXd(3, 2);
+      B.col(0)          = Eigen::Vector3d(1, 0, 0);
+      B.col(1)          = Eigen::Vector3d(0, 1, 0);
+
+      // oblique projector to <range_basis>
+      Eigen::MatrixXd Bt_A               = B.transpose() * A;
+      Eigen::MatrixXd Bt_A_pseudoinverse = ((Bt_A.transpose() * Bt_A).inverse()) * Bt_A.transpose();
+      Eigen::MatrixXd oblique_projector  = A * Bt_A_pseudoinverse * B.transpose();
+
+      Rd.col(0) = oblique_projector * bxd;
+      Rd.col(0).normalize();
+
+      // | ------------------------- body y ------------------------- |
+
+      Rd.col(1) = Rd.col(2).cross(Rd.col(0));
+      Rd.col(1).normalize();
+    }
+  }
+  
+  // test printing Rd:
+  // ROS_INFO_STREAM("Rd = \n" << Rd);
+
+  // --------------------------------------------------------------
+  // |                      orientation error                     |
+  // --------------------------------------------------------------
+  
+  // bool temp_bool = position_cmd.use_attitude_rate;
+  // ROS_INFO_STREAM("position_cmd.use_attitude_rate = \n" << temp_bool);
+
+  Eigen::Matrix3d E = Eigen::Matrix3d::Zero();
+
+  if (!position_cmd.use_attitude_rate) {
+    E = 0.5 * (Rd.transpose() * R - R.transpose() * Rd);
+  }
+
+  Eigen::Vector3d Eq;
+
+  // clang-format off
+  Eq << (E(2, 1) - E(1, 2)) / 2.0,
+        (E(0, 2) - E(2, 0)) / 2.0,
+        (E(1, 0) - E(0, 1)) / 2.0;
+  // clang-format on
+
+  /* output */
+  double thrust_force = f.dot(R.col(2));
+  double thrust = 0.0;
+  thrust_saturation_physical_ = mrs_lib::quadratic_thrust_model::thrustToForce(common_handlers_->motor_params, _thrust_saturation_);
+  
+  if (!position_cmd.use_thrust) {
+    if (thrust_force >= 0) {
+      thrust = mrs_lib::quadratic_thrust_model::forceToThrust(common_handlers_->motor_params, thrust_force);
+    } else {
+      ROS_WARN_THROTTLE(1.0, "[DergbryanTracker]: just so you know, the desired thrust force is negative (%.2f)", thrust_force);
+    }
+  }
+  else {
+    // the thrust is overriden from the tracker command
+    thrust = position_cmd.thrust;
+    ROS_INFO_STREAM("position_cmd.use_thrust = \n" << position_cmd.use_thrust);
+  }
+
+  // saturate the thrust
+  if (!std::isfinite(thrust)) {
+
+    thrust = 0;
+    ROS_ERROR("[DergbryanTracker]: NaN detected in variable 'thrust', setting it to 0 and returning!!!");
+
+  } else if (thrust > _thrust_saturation_) {
+
+    thrust = _thrust_saturation_;
+    ROS_WARN_THROTTLE(1.0, "[DergbryanTracker]: saturating thrust to %.2f", _thrust_saturation_);
+
+  } else if (thrust < 0.0) {
+
+    thrust = 0.0;
+    ROS_WARN_THROTTLE(1.0, "[DergbryanTracker]: saturating thrust to 0");
+  }
+
+  thrust_force = mrs_lib::quadratic_thrust_model::thrustToForce(common_handlers_->motor_params, thrust);
+
+  // prepare the attitude feedback
+  Eigen::Vector3d q_feedback = -Kq * Eq.array();
+
+  if (position_cmd.use_attitude_rate) {
+    Rw << position_cmd.attitude_rate.x, position_cmd.attitude_rate.y, position_cmd.attitude_rate.z;
+  } else if (position_cmd.use_heading_rate) {
+
+    // to fill in the feed forward yaw rate
+    double desired_yaw_rate = 0;
+
+    try {
+      desired_yaw_rate = mrs_lib::AttitudeConverter(Rd).getYawRateIntrinsic(position_cmd.heading_rate);
+    }
+    catch (...) {
+      ROS_ERROR("[DergbryanTracker]: exception caught while calculating the desired_yaw_rate feedforward");
+    }
+
+    Rw << 0, 0, desired_yaw_rate;
+  }
+
+  // feedforward angular acceleration
+  Eigen::Vector3d q_feedforward = Eigen::Vector3d(0, 0, 0);
+
+  /* TODO: change if case using drs_params */
+  //if (drs_params.jerk_feedforward) {
+  if (false) {
+
+    Eigen::Matrix3d I;
+    I << 0, 1, 0, -1, 0, 0, 0, 0, 0;
+    Eigen::Vector3d desired_jerk = Eigen::Vector3d(position_cmd.jerk.x, position_cmd.jerk.y, position_cmd.jerk.z);
+    q_feedforward                = (I.transpose() * Rd.transpose() * desired_jerk) / (thrust_force / total_mass);
+  }
+
+  // angular feedback + angular rate feedforward
+  Eigen::Vector3d t = q_feedback + Rw + q_feedforward;
+
+  // compensate for the parasitic heading rate created by the desired pitch and roll rate
+  Eigen::Vector3d rp_heading_rate_compensation = Eigen::Vector3d(0, 0, 0);
+
+  /* TODO: change if case using drs_params */
+  if (true) {
+  //if (drs_params.pitch_roll_heading_rate_compensation) {
+
+    Eigen::Vector3d q_feedback_yawless = t;
+    q_feedback_yawless(2)              = 0;  // nullyfy the effect of the original yaw feedback
+
+    double parasitic_heading_rate = 0;
+
+    try {
+      // TODO: update uav_state.pose.orientation (only R updated now, not the quaternion)
+      parasitic_heading_rate = mrs_lib::AttitudeConverter(uav_state.pose.orientation).getHeadingRate(q_feedback_yawless);
+    }
+    catch (...) {
+      ROS_ERROR("[DergbryanTracker]: exception caught while calculating the parasitic heading rate!");
+    }
+
+    try {
+      // TODO: update uav_state.pose.orientation (only R updated now, not the quaternion)
+      rp_heading_rate_compensation(2) = mrs_lib::AttitudeConverter(uav_state.pose.orientation).getYawRateIntrinsic(-parasitic_heading_rate);
+    }
+    catch (...) {
+      ROS_ERROR("[DergbryanTracker]: exception caught while calculating the parasitic heading rate compensation!");
+    }
+  }
+
+  t += rp_heading_rate_compensation;
+
+  // ignore integrate the world error 
+  // ignore integrate the body error
+  // ignore integrate the mass difference
+
+  // --------------------------------------------------------------
+  // |                 produce the control output                 |
+  // --------------------------------------------------------------
+
+  // ignore | ------------ compensated desired acceleration ------------ |
+
+  // | --------------- saturate the attitude rate --------------- |
+
+  if (got_constraints_) {
 
     auto constraints = mrs_lib::get_mutexed(mutex_constraints_, constraints_);
-
-    if (fabs(constraints.tilt) > 1e-3 && theta > constraints.tilt) {
-      ROS_WARN_THROTTLE(1.0, "[DergbryanTracker]: tilt is being saturated, desired: %.2f deg, saturated %.2f deg", (theta / M_PI) * 180.0,
-                        (constraints.tilt / M_PI) * 180.0);
-      theta = constraints.tilt;
-    }
-    //TODORAPHAEL predicted_tilt_angle to publish, do it in here ?? Put it as output ?
-    // ROS_INFO_STREAM("theta_sat = \n" << theta*180/3.1415);
     
+    // ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: constraints.roll_rate = %f", constraints.roll_rate);
+    // ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: constraints.pitch_rate = %f", constraints.pitch_rate);
+    // ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: constraints.yaw_rate = %f", constraints.yaw_rate);
 
-    // reconstruct the vector
-    f_norm[0] = sin(theta) * cos(phi);
-    f_norm[1] = sin(theta) * sin(phi);
-    f_norm[2] = cos(theta);
-
-    // | ------------- construct the (desired) rotational matrix ------------ |
-
-    Eigen::Matrix3d Rd;
-
-    if (position_cmd.use_orientation) {
-      // ROS_INFO_STREAM("IF position_cmd.use_orientation = \n" << position_cmd.use_orientation);
-      // fill in the desired orientation based on the desired orientation from the control command
-      Rd = mrs_lib::AttitudeConverter(position_cmd.orientation);
-
-      if (position_cmd.use_heading) {
-        try {
-          Rd = mrs_lib::AttitudeConverter(Rd).setHeading(position_cmd.heading);
-        } catch (...) {
-          ROS_ERROR("[DergbryanTracker]: could not set the desired heading");
-        }
-      }
-
-    } else {
-      // ROS_INFO_STREAM("ELSE = \n" << position_cmd.use_orientation);
-      Eigen::Vector3d bxd;  // desired heading vector
-
-      if (position_cmd.use_heading) {
-        bxd << cos(position_cmd.heading), sin(position_cmd.heading), 0;
-        // ROS_INFO_STREAM("bxd = \n" << bxd);
-      } else {
-        ROS_ERROR_THROTTLE(1.0, "[DergbryanTracker]: desired heading was not specified, using current heading instead!");
-        double uav_heading = uav_heading_;
-        bxd << cos(uav_heading), sin(uav_heading), 0;
-        //bxd << cos(0.0), sin(0.0), 0; // TODO: now hardcoded uav heading to 0!
-      }
-
-      // fill in the desired orientation based on the state feedback
-      /* TODO: make it compatible with DRS, now skipped first if */
-      //if (drs_params.rotation_type == 0) {
-      if(0) {
-        // ROS_INFO_STREAM("if(0) = \n");
-        Rd.col(2) = f_norm;
-        Rd.col(1) = Rd.col(2).cross(bxd);
-        Rd.col(1).normalize();
-        Rd.col(0) = Rd.col(1).cross(Rd.col(2));
-        Rd.col(0).normalize();
-
-      } else {
-
-        // | ------------------------- body z ------------------------- |
-        Rd.col(2) = f_norm;
-
-        // | ------------------------- body x ------------------------- |
-
-        // construct the oblique projection
-        Eigen::Matrix3d projector_body_z_compl = (Eigen::Matrix3d::Identity(3, 3) - f_norm * f_norm.transpose());
-
-        // create a basis of the body-z complement subspace
-        Eigen::MatrixXd A = Eigen::MatrixXd(3, 2);
-        A.col(0)          = projector_body_z_compl.col(0);
-        A.col(1)          = projector_body_z_compl.col(1);
-
-        // create the basis of the projection null-space complement
-        Eigen::MatrixXd B = Eigen::MatrixXd(3, 2);
-        B.col(0)          = Eigen::Vector3d(1, 0, 0);
-        B.col(1)          = Eigen::Vector3d(0, 1, 0);
-
-        // oblique projector to <range_basis>
-        Eigen::MatrixXd Bt_A               = B.transpose() * A;
-        Eigen::MatrixXd Bt_A_pseudoinverse = ((Bt_A.transpose() * Bt_A).inverse()) * Bt_A.transpose();
-        Eigen::MatrixXd oblique_projector  = A * Bt_A_pseudoinverse * B.transpose();
-
-        Rd.col(0) = oblique_projector * bxd;
-        Rd.col(0).normalize();
-
-        // | ------------------------- body y ------------------------- |
-
-        Rd.col(1) = Rd.col(2).cross(Rd.col(0));
-        Rd.col(1).normalize();
-      }
+    if (t[0] > constraints.roll_rate) {
+      t[0] = constraints.roll_rate;
+    } else if (t[0] < -constraints.roll_rate) {
+      t[0] = -constraints.roll_rate;
     }
+
+    if (t[1] > constraints.pitch_rate) {
+      t[1] = constraints.pitch_rate;
+    } else if (t[1] < -constraints.pitch_rate) {
+      t[1] = -constraints.pitch_rate;
+    }
+
+    if (t[2] > constraints.yaw_rate) {
+      t[2] = constraints.yaw_rate;
+    } else if (t[2] < -constraints.yaw_rate) {
+      t[2] = -constraints.yaw_rate;
+    }
+  } else {
+    ROS_WARN_THROTTLE(1.0, "[DergbryanTracker]: missing dynamics constraints");
+  }
+  
+  // | --------------- fill the resulting command --------------- |
+  Eigen::Vector3d attitude_rate_pred = t;
     
-    // test printing Rd:
-    // ROS_INFO_STREAM("Rd = \n" << Rd);
-
-    // --------------------------------------------------------------
-    // |                      orientation error                     |
-    // --------------------------------------------------------------
-
-    /* orientation error */
-    Eigen::Matrix3d E = 0.5 * (Rd.transpose() * R - R.transpose() * Rd);
-
-  // | -----------------LOAD-------------------------------- |
-    // Eigen::Matrix3d E = Eigen::Matrix3d::Zero();
-
-    // if (!position_cmd.use_attitude_rate) {
-    //   E = 0.5 * (Rd.transpose() * R - R.transpose() * Rd);
-    // }
-
-    Eigen::Vector3d Eq;
-
-    // clang-format off
-    Eq << (E(2, 1) - E(1, 2)) / 2.0,
-          (E(0, 2) - E(2, 0)) / 2.0,
-          (E(1, 0) - E(0, 1)) / 2.0;
-    // clang-format on
-
-    /* output */
-    double thrust_force = f.dot(R.col(2));
-    double thrust = 0.0;
-    /*TODO change code below unhardcoded*/
-    // OLD double Aparam = 0.175; // value from printen inside Se3BruboticsLoadController
-    // OLD double Bparam = -0.148; // value from printen inside Se3BruboticsLoadController
-    // OLD thrust_saturation_physical_ = pow((_thrust_saturation_-Bparam)/Aparam, 2);
-    thrust_saturation_physical_ = mrs_lib::quadratic_thrust_model::thrustToForce(common_handlers_->motor_params, _thrust_saturation_);
-    if (!position_cmd.use_thrust) {
-      if (thrust_force >= 0) {
-        /*SOLVED QUESTION: how to acces in the tracker code: _motor_params_.A + _motor_params_.B??*/
-        //thrust = sqrt(thrust_force) * _motor_params_.A + _motor_params_.B;
-        
-        // OLD thrust = sqrt(thrust_force) * Aparam + Bparam;
-        thrust = mrs_lib::quadratic_thrust_model::forceToThrust(common_handlers_->motor_params, thrust_force);
-      } else {
-        ROS_WARN_THROTTLE(1.0, "[DergbryanTracker]: just so you know, the desired thrust force is negative (%.2f)", thrust_force);
-      }
-    }
-    else {
-      // the thrust is overriden from the tracker command
-      thrust = position_cmd.thrust;
-      ROS_INFO_STREAM("position_cmd.use_thrust = \n" << position_cmd.use_thrust);
-    }
-
-    // saturate the thrust
-    if (!std::isfinite(thrust)) {
-
-      thrust = 0;
-      ROS_ERROR("[DergbryanTracker]: NaN detected in variable 'thrust', setting it to 0 and returning!!!");
-
-    } else if (thrust > _thrust_saturation_) {
-
-      thrust = _thrust_saturation_;
-      ROS_WARN_THROTTLE(1.0, "[DergbryanTracker]: saturating thrust to %.2f", _thrust_saturation_);
-
-    } else if (thrust < 0.0) {
-
-      thrust = 0.0;
-      ROS_WARN_THROTTLE(1.0, "[DergbryanTracker]: saturating thrust to 0");
-    }
-
-    // OLD thrust_force = pow((thrust-Bparam)/Aparam, 2);
-    thrust_force = mrs_lib::quadratic_thrust_model::thrustToForce(common_handlers_->motor_params, thrust);
-
-    //TODORAPHAEL, see lines 6434 for additionnal
-    // prepare the attitude feedback
-    Eigen::Vector3d q_feedback = -Kq*(1.0) * Eq.array();
-
-    Eigen::Vector3d Rw = Eigen::Vector3d::Zero(3);
-
-    if (position_cmd.use_attitude_rate) {
-      Rw << position_cmd.attitude_rate.x, position_cmd.attitude_rate.y, position_cmd.attitude_rate.z;
-    } else if (position_cmd.use_heading_rate) {
-
-      // to fill in the feed forward yaw rate
-      double desired_yaw_rate = 0;
-
-      try {
-        desired_yaw_rate = mrs_lib::AttitudeConverter(Rd).getYawRateIntrinsic(position_cmd.heading_rate);
-      }
-      catch (...) {
-        ROS_ERROR("[DergbryanTracker]: exception caught while calculating the desired_yaw_rate feedforward");
-      }
-
-      Rw << 0, 0, desired_yaw_rate;
-    }
-
-    // feedforward angular acceleration
-    Eigen::Vector3d q_feedforward = Eigen::Vector3d(0, 0, 0);
-
-    /* TODO: change if case using drs_params */
-    //if (drs_params.jerk_feedforward) {
-    if (false) {
-
-      Eigen::Matrix3d I;
-      I << 0, 1, 0, -1, 0, 0, 0, 0, 0;
-      Eigen::Vector3d desired_jerk = Eigen::Vector3d(position_cmd.jerk.x, position_cmd.jerk.y, position_cmd.jerk.z);
-      q_feedforward                = (I.transpose() * Rd.transpose() * desired_jerk) / (thrust_force / total_mass);
-    }
-
-    // angular feedback + angular rate feedforward
-    Eigen::Vector3d t = q_feedback + Rw + q_feedforward;
-
-    // compensate for the parasitic heading rate created by the desired pitch and roll rate
-    Eigen::Vector3d rp_heading_rate_compensation = Eigen::Vector3d(0, 0, 0);
-
-    /* TODO: change if case using drs_params */
-    if (true) {
-    //if (drs_params.pitch_roll_heading_rate_compensation) {
-
-      Eigen::Vector3d q_feedback_yawless = t;
-      q_feedback_yawless(2)              = 0;  // nullyfy the effect of the original yaw feedback
-
-      double parasitic_heading_rate = 0;
-
-      try {
-        // TODO: update uav_state.pose.orientation (only R updated now, not the quaternion)
-        parasitic_heading_rate = mrs_lib::AttitudeConverter(uav_state.pose.orientation).getHeadingRate(q_feedback_yawless);
-      }
-      catch (...) {
-        ROS_ERROR("[DergbryanTracker]: exception caught while calculating the parasitic heading rate!");
-      }
-
-      try {
-        // TODO: update uav_state.pose.orientation (only R updated now, not the quaternion)
-        rp_heading_rate_compensation(2) = mrs_lib::AttitudeConverter(uav_state.pose.orientation).getYawRateIntrinsic(-parasitic_heading_rate);
-      }
-      catch (...) {
-        ROS_ERROR("[DergbryanTracker]: exception caught while calculating the parasitic heading rate compensation!");
-      }
-    }
-
-    t += rp_heading_rate_compensation;
-
-    // // | ------------ compensated desired acceleration ------------ |
-
-    double desired_x_accel = 0; //Is this useless ???? Not in bryan's controller eq 
-    double desired_y_accel = 0;
-    double desired_z_accel = 0;
-
-    // // | --------------- saturate the attitude rate --------------- |
-
-    if (got_constraints_) {
-
-      auto constraints = mrs_lib::get_mutexed(mutex_constraints_, constraints_);
-      
-      // ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: constraints.roll_rate = %f", constraints.roll_rate);
-      // ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: constraints.pitch_rate = %f", constraints.pitch_rate);
-      // ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: constraints.yaw_rate = %f", constraints.yaw_rate);
-
-      if (t[0] > constraints.roll_rate) {
-        t[0] = constraints.roll_rate;
-      } else if (t[0] < -constraints.roll_rate) {
-        t[0] = -constraints.roll_rate;
-      }
-
-      if (t[1] > constraints.pitch_rate) {
-        t[1] = constraints.pitch_rate;
-      } else if (t[1] < -constraints.pitch_rate) {
-        t[1] = -constraints.pitch_rate;
-      }
-
-      if (t[2] > constraints.yaw_rate) {
-        t[2] = constraints.yaw_rate;
-      } else if (t[2] < -constraints.yaw_rate) {
-        t[2] = -constraints.yaw_rate;
-      }
-    } else {
-      ROS_WARN_THROTTLE(1.0, "[DergbryanTracker]: missing dynamics constraints");
-    }
-
-    Eigen::Vector3d attitude_rate_pred = t; // added by bryan
-    //attitude_rate_pred = q_feedback; // added by bryan
-    // t = attitude_rate_pred;
-    
-
-
-  return {thrust_force,attitude_rate_pred,theta};
+  return {thrust_force, attitude_rate_pred, theta};
 }
 
 
@@ -3918,16 +3912,16 @@ void DergbryanTracker::DERG_computation(){
                         uav_state_.velocity.linear.y,
                         uav_state_.velocity.linear.z;
     if (_Lyapunov_type_ == 1){
-    // TODO compute analytic expression for kxy different from kz. The point is that the theory assumes the worst case (min Gamma) that works for arbitrary directions.
-    // So one should compute for all xyz direction and take the worst case.
-    P_Lyap << kpxy_+_epsilon_*pow(kvxy_,2.0), 0.0, 0.0, _epsilon_*kvxy_, 0.0, 0.0,
-          0.0, kpxy_+_epsilon_*pow(kvxy_,2.0), 0.0, 0.0, _epsilon_*kvxy_, 0.0,
-          0.0, 0.0, kpz_+_epsilon_*pow(kvz_,2.0), 0.0, 0.0, _epsilon_*kvz_,
-          _epsilon_*kvxy_, 0.0, 0.0, 1.0, 0.0, 0.0,
-          0.0, _epsilon_*kvxy_, 0.0, 0.0, 1.0, 0.0,
-          0.0, 0.0, _epsilon_*kvz_, 0.0, 0.0, 1.0;
-    P_Lyap = 0.5*P_Lyap;
-    V_Lyap = state_vec_V_Lyap.transpose()*P_Lyap*state_vec_V_Lyap;
+      // TODO compute analytic expression for kxy different from kz. The point is that the theory assumes the worst case (min Gamma) that works for arbitrary directions.
+      // So one should compute for all xyz direction and take the worst case.
+      P_Lyap << kpxy_+_epsilon_*pow(kvxy_,2.0), 0.0, 0.0, _epsilon_*kvxy_, 0.0, 0.0,
+            0.0, kpxy_+_epsilon_*pow(kvxy_,2.0), 0.0, 0.0, _epsilon_*kvxy_, 0.0,
+            0.0, 0.0, kpz_+_epsilon_*pow(kvz_,2.0), 0.0, 0.0, _epsilon_*kvz_,
+            _epsilon_*kvxy_, 0.0, 0.0, 1.0, 0.0, 0.0,
+            0.0, _epsilon_*kvxy_, 0.0, 0.0, 1.0, 0.0,
+            0.0, 0.0, _epsilon_*kvz_, 0.0, 0.0, 1.0;
+      P_Lyap = 0.5*P_Lyap;
+      V_Lyap = state_vec_V_Lyap.transpose()*P_Lyap*state_vec_V_Lyap;
     }
   }
 
@@ -3981,33 +3975,10 @@ void DergbryanTracker::DERG_computation(){
       }
     }
     DSM_sT_ = _kappa_sT_*diff_T/(0.5*(thrust_saturation_physical_ - _T_min_)); // scaled DSM in _kappa_sT_*[0, 1] from the average between the lower and upper limit to the respective limits
-     DSM_msg_.DSM_s = DSM_sT_;
-
-
-    if(_type_of_system_=="1uav_payload"&&payload_spawned_&&_enable_dsm_swing_c_){ //Swing angle DSM
-      double diff_alpha_min=constraint_swing_c; //init the difference as the highest possible value
-      for (size_t i = 0; i < _num_pred_samples_; i++) {
-        double diff_alpha = constraint_swing_c - predicted_swing_angle_out_.poses[i].position.x;
-        if (diff_alpha < diff_alpha_min) { //if we find a lower value we store it
-        diff_alpha_min = diff_alpha;  //diff_alpha_min will be the minimal value we get over the whole prediction horizon.
-        }
-      }
-      DSM_swing_c_=_kappa_swing_c_*diff_alpha_min;
-      DSM_msg_.DSM_swing_c = DSM_swing_c_;
-    }
-
-    if(_type_of_system_=="1uav_payload"&&payload_spawned_&&_enable_dsm_Tc_){ // Tension cable DSM
-      double min_Tc=1000.0; //init at high value;
-      for (size_t i = 0; i < _num_pred_samples_; i++) {
-        if (predicted_Tc_out_.poses[i].position.x < min_Tc) { //if we find a lower value we store it
-        min_Tc = predicted_Tc_out_.poses[i].position.x;  //diff_alpha_min will be the minimal value we get over the whole prediction horizon.
-        }
-      }
-    DSM_Tc_=_kappa_Tc_*min_Tc;
-    DSM_msg_.DSM_Tc = DSM_Tc_;
-    }
+    DSM_msg_.DSM_s = DSM_sT_;
+    //ROS_INFO_STREAM("DSM_sT_ = \n" << DSM_sT_);
   }
-  //ROS_INFO_STREAM("DSM_sT_ = \n" << DSM_sT_);
+ 
 
   // Body rate saturation:
   if (got_constraints_ && _DSM_type_ == 2) { // _DSM_type_ = 1 not possible sinc elevel-set based on outer loop only
@@ -4059,8 +4030,34 @@ void DergbryanTracker::DERG_computation(){
     ROS_WARN_THROTTLE(1.0, "[DergbryanTracker]: missing dynamics constraints");
   }
 
+  // Cable suspended UAV constraints (swing angle and taut cable)
+  // TODO: enable these for 2 uav cooperative transport
+  if (_DSM_type_== 2){ // Trajectory based
+    if(_type_of_system_== "1uav_payload" && payload_spawned_ && _enable_dsm_swing_c_){ //Swing angle DSM
+      double diff_alpha_min = _constraint_swing_c_; //init the difference as the highest possible value
+      for (size_t i = 0; i < _num_pred_samples_; i++) {
+        double diff_alpha = _constraint_swing_c_ - predicted_swing_angle_out_.poses[i].position.x;
+        if (diff_alpha < diff_alpha_min) { //if we find a lower value we store it
+        diff_alpha_min = diff_alpha;  //diff_alpha_min will be the minimal value we get over the whole prediction horizon.
+        }
+      }
+      DSM_swing_c_ = _kappa_swing_c_ * diff_alpha_min / _constraint_swing_c_; // scaled between 0 and _kappa_swing_c_
+      DSM_msg_.DSM_swing_c = DSM_swing_c_;
+      //ROS_INFO_STREAM("DSM_swing_c_ = \n" << DSM_swing_c_);
+    }
 
-
+    if(_type_of_system_== "1uav_payload" && payload_spawned_ && _enable_dsm_Tc_){ // Tension cable DSM
+      double min_Tc = 100000.0; //init at very high value;
+      for (size_t i = 0; i < _num_pred_samples_; i++) {
+        if (predicted_Tc_out_.poses[i].position.x < min_Tc) { //if we find a lower value we store it
+        min_Tc = predicted_Tc_out_.poses[i].position.x;  //diff_alpha_min will be the minimal value we get over the whole prediction horizon.
+        }
+      }
+      DSM_Tc_ = _kappa_Tc_ * min_Tc / (_load_mass_ * common_handlers_->g); // at hover the min_Tc = _load_mass_ * common_handlers_->g and then DSM = _kappa_Tc_
+      DSM_msg_.DSM_Tc = DSM_Tc_;
+      //ROS_INFO_STREAM("DSM_Tc_ = \n" << DSM_Tc_);
+    }
+  }
 
   // | --------------------------- repulsion fields ------------------------------|  
   //  - agent: uav collision avoidance
@@ -5321,27 +5318,50 @@ void DergbryanTracker::DERG_computation(){
 
   // //////////////////////// Determining DSM_total= minimum {DSM_a,DSM_s,DSM_o,DSM_w}////////////////////////////////
   DSM_total_ = 100000; // initialize very high
-  if((DSM_sT_ <= DSM_total_) && _enable_dsm_sT_){
-    DSM_total_ = DSM_sT_;
+
+  if(_enable_dsm_sT_){
+    ROS_INFO_THROTTLE(1.0,"[DergbryanTracker]: DSM_sT_ = %f", DSM_sT_);
+    if(DSM_sT_ <= DSM_total_){
+      DSM_total_ = DSM_sT_;
+    }
   }
 
-  if((DSM_sw_ <= DSM_total_) && _enable_dsm_sw_){
-    DSM_total_ = DSM_sw_;
+  if(_enable_dsm_sw_){
+    ROS_INFO_THROTTLE(1.0,"[DergbryanTracker]: DSM_sw_ = %f", DSM_sw_);
+    if(DSM_sw_ <= DSM_total_){
+      DSM_total_ = DSM_sw_;
+    }
   }
 
-  if((DSM_a_ <= DSM_total_) && _enable_dsm_a_){
-    DSM_total_ = DSM_a_;
-  }
-  
-  if((DSM_swing_c_ <= DSM_total_) && _enable_dsm_swing_c_ && payload_spawned_){
-    DSM_total_ = DSM_swing_c_;
-  }
-
-  if((DSM_Tc_ <= DSM_total_) && _enable_dsm_Tc_ && payload_spawned_){
-    DSM_total_ = DSM_Tc_;
+  if(_enable_dsm_a_){
+    ROS_INFO_THROTTLE(1.0,"[DergbryanTracker]: DSM_a_ = %f", DSM_a_);
+    if(DSM_a_ <= DSM_total_){
+      DSM_total_ = DSM_a_;
+    }
   }
 
-  if((!_enable_dsm_sT_ && !_enable_dsm_sw_ && !_enable_dsm_a_) || (_constant_dsm_>=0.0)){ // if all of the DSMs are disabled or a positive cosntant DSM is added, TODO add other DSMs here
+  if(_enable_dsm_swing_c_ && payload_spawned_){
+    ROS_INFO_THROTTLE(1.0,"[DergbryanTracker]: DSM_swing_c_ = %f", DSM_swing_c_);
+    if(DSM_swing_c_ <= DSM_total_ ){
+      DSM_total_ = DSM_swing_c_;
+    }
+  }
+
+  if(_enable_dsm_Tc_ && payload_spawned_){
+    ROS_INFO_THROTTLE(1.0,"[DergbryanTracker]: DSM_Tc_ = %f", DSM_Tc_);
+    if(DSM_Tc_ <= DSM_total_){
+      DSM_total_ = DSM_Tc_;
+    }
+  }
+
+  if(!_enable_dsm_sT_ && !_enable_dsm_sw_ && !_enable_dsm_a_){
+    ROS_WARN_THROTTLE(1.0, "[DergbryanTracker]: all default UAV DSMs (thrust, body rate, agents) are disabled! \n");
+  }
+  if(!_enable_dsm_swing_c_ && !_enable_dsm_Tc_ && payload_spawned_){
+    ROS_WARN_THROTTLE(1.0, "[DergbryanTracker]: all payload specific DSMs (thrust, body rate, agents) are disabled although payload is spawned! \n");
+  }
+
+  if(_constant_dsm_ >= 0.0){ // if all of the DSMs are disabled or a positive constant DSM is added, TODO add other DSMs here
     DSM_total_ = _constant_dsm_;
     // in case the _constant_dsm_ is negative it will be set to 0 in the next if
   }
@@ -5795,7 +5815,6 @@ void DergbryanTracker::GazeboLoadStatesCallback(const gazebo_msgs::LinkStatesCon
     int anchoring_pt_index; // Stores the index at which the anchoring point appears in the message that is received from Gazebo. 
     std::vector<std::string> link_names = loadmsg->name; // Take a vector containing the name of each link in the simulation. Among these there is the links that are related to the payload. 
     for(size_t i = 0; i < link_names.size(); i++){ // Go through all the link names
-
       if (_type_of_system_ == "1uav_payload"){
         if(link_names[i] == "point_mass::link_01"){ //link_01 is the point mass payload link (see mass_point.xacro). When the link_name corresponds to the one of the payload, defined in simulation/models/suspended_payload xacro files of the testing folder.
           anchoring_pt_index = i; //Store the index of the name, as it will be used as the index to access all the states of this link, in the loadmsg later.
@@ -5838,6 +5857,7 @@ void DergbryanTracker::GazeboLoadStatesCallback(const gazebo_msgs::LinkStatesCon
 // TODO: document and test if this works on hardware
 // TODO: combine with BacaLoadStatesCallback of controller as (almost) same code
   void DergbryanTracker::BacaLoadStatesCallback(const mrs_msgs::BacaProtocolConstPtr& msg) {
+    // TODO: similar to GazeboLoadStatesCallback, update the variable payload_spawned_ if this the data is correctly received from arduino
     int message_id;
     int payload_1;
     int payload_2;
@@ -5847,7 +5867,6 @@ void DergbryanTracker::GazeboLoadStatesCallback(const gazebo_msgs::LinkStatesCon
 
     int16_t combined = payload_1 << 8;
     combined |= payload_2;
-
 
     float encoder_output = (float) combined/ 1000.0;
 
