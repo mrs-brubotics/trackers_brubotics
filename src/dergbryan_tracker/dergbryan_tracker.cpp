@@ -3333,36 +3333,25 @@ std::tuple< double, Eigen::Vector3d,double> DergbryanTracker::ComputeSe3CopyCont
     // Epl[2] = 0;
     // Evl[2] = 0;
   } 
-  else if(_run_type_ == "uav" && payload_spawned_){ //HARDWARE - TODORAPHAEL FOR HARDWARE TESTING. ADAPTE IT. 
-      // load_pose_position.x = Op[0] + Difference_load_drone_position[0];
-      // load_pose_position.y = Op[1] + Difference_load_drone_position[1];
-      // load_pose_position.z = Op[2] + Difference_load_drone_position[2];
+  else if(_run_type_ == "uav" && payload_spawned_){ 
 
-      // if (position_cmd.use_position_horizontal || position_cmd.use_position_vertical) {
-      //   Epl[0] = Rpl[0] - load_pose_position.x; // since encoder gives offset from drone position (position relative to drone)
-      //   Epl[1] = Rpl[1] - load_pose_position.y;
-      //   Epl[2] = Rpl[2] - load_pose_position.z;
-      // }
-      // if (position_cmd.use_velocity_horizontal || position_cmd.use_velocity_vertical ||
-      //     position_cmd.use_position_vertical) {  // even when use_position_vertical to provide dampening
-      //   Evl = -Ovl; // if encoders don't move, there is no speed (speed relative to drone)
-      // }
-      // load_pose_error.x = -Epl[0];
-      // load_pose_error.y = -Epl[1];
-      // load_pose_error.z = -Epl[2];
+    if (position_cmd.use_position_horizontal || position_cmd.use_position_vertical) {
+      Eigen::Vector3d e3(0.0, 0.0, 1.0);
+      Epl = Op - _cable_length_*e3 - Opl; 
+    }
+    // load velocity control error
+    if (position_cmd.use_velocity_horizontal || position_cmd.use_velocity_vertical ||
+      position_cmd.use_position_vertical) {  // even when use_position_vertical to provide dampening
+      Evl = Ov - Ovl; // speed relative to base frame
+    }
 
-      // load_velocity_error.x = -Evl[0];
-      // load_velocity_error.y = -Evl[1];
-      // load_velocity_error.z = -Evl[2];
-
-      // load_pose_experiments_publisher_.publish(load_pose_position);
+    if (Epl.norm()>_cable_length_*sqrt(2)){ //Sanity check : Largest possible error when cable is oriented 90degrees. If Epl is larger, there must be an error in the FK, or in the values returned by the encoders.
+      ROS_ERROR("[se3_copy_controller]: Control error of the anchoring point Epl was larger than expected, it has been set to zero");
+      Epl= Eigen::Vector3d::Zero(3);
+      payload_spawned_=false; 
+    }
       
-      // load_pose_error_publisher_.publish(load_pose_error);
-      // load_velocity_error_publisher_.publish(load_velocity_error);
 
-      // //ROS_INFO_STREAM("Se3BruboticsLoadController: load_pose_position = \n" << load_pose_position);
-      // //ROS_INFO_STREAM("Se3BruboticsLoadController: Epl (Rpl-load_pose)= \n" << Epl);
-      // Epl[2] = 0;
   }
 
   // Ignore small load position errors to deal with load offsets and prevent agressive actions on small errors
@@ -5883,23 +5872,61 @@ void DergbryanTracker::GazeboLoadStatesCallback(const gazebo_msgs::LinkStatesCon
     {
       encoder_velocity_2_ = encoder_output;
     }
-    
-    // rel_load_pose_position[0] = _cable_length_*sin(encoder_angle_1_); // x relative to drone in drone coordinate (turns with uav_heading)
-    // rel_load_pose_position[1] = _cable_length_*sin(encoder_angle_2_); // y relative to drone in drone coordinate (turns with uav_heading)
-    // rel_load_pose_position[2] = -sqrt(pow(_cable_length_,2) - (pow(rel_load_pose_position[0],2) + pow(rel_load_pose_position[1],2))); // z relative to drone in drone coordinate (turns with uav_heading)
 
-    // Difference_load_drone_position[0] = (rel_load_pose_position[0]*cos(uav_heading) - rel_load_pose_position[1]*sin(uav_heading)); // x relative to drone in absolute coordinate
-    // Difference_load_drone_position[1] = (-(rel_load_pose_position[0]*sin(uav_heading) + rel_load_pose_position[1]*cos(uav_heading))); // y relative to drone in absolute coordinate
-    // Difference_load_drone_position[2] = (rel_load_pose_position[2]); // z relative to drone in absolute coordinate
+  // Sanity check
+  if (!std::isfinite(encoder_angle_1_)||!std::isfinite(encoder_angle_2_)) {
+    ROS_ERROR("[Se3CopyController]: NaN detected in encoder angles");
+    payload_spawned_=false; //Put payload_spawned back to false in case the encoder stops giving finite values during a flight. Epl stays equal to zero when this flag is false, avoiding strange behaviors or non finite Epl. 
+  }
+  else if (!std::isfinite(encoder_velocity_1_)||!std::isfinite(encoder_velocity_2_)) {
+    ROS_ERROR("[Se3CopyController]: NaN detected in encoder angular velocities");
+    payload_spawned_=false;  
+  }
+  else{
+    ROS_INFO_THROTTLE(20.0,"[Se3CopyController]: Encoder angles returned are finite values");
+    payload_spawned_=true; // Values are finite and thus can be used to compute a finite
+  }
 
-    // //anchoring_pt_pose_position_.position.x = anchoring_pt_pose_position_[0];
-    // //anchoring_pt_pose_position_.position.y = anchoring_pt_pose_position_[1];
-    // //anchoring_pt_pose_position_.position.z = anchoring_pt_pose_position_[2];
+  Eigen::Vector3d anchoring_pt_pose_position_rel ; // position of the payload in the body frame B
+  Eigen::Vector3d anchoring_pt_lin_vel_rel; //Velocity of the payload in the body frame B.
+
+  //Compute position of the anchoring point in body base B. (i.e., relative to drone COM)
+  anchoring_pt_pose_position_rel[0]=_cable_length_*sin(encoder_angle_1_)*cos(encoder_angle_2_);
+  anchoring_pt_pose_position_rel[1]=_cable_length_*sin(encoder_angle_2_);
+  anchoring_pt_pose_position_rel[2]=-_cable_length_*cos(encoder_angle_1_)*cos(encoder_angle_2_);
+  
+  //Compute absolute position of the payload.
+  Eigen::Vector3d Op(uav_state_.pose.position.x, uav_state_.pose.position.y, uav_state_.pose.position.z);
+  Eigen::Vector3d Ov(uav_state_.velocity.linear.x, uav_state_.velocity.linear.y, uav_state_.velocity.linear.z);
+  Eigen::Matrix3d R = mrs_lib::AttitudeConverter(uav_state_.pose.orientation);
+
+  anchoring_pt_pose_position_=Op+R*anchoring_pt_pose_position_rel;
+  
+  //Compute absolute velocity of the anchoring point.
+
+  Eigen::Vector3d Ow(uav_state_.velocity.angular.x, uav_state_.velocity.angular.y, uav_state_.velocity.angular.z); 
+  Eigen::Matrix3d skew_Ow;
+  skew_Ow << 0.0     , -Ow(2), Ow(1),
+            Ow(2) , 0.0,       -Ow(0),
+            -Ow(1), Ow(0),  0.0;
+  Eigen::Matrix3d Rdot = skew_Ow*R;
     
-    // //ROS_INFO_STREAM("Load Pose \n" << anchoring_pt_pose_);
-    // anchoring_pt_lin_vel_[0]= encoder_velocity_1_*_cable_length_;//WWRONG TO CORRECT
-    // anchoring_pt_lin_vel_[1]= encoder_velocity_2_*_cable_length_;
-    // anchoring_pt_lin_vel_[2]= 0;
+  anchoring_pt_lin_vel_rel[0]=_cable_length_*(cos(encoder_angle_1_)*cos(encoder_angle_2_)*encoder_velocity_1_
+    - sin(encoder_angle_1_)*sin(encoder_angle_2_)*encoder_velocity_2_);
+  anchoring_pt_lin_vel_rel[1]=_cable_length_*cos(encoder_angle_2_)*encoder_velocity_2_;
+  anchoring_pt_lin_vel_rel[2]=_cable_length_*(sin(encoder_angle_2_)*cos(encoder_angle_1_)*encoder_velocity_2_+
+  sin(encoder_angle_1_)*cos(encoder_angle_2_)*encoder_velocity_1_);
+  
+  anchoring_pt_lin_vel_=Ov+Rdot*anchoring_pt_pose_position_rel+R*anchoring_pt_lin_vel_rel;
+
+
+  anchoring_pt_pose_.position.x=anchoring_pt_pose_position_[0];
+  anchoring_pt_pose_.position.y=anchoring_pt_pose_position_[1];
+  anchoring_pt_pose_.position.z=anchoring_pt_pose_position_[2];
+  anchoring_pt_velocity_.linear.x=anchoring_pt_lin_vel_[0];
+  anchoring_pt_velocity_.linear.y=anchoring_pt_lin_vel_[1];
+  anchoring_pt_velocity_.linear.z=anchoring_pt_lin_vel_[2];
+  
     
   }
   // TODO: update these callbacks which contain too hardcoded info as uav2
