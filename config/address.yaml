@@ -6,6 +6,3 @@ BypassTracker:
 
 DergbryanTracker:
   address: "trackers_brubotics/DergbryanTracker"
-
-DergPmTracker:
-  address: "trackers_brubotics/DergPmTracker"
