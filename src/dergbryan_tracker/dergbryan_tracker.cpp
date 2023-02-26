@@ -104,6 +104,7 @@ public:
   void publishFollowerDataForLeaderIn2uavs_payload(mrs_msgs::PositionCommand position_cmd);
   void computePSCTrajectoryPredictions(mrs_msgs::PositionCommand position_cmd, double uav_heading, const mrs_msgs::AttitudeCommand::ConstPtr &last_attitude_cmd); //mother function that calls the correct prediction function depending on the cases.
   double computeDSM_sT_trajpred(geometry_msgs::PoseArray predicted_thrust);
+  double computeDSM_sw_trajpred(geometry_msgs::PoseArray predicted_attrate);
   void clearMsgsAfterUpdate();
 private:
   ros::NodeHandle                                     nh_;
@@ -270,7 +271,9 @@ private:
   ros::Publisher uav_state_follower_for_leader_pub_;
   ros::Publisher anchoring_point_follower_for_leader_pub_;
   ros::Publisher position_cmd_follower_for_leader_pub_;
+  ros::Publisher goal_position_cmd_follower_for_leader_pub_;
   ros::Publisher position_cmd_follower_from_leader_pub_;
+  ros::Publisher goal_position_cmd_follower_from_leader_pub_;
   //  - ERG trajectory predictions: 
   ros::Publisher predicted_uav1_poses_publisher_;
   ros::Publisher predicted_uav2_poses_publisher_;
@@ -280,9 +283,10 @@ private:
   ros::Publisher predicted_uav2_anchoring_point_pose_publisher_;
   ros::Publisher predicted_uav1_anchoring_point_vel_publisher_;
   ros::Publisher predicted_uav2_anchoring_point_vel_publisher_;
-  // TODO add accelerations here if needed
   ros::Publisher predicted_uav1_thrust_publisher_;
-  ros::Publisher predicted_uav2_thrust_publisher_;    
+  ros::Publisher predicted_uav2_thrust_publisher_; 
+  ros::Publisher predicted_uav1_attitude_rate_publisher_;   
+  ros::Publisher predicted_uav2_attitude_rate_publisher_;  
   //|-----------------------------D-ERG--------------------------------|//
   // TODO: bryan clean when improving ERG
   //    - Multi-uav collision avoidance:
@@ -405,7 +409,11 @@ private:
   
   ros::Subscriber position_cmd_follower_for_leader_sub_; 
   void position_cmd_follower_for_leader_callback(const mrs_msgs::PositionCommand::ConstPtr& msg);
-  mrs_msgs::PositionCommand position_cmd_follower_for_leader_;//received, to store in uav1 tracker
+  mrs_msgs::PositionCommand position_cmd_follower_for_leader_;
+
+  ros::Subscriber goal_position_cmd_follower_for_leader_sub_; 
+  void goal_position_cmd_follower_for_leader_callback(const mrs_msgs::PositionCommand::ConstPtr& msg);
+  mrs_msgs::PositionCommand goal_position_cmd_follower_for_leader_;
   
   ros::Subscriber anchoring_point_follower_for_leader_sub_;
   void anchoring_point_follower_for_leader_callback(const mrs_msgs::UavState::ConstPtr& msg);
@@ -415,7 +423,13 @@ private:
   
   ros::Subscriber position_cmd_follower_from_leader_sub_;
   void position_cmd_follower_from_leader_callback(const mrs_msgs::PositionCommand::ConstPtr& msg);
-  mrs_msgs::PositionCommand position_cmd_follower_from_leader_;//received, to store in uav2 tracker
+  mrs_msgs::PositionCommand position_cmd_follower_from_leader_;
+
+  ros::Subscriber goal_position_cmd_follower_from_leader_sub_;
+  void goal_position_cmd_follower_from_leader_callback(const mrs_msgs::PositionCommand::ConstPtr& msg);
+  mrs_msgs::PositionCommand goal_position_cmd_follower_from_leader_;
+
+
 
   //|-----------------------------D-ERG--------------------------------|//
   //    - Multi-uav collision avoidance:
@@ -456,6 +470,7 @@ private:
   double applied_ref_y_;
   double applied_ref_z_;
 
+  bool erg_predictions_theta_trusted_; // init
   double thrust_saturation_physical_;
 
   double Sa_;
@@ -473,6 +488,8 @@ private:
   double DSM_sT_uav2_ = 100000;
 
   double DSM_sw_ = 100000; // for the (desired or actual) angular body rates 
+  double DSM_sw_uav1_ = 100000;;
+  double DSM_sw_uav2_ = 100000;;
   // finish added by bryan
   double DSM_swing_c_ = 100000; //Dynamic Safety Margin for swing angle.
   double DSM_Tc_ = 100000; //Dynamic Safety Margin for tension in the cable.
@@ -872,6 +889,11 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   predicted_uav2_anchoring_point_vel_publisher_= nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav2_anchoring_point_vel", 1);
   predicted_uav1_thrust_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav1_thrust", 1);
   predicted_uav2_thrust_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav2_thrust", 1);
+  predicted_uav1_attitude_rate_publisher_ =  nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav1_attitude_rate", 1);
+  predicted_uav2_attitude_rate_publisher_ =  nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav2_attitude_rate", 1);
+  
+  
+  
   //for communication between the two uav's, if I am uav1, I subscribe to UAV2 states/position_cmd/anchoring points. If I am uav2, I advertise on the correct topic.
 
   // TODO: 
@@ -883,19 +905,23 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   if (_type_of_system_ == "2uavs_payload"){
     if (_uav_name_ == "uav1"){  // to see which UAV it is
         // subscribers:
-        uav_state_follower_for_leader_sub_=nh2_.subscribe("/uav2/control_manager/dergbryan_tracker/uav_state_follower_for_leader", 1, &DergbryanTracker::uav_state_follower_for_leader_callback, this, ros::TransportHints().tcpNoDelay());
-        anchoring_point_follower_for_leader_sub_=nh2_.subscribe("/uav2/control_manager/dergbryan_tracker/anchoring_point_follower_for_leader", 1, &DergbryanTracker::anchoring_point_follower_for_leader_callback, this, ros::TransportHints().tcpNoDelay());
-        position_cmd_follower_for_leader_sub_=nh2_.subscribe("/uav2/control_manager/dergbryan_tracker/position_cmd_follower_for_leader", 1, &DergbryanTracker::position_cmd_follower_for_leader_callback, this, ros::TransportHints().tcpNoDelay());
+        uav_state_follower_for_leader_sub_ = nh2_.subscribe("/uav2/control_manager/dergbryan_tracker/uav_state_follower_for_leader", 1, &DergbryanTracker::uav_state_follower_for_leader_callback, this, ros::TransportHints().tcpNoDelay());
+        anchoring_point_follower_for_leader_sub_ = nh2_.subscribe("/uav2/control_manager/dergbryan_tracker/anchoring_point_follower_for_leader", 1, &DergbryanTracker::anchoring_point_follower_for_leader_callback, this, ros::TransportHints().tcpNoDelay());
+        position_cmd_follower_for_leader_sub_ = nh2_.subscribe("/uav2/control_manager/dergbryan_tracker/position_cmd_follower_for_leader", 1, &DergbryanTracker::position_cmd_follower_for_leader_callback, this, ros::TransportHints().tcpNoDelay());
+        goal_position_cmd_follower_for_leader_sub_ = nh2_.subscribe("/uav2/control_manager/dergbryan_tracker/goal_position_cmd_follower_for_leader", 1, &DergbryanTracker::goal_position_cmd_follower_for_leader_callback, this, ros::TransportHints().tcpNoDelay());
         // publishers:
         position_cmd_follower_from_leader_pub_ = nh2_.advertise<mrs_msgs::PositionCommand>("position_cmd_follower_from_leader", 1); 
+        goal_position_cmd_follower_from_leader_pub_ = nh2_.advertise<mrs_msgs::PositionCommand>("goal_position_cmd_follower_from_leader", 1); 
     }
     else if (_uav_name_ == "uav2"){ // uav2
         // publishers required for state feedback in leader UAV
         uav_state_follower_for_leader_pub_ = nh2_.advertise<mrs_msgs::UavState>("uav_state_follower_for_leader", 1);
         anchoring_point_follower_for_leader_pub_ = nh2_.advertise<mrs_msgs::UavState>("anchoring_point_follower_for_leader", 1);
         position_cmd_follower_for_leader_pub_ = nh2_.advertise<mrs_msgs::PositionCommand>("position_cmd_follower_for_leader", 1); 
+        goal_position_cmd_follower_for_leader_pub_ = nh2_.advertise<mrs_msgs::PositionCommand>("goal_position_cmd_follower_for_leader", 1); 
         // subscribers:
         position_cmd_follower_from_leader_sub_=nh2_.subscribe("/uav1/control_manager/dergbryan_tracker/position_cmd_follower_from_leader", 1, &DergbryanTracker::position_cmd_follower_from_leader_callback, this, ros::TransportHints().tcpNoDelay());
+        goal_position_cmd_follower_from_leader_sub_=nh2_.subscribe("/uav1/control_manager/dergbryan_tracker/goal_position_cmd_follower_from_leader", 1, &DergbryanTracker::goal_position_cmd_follower_from_leader_callback, this, ros::TransportHints().tcpNoDelay());
     }
   }
   // general:
@@ -1221,15 +1247,17 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
         double time_delay_1 = std::abs(uav_state_follower_for_leader_.header.stamp.toSec() - uav_state_.header.stamp.toSec());
         double time_delay_2 = std::abs(anchoring_point_follower_for_leader_.header.stamp.toSec() - uav_state_.header.stamp.toSec());
         double time_delay_3 = std::abs(position_cmd_follower_for_leader_.header.stamp.toSec() - uav_state_.header.stamp.toSec());
-        ROS_INFO_STREAM("[DergbryanTracker]: time_delay_1 = " << time_delay_1);
-        ROS_INFO_STREAM("[DergbryanTracker]: time_delay_2 = " << time_delay_2);
-        ROS_INFO_STREAM("[DergbryanTracker]: time_delay_3 = " << time_delay_3);
+        double time_delay_4 = std::abs(goal_position_cmd_follower_for_leader_.header.stamp.toSec() - uav_state_.header.stamp.toSec());
+        // ROS_INFO_STREAM("[DergbryanTracker]: time_delay_1 = " << time_delay_1);
+        // ROS_INFO_STREAM("[DergbryanTracker]: time_delay_2 = " << time_delay_2);
+        // ROS_INFO_STREAM("[DergbryanTracker]: time_delay_3 = " << time_delay_3);
+        // ROS_INFO_STREAM("[DergbryanTracker]: time_delay_4 = " << time_delay_4);
         double max_time_delay = 2*dt_; // max 2*sampling time // TODO: tune for practice, test if delayed too much
-        if (time_delay_1<max_time_delay && payload_spawned_ && time_delay_2<max_time_delay && time_delay_3<max_time_delay){
+        if (time_delay_1<max_time_delay && payload_spawned_ && time_delay_2<max_time_delay && time_delay_3<max_time_delay && time_delay_4<max_time_delay){
           callback_data_follower_valid_ = true;
         } else {
           callback_data_follower_valid_ = false;
-          ROS_WARN_THROTTLE(1.0, "[DergbryanTracker]: follower data is delayed too much and/or payload_not yet spawned!");
+          ROS_WARN_STREAM("[DergbryanTracker]: follower data is delayed too much and/or payload_not yet spawned!");
         }
         // TODO: fix the global vars used to they cnanot be changed during execution but if older msgs are sufficently new, then new msg for sure
       }
@@ -1244,7 +1272,7 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
       computeERG(); // computes the applied_ref_x_, applied_ref_y_, applied_ref_z_
     } 
     else if((_type_of_system_=="2uavs_payload" && _uav_name_ == "uav1" && payload_spawned_ && callback_data_follower_valid_)){
-      computeERG(); // computes the applied_ref_x_, applied_ref_y_, applied_ref_z_, and position_cmd_follower_from_leader_
+      computeERG(); // computes the applied_ref_x_, applied_ref_y_, applied_ref_z_, position_cmd_follower_from_leader_, goal_position_cmd_follower_from_leader_
     }
     else if ((_type_of_system_=="2uavs_payload" || _type_of_system_=="1uav_payload") && !payload_spawned_){
       // allows the UAV to be repositioned before spawning and attaching the payload
@@ -1256,14 +1284,25 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
     else if (_type_of_system_=="2uavs_payload" && _uav_name_ == "uav2" && payload_spawned_){
       // check the callback of the follower uav if the msgs of the leader is received from a timestamp which is not delayed too much wrt the current timestamp of the uav_state_.
       double time_delay_1 = std::abs(position_cmd_follower_from_leader_.header.stamp.toSec() - uav_state_.header.stamp.toSec());
-      ROS_INFO_STREAM("[DergbryanTracker]: time_delay_1 = " << time_delay_1);
+      double time_delay_2 = std::abs(goal_position_cmd_follower_from_leader_.header.stamp.toSec() - uav_state_.header.stamp.toSec());
+      // ROS_INFO_STREAM("[DergbryanTracker]: time_delay_1 = " << time_delay_1);
+      // ROS_INFO_STREAM("[DergbryanTracker]: time_delay_2 = " << time_delay_2);
       double max_time_delay = 2*2*dt_; // max 2*sampling time // TODO: tune for practice, test if delayed too much
-      if (time_delay_1<max_time_delay){
+      if (time_delay_1<max_time_delay && time_delay_2<max_time_delay){
         callback_data_leader_valid_ = true;
         // update the follower's applied ref:
         applied_ref_x_ = position_cmd_follower_from_leader_.position.x;
         applied_ref_y_ = position_cmd_follower_from_leader_.position.y;
         applied_ref_z_ = position_cmd_follower_from_leader_.position.z;
+        // update the follower's target ref:
+        /* We do not update the goal_ vars below as this would conflict with the follower uav being commanded other target 
+           references via setGoal and timerTrajectoryTracking. So this topic can be interpreted as the actual target reference
+           for the follower uav and commanded by the leader uav. It ensures that an infeasible target request, which violates 
+           the bar length constraint, is converted in a feasible target command for the follower. 
+           goal_x_ = goal_position_cmd_follower_from_leader_.position.x;
+           goal_y_ = goal_position_cmd_follower_from_leader_.position.y;
+           goal_z_ = goal_position_cmd_follower_from_leader_.position.z;
+        */
       } else {
         callback_data_leader_valid_ = false;
         // don't update the follower's applied_ref_x_, applied_ref_y_, applied_ref_z_
@@ -1294,18 +1333,19 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
     computePSCTrajectoryPredictions(position_cmd, uav_heading, last_attitude_cmd);
   }
 
-  ROS_INFO_STREAM("uav_state_.pose.position.x = " << uav_state_.pose.position.x);
-  ROS_INFO_STREAM("uav_state_.pose.position.y = " << uav_state_.pose.position.y);
-  ROS_INFO_STREAM("uav_state_.pose.position.z = " << uav_state_.pose.position.z);
-  ROS_INFO_STREAM("goal_x_ = " << goal_x_);
-  ROS_INFO_STREAM("goal_y_ = " << goal_y_);
-  ROS_INFO_STREAM("goal_z_ = " << goal_z_);
-  ROS_INFO_STREAM("goal_heading_ = " << goal_heading_);
-  ROS_INFO_STREAM("DSM_total_ = " << DSM_total_);
-  ROS_INFO_STREAM("position_cmd.position.x = " << position_cmd.position.x);
-  ROS_INFO_STREAM("position_cmd.position.y = " << position_cmd.position.y);
-  ROS_INFO_STREAM("position_cmd.position.z = " << position_cmd.position.z);
-  ROS_INFO_STREAM("position_cmd.heading = " << position_cmd.heading);
+  // ROS_INFO_STREAM("uav_state_.pose.position.x = " << uav_state_.pose.position.x);
+  // ROS_INFO_STREAM("uav_state_.pose.position.y = " << uav_state_.pose.position.y);
+  // ROS_INFO_STREAM("uav_state_.pose.position.z = " << uav_state_.pose.position.z);
+  // ROS_INFO_STREAM("uav_heading_ = " << uav_heading_);
+  // ROS_INFO_STREAM("goal_x_ = " << goal_x_);
+  // ROS_INFO_STREAM("goal_y_ = " << goal_y_);
+  // ROS_INFO_STREAM("goal_z_ = " << goal_z_);
+  // ROS_INFO_STREAM("goal_heading_ = " << goal_heading_);
+  // ROS_INFO_STREAM("DSM_total_ = " << DSM_total_);
+  // ROS_INFO_STREAM("position_cmd.position.x = " << position_cmd.position.x);
+  // ROS_INFO_STREAM("position_cmd.position.y = " << position_cmd.position.y);
+  // ROS_INFO_STREAM("position_cmd.position.z = " << position_cmd.position.z);
+  // ROS_INFO_STREAM("position_cmd.heading = " << position_cmd.heading);
 
 
   // Prepare the applied_ref_pose_msg:
@@ -1419,6 +1459,8 @@ void DergbryanTracker::clearMsgsAfterUpdate(){
   predicted_uav2_anchoring_point_vel_out_.poses.clear();
   predicted_uav1_thrust_out_.poses.clear();
   predicted_uav2_thrust_out_.poses.clear();
+  predicted_uav1_attitude_rate_out_.poses.clear();
+  predicted_uav2_attitude_rate_out_.poses.clear();
   //  - DERG - collision avoidance:
   uav_applied_ref_out_.points.clear();
   uav_position_out_.points.clear();
@@ -1432,6 +1474,8 @@ void DergbryanTracker::computePSCTrajectoryPredictions(mrs_msgs::PositionCommand
   /* Mother function that computes the trajectory predictions of the PSC which will be used by the ERG. 
      It contains all the different cases that depend on the _type_of_system_ of which we want to predict the behavior.
   */
+  erg_predictions_theta_trusted_ = true; // initialize
+
   if(_type_of_system_=="2uavs_payload" && _uav_name_=="uav1" && callback_data_follower_valid_){
     trajectory_prediction_general_load_2UAV(position_cmd, uav_heading, last_attitude_cmd); // TODO: check 2 uav case later  
   }
@@ -1487,6 +1531,20 @@ The publishing of the payload state is only allowed from when the payload has sp
         catch (...) {
           ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", anchoring_point_follower_for_leader_pub_.getTopic().c_str());
         }
+      }
+
+      // 4) goal_position_cmd_follower_for_leader_pub_:
+      goal_position_cmd_follower_for_leader_.header.stamp    = uav_state_.header.stamp;
+      goal_position_cmd_follower_for_leader_.header.frame_id = uav_state_.header.frame_id;
+      goal_position_cmd_follower_for_leader_.position.x = goal_x_;
+      goal_position_cmd_follower_for_leader_.position.y = goal_y_;
+      goal_position_cmd_follower_for_leader_.position.z = goal_z_;
+      goal_position_cmd_follower_for_leader_.heading = goal_heading_;
+      try {
+        goal_position_cmd_follower_for_leader_pub_.publish(goal_position_cmd_follower_for_leader_);
+      }
+      catch (...) {
+        ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", goal_position_cmd_follower_for_leader_pub_.getTopic().c_str());
       }
     }
   }
@@ -1908,6 +1966,10 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
   // |          start trajectory prediction loop        |
   // ----------------------------------------------------
   for (int i = 0; i < _num_pred_samples_; i++) {
+    if(!erg_predictions_theta_trusted_){
+      ROS_INFO_STREAM("we break since erg_predictions_theta_trusted_ = false \n");
+      break;
+    }
     if(i == 0){  // first iteration
       // TODO: generalize prediction function such that we can choose in which initital state we start to predict (for discrete time ERG)
       // TODO: why have some defined Eigen variables and some ROS? Clean it.
@@ -2767,12 +2829,12 @@ void DergbryanTracker::trajectory_prediction_general_load_2UAV(mrs_msgs::Positio
   geometry_msgs::Pose custom_uav2_anchoring_point_acceleration;
   geometry_msgs::Pose custom_uav2_tension_force;
 
-  //Thrust uav1
+  // Control Inputs uav1
   geometry_msgs::Pose predicted_uav1_thrust; 
   geometry_msgs::Pose predicted_uav1_thrust_norm; 
   geometry_msgs::Pose predicted_uav1_attituderate;
   
-  //Thrust uav2
+  // Control Inputs uav2
   geometry_msgs::Pose predicted_uav2_thrust; 
   geometry_msgs::Pose predicted_uav2_thrust_norm; 
   geometry_msgs::Pose predicted_uav2_attituderate;
@@ -2840,6 +2902,10 @@ void DergbryanTracker::trajectory_prediction_general_load_2UAV(mrs_msgs::Positio
 
   // Prediction loop (over 3sec horizon)
   for (int i = 0; i < _num_pred_samples_; i++) {
+    if(!erg_predictions_theta_trusted_){
+      ROS_INFO_STREAM("we break since erg_predictions_theta_trusted_ = false \n");
+      break;
+    }
     if(i==0){
       //Initial conditions for first iteration + Fill in custom poses
 
@@ -3043,24 +3109,17 @@ void DergbryanTracker::trajectory_prediction_general_load_2UAV(mrs_msgs::Positio
                 -uav1_attitude_rate_pred(1), uav1_attitude_rate_pred(0),  0;// assume omega is omega desired
       // ensure Ow is updated correctly in predictions....
       uav1_Rdot = uav1_skew_Ow*uav1_R; // or add - (equivalent to transpose?) UNUSED
-
       double custom_dt2 = _prediction_dt_;//   /10.0;
       Eigen::Matrix3d I = Eigen::Matrix3d::Identity(3, 3);
-
       uav1_R = (I + uav1_skew_Ow*custom_dt2 + (0.5)*uav1_skew_Ow*custom_dt2*uav1_skew_Ow*custom_dt2 + (1.0/6.0)*uav1_skew_Ow*custom_dt2*uav1_skew_Ow*custom_dt2*uav1_skew_Ow*custom_dt2)*uav1_R;
-      //Get UAV2 attitude uav2_R from output of the controller uav1_attitude_rate_pred.
+      
+      //Get UAV2 attitude uav2_R from output of the controller uav2_attitude_rate_pred.
       uav2_skew_Ow << 0.0     , -uav2_attitude_rate_pred(2), uav2_attitude_rate_pred(1),
                 uav2_attitude_rate_pred(2) , 0.0,       -uav2_attitude_rate_pred(0),
                 -uav2_attitude_rate_pred(1), uav2_attitude_rate_pred(0),  0.0;// assume omega is omega desired
       // ensure Ow is updated correctly in predictions....
       uav2_Rdot = uav2_skew_Ow*uav2_R; 
       uav2_R = (I + uav2_skew_Ow*custom_dt2 + (0.5)*uav2_skew_Ow*custom_dt2*uav2_skew_Ow*custom_dt2 + (1.0/6.0)*uav2_skew_Ow*custom_dt2*uav2_skew_Ow*custom_dt2*uav2_skew_Ow*custom_dt2)*uav2_R;
-
-
-      // predicted_attituderate.position.x = attitude_rate_pred(0,0);
-      // predicted_attituderate.position.y = attitude_rate_pred(1,0);
-      // predicted_attituderate.position.z = attitude_rate_pred(2,0);
-      // predicted_attituderate_out_.poses.push_back(predicted_attituderate);
     } 
     // pushback all the predicted quantity in their pose array vector, to be able to publish the 3s predictions as one big poseArray, called "predicted_varname_out_" and publish using "predicted_varname_pub" as publisher.
     //for now only publishing these informations, but can be extended (and uncomment the needed Posearrays)
@@ -3081,12 +3140,14 @@ void DergbryanTracker::trajectory_prediction_general_load_2UAV(mrs_msgs::Positio
     // predicted_uav1_tension_force_out_.poses.push_back(custom_uav1_tension_force);
     // predicted_uav2_tension_force_out_.poses.push_back(custom_uav2_tension_force);
 
-
-    // predicted_uav1_attitude_rate_out_.poses.push_back(predicted_uav1_attituderate);
-
-    
-   
-    // predicted_uav2_attitude_rate_out_.poses.push_back(predicted_uav2_attituderate);
+    predicted_uav1_attituderate.position.x = uav1_attitude_rate_pred(0,0);
+    predicted_uav1_attituderate.position.y = uav1_attitude_rate_pred(1,0);
+    predicted_uav1_attituderate.position.z = uav1_attitude_rate_pred(2,0);
+    predicted_uav2_attituderate.position.x = uav2_attitude_rate_pred(0,0);
+    predicted_uav2_attituderate.position.y = uav2_attitude_rate_pred(1,0);
+    predicted_uav2_attituderate.position.z = uav2_attitude_rate_pred(2,0);
+    predicted_uav1_attitude_rate_out_.poses.push_back(predicted_uav1_attituderate);
+    predicted_uav2_attitude_rate_out_.poses.push_back(predicted_uav2_attituderate);
 
 
     // predicted_payload_position_out_.poses.push_back(custom_Payload_position);
@@ -3297,7 +3358,6 @@ void DergbryanTracker::trajectory_prediction_general_load_2UAV(mrs_msgs::Positio
   catch (...) {
     ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_uav1_anchoring_point_vel_publisher_.getTopic().c_str());
   }
-
   try {
     predicted_uav2_anchoring_point_vel_publisher_.publish(predicted_uav2_anchoring_point_vel_out_);
   }
@@ -3316,6 +3376,20 @@ void DergbryanTracker::trajectory_prediction_general_load_2UAV(mrs_msgs::Positio
   }
   catch (...) {
     ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_uav2_thrust_publisher_.getTopic().c_str());
+  }
+  // predicted_uav1_attitude_rate_publisher_:
+  try {
+    predicted_uav1_attitude_rate_publisher_.publish(predicted_uav1_attitude_rate_out_);
+  }
+  catch (...) {
+    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_uav1_attitude_rate_publisher_.getTopic().c_str());
+  }
+  // predicted_uav1_attitude_rate_publisher_:
+  try {
+    predicted_uav2_attitude_rate_publisher_.publish(predicted_uav2_attitude_rate_out_);
+  }
+  catch (...) {
+    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_uav2_attitude_rate_publisher_.getTopic().c_str());
   }
 
 }
@@ -3449,7 +3523,7 @@ std::tuple< double, Eigen::Vector3d,double> DergbryanTracker::ComputeSe3CopyCont
     if (Epl.norm()>_cable_length_*sqrt(2)){ //Sanity check : Largest possible error when cable is oriented 90degrees. If Epl is larger, there must be an error in the FK, or in the values returned by the encoders.
       ROS_ERROR("[se3_copy_controller]: Control error of the anchoring point Epl was larger than expected, it has been set to zero");
       Epl= Eigen::Vector3d::Zero(3);
-      payload_spawned_=false; 
+      payload_spawned_=false; // TODO: check this case
     }
       
 
@@ -3624,17 +3698,12 @@ std::tuple< double, Eigen::Vector3d,double> DergbryanTracker::ComputeSe3CopyCont
   ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: fx= %.2f, fy= %.2f, fz=%.2f ",f[0],f[1],f[2]);
 
 
-  // | ----------- limiting the downwards acceleration ---------- |
-  /* 
-  the downwards force produced by the position and the acceleration feedback should not be larger than the gravity
-  if the downwards part of the force is close to counter-act the gravity acceleration
-   */
+  // | ----------- limiting the desired downwards acceleration and maximum tilt angle ---------- |
   // TODO: check with MPC guidage code if this actually makes sense as i remember to have improved it
   if (f[2] < 0) {
-
     ROS_WARN_THROTTLE(1.0, "[DergbryanTracker]: the calculated downwards desired force is negative (%.2f) -> mitigating flip", f[2]);
-
-    f << 0, 0, 1;
+    // f << 0, 0, 1; ctu original
+    f << f[0], f[1], 0.0; // saturate the z-component on zero such that the desired tilt angle stays in the upper hemisphere
   }
   // | ------------------ limit the tilt angle ------------------ |
 
@@ -3652,8 +3721,11 @@ std::tuple< double, Eigen::Vector3d,double> DergbryanTracker::ComputeSe3CopyCont
   if (!std::isfinite(theta)) {
 
     ROS_ERROR("[DergbryanTracker]: NaN detected in variable 'theta', predictions can't be trusted!!!!");
+    erg_predictions_theta_trusted_ = false;
     // TODO: as it is used here for predictions, we don't want to return as for controllers, but trow the error
     //   return mrs_msgs::AttitudeCommand::ConstPtr();
+  } else{
+    erg_predictions_theta_trusted_ = true;
   }
 
   // TODO: as it is used here for predictions, we don't want to return as for controllers, but print error
@@ -3980,13 +4052,31 @@ void DergbryanTracker::computeERG(){
   //                 | Navigation Field (NF) + Dynamic Safety Margin|
   //                  **********************************************
   // | -------------------------- attraction field -------------------------------|
-  Eigen::Vector3d NF_att   = Vector3d::Zero(3, 1); // attraction field
-  Eigen::Vector3d ref_dist = Vector3d::Zero(3, 1); // difference between target reference r and applied reference v
-  ref_dist(0) = goal_x_ - applied_ref_x_;
-  ref_dist(1) = goal_y_ - applied_ref_y_;
-  ref_dist(2) = goal_z_ - applied_ref_z_;
-  double norm_ref_dist = sqrt(pow(ref_dist(0), 2.0) + pow(ref_dist(1), 2.0)+ pow(ref_dist(2), 2.0)); // TODO use Eigen's .norm()
-  NF_att = ref_dist/std::max(norm_ref_dist, _eta_);
+  Eigen::Vector3d NF_att   = Vector3d::Zero(3, 1); // total attraction field
+  Eigen::Vector3d NF_att_leader_follower_rot = Vector3d::Zero(3, 1); // attraction field rotation component
+  Eigen::Vector3d NF_att_leader_follower_transl = Vector3d::Zero(3, 1); // attraction field rotation component
+    // TODO: declare vars, publish in follower, subscribe in leader, check their delay
+  double _eta_transl_ = _eta_; // TODO make yaml
+  if(_type_of_system_!="2uavs_payload"){
+    Eigen::Vector3d ref_dist = Vector3d::Zero(3, 1); // difference between target reference r and applied reference v
+    ref_dist(0) = goal_x_ - applied_ref_x_;
+    ref_dist(1) = goal_y_ - applied_ref_y_;
+    ref_dist(2) = goal_z_ - applied_ref_z_;
+    NF_att = ref_dist/std::max(ref_dist.norm(), _eta_);
+  }
+  else if(_type_of_system_=="2uavs_payload"){
+    Eigen::Vector3d ref_dist_leader = Vector3d::Zero(3, 1); // difference between leader's target reference r and applied reference v
+    ref_dist_leader(0) = goal_x_ - applied_ref_x_;
+    ref_dist_leader(1) = goal_y_ - applied_ref_y_;
+    ref_dist_leader(2) = goal_z_ - applied_ref_z_;
+    Eigen::Vector3d ref_dist_follower = Vector3d::Zero(3, 1); // difference between follower's target reference r and applied reference v
+    ref_dist_follower(0) = goal_position_cmd_follower_for_leader_.position.x - position_cmd_follower_for_leader_.position.x;
+    ref_dist_follower(1) = goal_position_cmd_follower_for_leader_.position.y - position_cmd_follower_for_leader_.position.y;
+    ref_dist_follower(2) = goal_position_cmd_follower_for_leader_.position.z - position_cmd_follower_for_leader_.position.z;
+    Eigen::Vector3d ref_dist = Vector3d::Zero(3, 1); // difference between the average target reference r and applied reference v of leader and follower
+    ref_dist = (ref_dist_leader + ref_dist_follower)/2.0; // difference between the average target reference r and applied reference v of leader and follower
+    NF_att_leader_follower_transl = ref_dist/std::max(ref_dist.norm(), _eta_transl_);
+  }
 
 
   // 
@@ -4052,9 +4142,6 @@ void DergbryanTracker::computeERG(){
     DSM_msg_.DSM_s = DSM_sT_;
   }
   else if (_DSM_type_== 2){ // Trajectory based
-    // make a function .
-    // make if else cases 2uav payload
-    // implement the cases
     if(_type_of_system_!="2uavs_payload"){
       DSM_sT_ = computeDSM_sT_trajpred(predicted_thrust_out_);
       DSM_msg_.DSM_s = DSM_sT_;
@@ -4063,70 +4150,68 @@ void DergbryanTracker::computeERG(){
       // uav1:
       DSM_sT_uav1_ = computeDSM_sT_trajpred(predicted_uav1_thrust_out_);
       DSM_uav1_msg_.DSM_s = DSM_sT_uav1_;
-      ROS_INFO_STREAM("DSM_sT_uav1_ = \n" << DSM_sT_uav1_);
+      // ROS_INFO_STREAM("DSM_sT_uav1_ = \n" << DSM_sT_uav1_);
       // uav2:
       DSM_sT_uav2_ = computeDSM_sT_trajpred(predicted_uav2_thrust_out_);
       DSM_uav2_msg_.DSM_s = DSM_sT_uav2_;
-      ROS_INFO_STREAM("DSM_sT_uav2_ = \n" << DSM_sT_uav2_);
+      // ROS_INFO_STREAM("DSM_sT_uav2_ = \n" << DSM_sT_uav2_);
       // min of both uav1 and uav2:
       DSM_sT_ = std::min(DSM_sT_uav1_, DSM_sT_uav2_);
       DSM_msg_.DSM_s = DSM_sT_;
-      ROS_INFO_STREAM("DSM_sT_ = \n" << DSM_sT_);
+      // ROS_INFO_STREAM("DSM_sT_ = \n" << DSM_sT_);
     }
   }
  
-  ROS_INFO_STREAM("before Body rate saturation \n");
+  //ROS_INFO_STREAM("before Body rate saturation \n");
   // Body rate saturation:
   if (got_constraints_ && _DSM_type_ == 2 && _enable_dsm_sw_) { // _DSM_type_ = 1 not possible sinc elevel-set based on outer loop only
-    //ROS_INFO_STREAM("got_constraints_ = \n" << got_constraints_);
-    auto constraints = mrs_lib::get_mutexed(mutex_constraints_, constraints_);
-    // ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: constraints.roll_rate = %f", constraints.roll_rate);
-    // ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: constraints.pitch_rate = %f", constraints.pitch_rate);
-    // ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: constraints.yaw_rate = %f", constraints.yaw_rate);
-    // ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: constraints.roll_rate = %f", constraints.roll_rate);
-    // ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: constraints.pitch_rate = %f", constraints.pitch_rate);
-    // ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: constraints.yaw_rate = %f", constraints.yaw_rate);
-    // initialization at the highest possible positive difference value (1.0) relative to the constraint.
-    // diff_bodyrate_* = 1.0 means the body rate is 0 and diff_bodyrate_= 0 means it's hitting the constraint
-    double rel_diff_bodyrate = 1.0; // used for roll, pitch and yaw
-    double body_rate_roll;
-    double body_rate_pitch;
-    double body_rate_yaw;
-    for (size_t i = 0; i < _num_pred_samples_; i++) {
-    // Depending if the predictions _predicitons_use_body_inertia_:
+    if(_type_of_system_!="2uavs_payload"){
       if (_predicitons_use_body_inertia_) { // we implement constraints on the actual body rates
-        body_rate_roll = predicted_attituderate_out_.poses[i].position.x;
-        body_rate_pitch = predicted_attituderate_out_.poses[i].position.y;
-        body_rate_yaw = predicted_attituderate_out_.poses[i].position.z;
-      } else{ // we implement constraints on the desired body rates
-        body_rate_roll = predicted_des_attituderate_out_.poses[i].position.x;
-        body_rate_pitch = predicted_des_attituderate_out_.poses[i].position.y;
-        body_rate_yaw = predicted_des_attituderate_out_.poses[i].position.z;
+        DSM_sw_ = computeDSM_sw_trajpred(predicted_attituderate_out_);
       }
-      //ROS_INFO_STREAM("body_rate_roll = \n" << body_rate_roll); //
-      double rel_diff_bodyrate_roll_temp = (constraints.roll_rate - std::abs(body_rate_roll))/constraints.roll_rate;
-      double rel_diff_bodyrate_pitch_temp = (constraints.pitch_rate - std::abs(body_rate_pitch))/constraints.pitch_rate;
-      double rel_diff_bodyrate_yaw_temp = (constraints.yaw_rate - std::abs(body_rate_yaw))/constraints.yaw_rate;
-      //ROS_INFO_STREAM("rel_diff_bodyrate_roll_temp = \n" << rel_diff_bodyrate_roll_temp); // printing this gives error
-      if (rel_diff_bodyrate_roll_temp < rel_diff_bodyrate) {
-        rel_diff_bodyrate = rel_diff_bodyrate_roll_temp;
+      else{
+        DSM_sw_ = computeDSM_sw_trajpred(predicted_des_attituderate_out_);
       }
-      if (rel_diff_bodyrate_pitch_temp < rel_diff_bodyrate) {
-        rel_diff_bodyrate = rel_diff_bodyrate_pitch_temp;
+      DSM_msg_.DSM_sw = DSM_sw_;
+      //ROS_INFO_STREAM("DSM_sw_ = \n" << DSM_sw_);
+    } else{ // _type_of_system_=="2uavs_payload"
+      // uav1 & uav2:
+      if (_predicitons_use_body_inertia_) { // TODO: implement this case
+        DSM_sw_uav1_ = computeDSM_sw_trajpred(predicted_uav1_attitude_rate_out_);
+        DSM_sw_uav2_ = computeDSM_sw_trajpred(predicted_uav2_attitude_rate_out_);
+        ROS_ERROR_STREAM("[DergbryanTracker]: _predicitons_use_body_inertia_ ignored as this case is not implemented yet for 2uavs_payload!");
+        // DSM_sw_uav1_ = computeDSM_sw_trajpred(predicted_uav1_des_attituderate_out_);
+        // DSM_sw_uav2_ = computeDSM_sw_trajpred(predicted_uav2_des_attituderate_out_);
       }
-      if (rel_diff_bodyrate_yaw_temp < rel_diff_bodyrate) {
-        rel_diff_bodyrate = rel_diff_bodyrate_yaw_temp;
+      else{ // we implement constraints on the actual body rates
+        DSM_sw_uav1_ = computeDSM_sw_trajpred(predicted_uav1_attitude_rate_out_);
+        DSM_sw_uav2_ = computeDSM_sw_trajpred(predicted_uav2_attitude_rate_out_);
       }
+      DSM_uav1_msg_.DSM_sw = DSM_sw_uav1_;
+      //ROS_INFO_STREAM("DSM_sw_uav1_ = \n" << DSM_sw_uav1_);
+      DSM_uav2_msg_.DSM_sw = DSM_sw_uav2_;
+      //ROS_INFO_STREAM("DSM_sw_uav2_ = \n" << DSM_sw_uav2_);
+      // min of both uav1 and uav2:
+      DSM_sw_ = std::min(DSM_sw_uav1_, DSM_sw_uav2_);
+      DSM_msg_.DSM_sw = DSM_sw_;
+      //ROS_INFO_STREAM("DSM_sw_ = \n" << DSM_sw_);
     }
-    DSM_sw_ = _kappa_sw_*rel_diff_bodyrate; // scaled DSM in _kappa_sw_*[0, 1]
-    DSM_msg_.DSM_sw = DSM_sw_;
-    //DSM_sw_ = _kappa_sw_;
   } else {
-    DSM_sw_ = _kappa_sw_; // the highest possible value
+    if(_type_of_system_!="2uavs_payload"){
+      DSM_sw_ = _kappa_sw_; // the highest possible value
+      DSM_msg_.DSM_sw = DSM_sw_;
+    } else{ // _type_of_system_=="2uavs_payload"
+      DSM_sw_ = _kappa_sw_; // the highest possible value
+      DSM_sw_uav1_ = DSM_sw_;
+      DSM_sw_uav2_ = DSM_sw_;
+      DSM_uav1_msg_.DSM_sw = DSM_sw_uav1_;
+      DSM_uav2_msg_.DSM_sw = DSM_sw_uav2_;
+      DSM_msg_.DSM_sw = DSM_sw_;
+    }
     ROS_WARN_THROTTLE(1.0, "[DergbryanTracker]: missing dynamics constraints");
   }
 
-  ROS_INFO_STREAM("before swing angle constraints \n");
+  //ROS_INFO_STREAM("before swing angle constraints \n");
   // Cable suspended UAV constraints (swing angle and taut cable)
   // TODO: enable these for 2 uav cooperative transport
   if (_DSM_type_== 2){ // Trajectory based
@@ -4142,7 +4227,7 @@ void DergbryanTracker::computeERG(){
       DSM_msg_.DSM_swing_c = DSM_swing_c_;
       //ROS_INFO_STREAM("DSM_swing_c_ = \n" << DSM_swing_c_);
     }
-    ROS_INFO_STREAM("before cable tension constraints \n");
+    //ROS_INFO_STREAM("before cable tension constraints \n");
     if(_type_of_system_== "1uav_payload" && payload_spawned_ && _enable_dsm_Tc_){ // Tension cable DSM
       double min_Tc = 100000.0; //init at very high value;
       for (size_t i = 0; i < _num_pred_samples_; i++) {
@@ -4296,7 +4381,7 @@ void DergbryanTracker::computeERG(){
   // tictoc_stack.pop();
   // tictoc_stack.push(clock());
   
-  ROS_INFO_STREAM("before collision avoidance \n");
+  //ROS_INFO_STREAM("before collision avoidance \n");
   // | ------------------------ agent collision avoidance repulsion ----------------------- |
   if (_enable_dsm_a_ && _DERG_strategy_id_ == 0) {
     /* D-ERG strategy 0:
@@ -5412,7 +5497,7 @@ void DergbryanTracker::computeERG(){
   }
   }
 
-  ROS_INFO_STREAM("before DSM total calc \n");
+  //ROS_INFO_STREAM("before DSM total calc \n");
   // //////////////////////// Determining DSM_total= minimum {DSM_a,DSM_s,DSM_o,DSM_w}////////////////////////////////
   DSM_total_ = 100000; // initialize very high
 
@@ -5455,7 +5540,7 @@ void DergbryanTracker::computeERG(){
     ROS_WARN_THROTTLE(1.0, "[DergbryanTracker]: all default UAV DSMs (thrust, body rate, agents) are disabled! \n");
   }
   if(!_enable_dsm_swing_c_ && !_enable_dsm_Tc_ && payload_spawned_){
-    ROS_WARN_THROTTLE(1.0, "[DergbryanTracker]: all payload specific DSMs (thrust, body rate, agents) are disabled although payload is spawned! \n");
+    ROS_WARN_THROTTLE(1.0, "[DergbryanTracker]: all payload specific DSMs (swing, cable tension) are disabled although payload is spawned! \n");
   }
 
   if(_constant_dsm_ >= 0.0){ // if all of the DSMs are disabled or a positive constant DSM is added, TODO add other DSMs here
@@ -5528,28 +5613,131 @@ void DergbryanTracker::computeERG(){
   // | -------------------------------------------------------------------------- |
 
 
-  ROS_INFO_STREAM("before D-ERG output \n");
+  //ROS_INFO_STREAM("before D-ERG output \n");
 
   // | ------------------------------ D-ERG output -------------------------------|
   MatrixXd applied_ref_dot = MatrixXd::Zero(3, 1); // derivative of the applied reference
-  applied_ref_dot = DSM_total_*NF_total;
-  applied_ref_x_ = applied_ref_x_ + applied_ref_dot(0)*dt_;
-  applied_ref_y_ = applied_ref_y_ + applied_ref_dot(1)*dt_;
-  applied_ref_z_ = applied_ref_z_ + applied_ref_dot(2)*dt_;
+  if(_type_of_system_!="2uavs_payload"){
+    applied_ref_dot = DSM_total_*NF_total;
+    if(erg_predictions_theta_trusted_){
+      applied_ref_x_ = applied_ref_x_ + applied_ref_dot(0)*dt_;
+      applied_ref_y_ = applied_ref_y_ + applied_ref_dot(1)*dt_;
+      applied_ref_z_ = applied_ref_z_ + applied_ref_dot(2)*dt_;
+    }
+  }
+  else if(_type_of_system_=="2uavs_payload"){// && _uav_name_ == "uav1" && payload_spawned_ && callback_data_follower_valid_){
+    // store leader and follower v and r in Eigen::vector3d
+    // applied_ref_leader:
+    Eigen::Vector3d applied_ref_leader;
+    applied_ref_leader[0] = applied_ref_x_;
+    applied_ref_leader[1] = applied_ref_y_;
+    applied_ref_leader[2] = applied_ref_z_;
+    // applied_ref_follower:
+    Eigen::Vector3d applied_ref_follower;
+    applied_ref_follower[0] = position_cmd_follower_for_leader_.position.x;
+    applied_ref_follower[1] = position_cmd_follower_for_leader_.position.y;
+    applied_ref_follower[2] = position_cmd_follower_for_leader_.position.z;
+    // goal_leader:  
+    Eigen::Vector3d goal_leader;
+    goal_leader[0] = goal_x_;
+    goal_leader[1] = goal_y_;
+    goal_leader[2] = goal_z_;
+    // goal_follower:
+    Eigen::Vector3d goal_follower;
+    goal_follower[0] = goal_position_cmd_follower_for_leader_.position.x;
+    goal_follower[1] = goal_position_cmd_follower_for_leader_.position.y;
+    goal_follower[2] = goal_position_cmd_follower_for_leader_.position.z;
 
-  if(_type_of_system_=="2uavs_payload"){// && _uav_name_ == "uav1" && payload_spawned_ && callback_data_follower_valid_){
+    // check for steady-state admissibility of references, if invalid adapt follower's reference: 
+    // TODO: shouldn't it be better to do this immediately as we receive data? Currently also used in DSM.
+    // applied_ref:
+    if((applied_ref_follower-applied_ref_leader).norm() != _load_length_){
+      applied_ref_follower = applied_ref_leader + _load_length_*(applied_ref_follower-applied_ref_leader)/(applied_ref_follower-applied_ref_leader).norm();
+    }
+    // goal:
+    if((goal_follower-goal_leader).norm() != _load_length_){
+      goal_follower = goal_leader + _load_length_*(goal_follower-goal_leader)/(goal_follower-goal_leader).norm();
+    }
+    // the transformations that follow hereafter (translation and rotation) do not affect the equality constraint
+    
+    // update applied_ref for translation part:
+    applied_ref_dot = DSM_total_*NF_att_leader_follower_transl;
+    applied_ref_leader = applied_ref_leader + applied_ref_dot*dt_;
+    applied_ref_follower = applied_ref_follower + applied_ref_dot*dt_;
+
+    // update applied_ref for rotation part:
+    // compute unit axis of rotation of v:
+    Eigen::Vector3d rot_axis = (applied_ref_leader-applied_ref_follower).cross(goal_leader-goal_follower);
+    // ROS_INFO_STREAM("rot_axis.x  = " << rot_axis[0]);
+    // ROS_INFO_STREAM("rot_axis.y  = " << rot_axis[1]);
+    // ROS_INFO_STREAM("rot_axis.z  = " << rot_axis[2]);
+    // ROS_INFO_STREAM("rot_axis.norm() = " << rot_axis.norm());
+    // max rotation angle required to align v with r
+    double max_rot_angle = std::acos((applied_ref_leader-applied_ref_follower).dot(goal_leader-goal_follower)/((applied_ref_leader-applied_ref_follower).norm()*(goal_leader-goal_follower).norm()));
+    // define angle of rotation for this v update
+    double rot_angle = 0.1*(M_PI/180.0)*DSM_total_;//30.0; // rad, //TODO: make yaml param; // required rotation to be computed for all cases
+    if(rot_axis.norm()<0.001){ // both lines v,r between leader-follower are already parallel
+      // in case angle near M_PI
+      if(max_rot_angle >= M_PI*0.95){
+        // choose any unit vector perpendicular to bar. We choose the one with max z coordinate:
+        rot_axis = ((applied_ref_leader-applied_ref_follower).cross(Eigen::Vector3d::UnitZ())).cross(applied_ref_leader-applied_ref_follower);
+        rot_axis = rot_axis/rot_axis.norm(); // norm is never 0 as first cross is never between parallel vectors as drone references can never physically be only dispalced in z
+      } else{ // close to 0
+        rot_angle = 0.0;
+        rot_axis = Eigen::Vector3d::UnitZ(); // could be any axis
+      }
+    } 
+    else{ // do a rotation with fixed angle
+      rot_axis=rot_axis/rot_axis.norm(); // make unitary
+    }
+    rot_angle = std::min(rot_angle, max_rot_angle);
+    // apply the rotation
+    Eigen::Affine3d T_rt(Eigen::AngleAxisd(rot_angle, rot_axis)); // homogeneous transformation matrix
+    applied_ref_leader = 0.5*(applied_ref_leader + applied_ref_follower) + T_rt.rotation() * (applied_ref_leader-applied_ref_follower)*0.5;
+    applied_ref_follower = 0.5*(applied_ref_leader + applied_ref_follower) + T_rt.rotation() * (applied_ref_follower-applied_ref_leader)*0.5;
+    // ROS_INFO_STREAM("rotate applied references leader-follower around unit vector "<< rot_axis <<", over angle of = "<< rot_angle);
+    // update final v of leader:
+    if(erg_predictions_theta_trusted_){
+      applied_ref_x_ = applied_ref_leader[0];
+      applied_ref_y_ = applied_ref_leader[1];
+      applied_ref_z_ = applied_ref_leader[2];
+    }
+    // update final v to be published to follower:
     position_cmd_follower_from_leader_.header.stamp    = uav_state_.header.stamp;
     position_cmd_follower_from_leader_.header.frame_id = uav_state_.header.frame_id;
-    position_cmd_follower_from_leader_.position.x = position_cmd_follower_for_leader_.position.x + applied_ref_dot(0)*dt_;
-    position_cmd_follower_from_leader_.position.y = position_cmd_follower_for_leader_.position.y + applied_ref_dot(1)*dt_;
-    position_cmd_follower_from_leader_.position.z = position_cmd_follower_for_leader_.position.z + applied_ref_dot(2)*dt_;
+    position_cmd_follower_from_leader_.position.x = applied_ref_follower[0];
+    position_cmd_follower_from_leader_.position.y = applied_ref_follower[1];
+    position_cmd_follower_from_leader_.position.z = applied_ref_follower[2];
     position_cmd_follower_from_leader_.heading = position_cmd_follower_for_leader_.heading;
+     // update final r to be published to follower:
+    goal_position_cmd_follower_from_leader_.header.stamp    = uav_state_.header.stamp;
+    goal_position_cmd_follower_from_leader_.header.frame_id = uav_state_.header.frame_id;
+    goal_position_cmd_follower_from_leader_.position.x = goal_follower[0];
+    goal_position_cmd_follower_from_leader_.position.y = goal_follower[1];
+    goal_position_cmd_follower_from_leader_.position.z = goal_follower[2];
+    goal_position_cmd_follower_from_leader_.heading = goal_position_cmd_follower_for_leader_.heading;
+    
+    
+    // ROS_INFO_STREAM("goal_leader  = \n" << goal_leader);
+    // ROS_INFO_STREAM("applied_ref_leader  = \n" << applied_ref_leader);
+    // ROS_INFO_STREAM("goal_follower  = \n" << goal_follower);
+    // ROS_INFO_STREAM("applied_ref_follower  = \n" << applied_ref_follower);
+
     // Publish:
-    try {
-      position_cmd_follower_from_leader_pub_.publish(position_cmd_follower_from_leader_);
-    }
-    catch (...) {
-      ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", position_cmd_follower_from_leader_pub_.getTopic().c_str());
+    if(erg_predictions_theta_trusted_){
+      try {
+        position_cmd_follower_from_leader_pub_.publish(position_cmd_follower_from_leader_);
+      }
+      catch (...) {
+        ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", position_cmd_follower_from_leader_pub_.getTopic().c_str());
+      }
+
+      try {
+        goal_position_cmd_follower_from_leader_pub_.publish(goal_position_cmd_follower_from_leader_);
+      }
+      catch (...) {
+        ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", goal_position_cmd_follower_from_leader_pub_.getTopic().c_str());
+      }
     }
   }
 
@@ -5731,6 +5919,50 @@ double DergbryanTracker::computeDSM_sT_trajpred(geometry_msgs::PoseArray predict
   }
   DSM_sT = _kappa_sT_*diff_T/(0.5*(thrust_saturation_physical_ - _T_min_)); // scaled DSM in _kappa_sT_*[0, 1] from the average between the lower and upper limit to the respective limits 
   return DSM_sT; 
+}
+
+double DergbryanTracker::computeDSM_sw_trajpred(geometry_msgs::PoseArray predicted_attrate){
+  auto constraints = mrs_lib::get_mutexed(mutex_constraints_, constraints_);
+  // ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: constraints.roll_rate = %f", constraints.roll_rate);
+  // ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: constraints.pitch_rate = %f", constraints.pitch_rate);
+  // ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: constraints.yaw_rate = %f", constraints.yaw_rate);
+  // ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: constraints.roll_rate = %f", constraints.roll_rate);
+  // ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: constraints.pitch_rate = %f", constraints.pitch_rate);
+  // ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: constraints.yaw_rate = %f", constraints.yaw_rate);
+  // initialization at the highest possible positive difference value (1.0) relative to the constraint.
+  // diff_bodyrate_* = 1.0 means the body rate is 0 and diff_bodyrate_= 0 means it's hitting the constraint
+  double rel_diff_bodyrate = 1.0; // used for roll, pitch and yaw
+  double body_rate_roll;
+  double body_rate_pitch;
+  double body_rate_yaw;
+  for (size_t i = 0; i < _num_pred_samples_; i++) {
+  // Depending if the predictions _predicitons_use_body_inertia_:
+    if (_predicitons_use_body_inertia_) { // we implement constraints on the actual body rates
+      body_rate_roll = predicted_attrate.poses[i].position.x;
+      body_rate_pitch = predicted_attrate.poses[i].position.y;
+      body_rate_yaw = predicted_attrate.poses[i].position.z;
+    } else{ // we implement constraints on the desired body rates
+      body_rate_roll = predicted_attrate.poses[i].position.x;
+      body_rate_pitch = predicted_attrate.poses[i].position.y;
+      body_rate_yaw = predicted_attrate.poses[i].position.z;
+    }
+    //ROS_INFO_STREAM("body_rate_roll = \n" << body_rate_roll); //
+    double rel_diff_bodyrate_roll_temp = (constraints.roll_rate - std::abs(body_rate_roll))/constraints.roll_rate;
+    double rel_diff_bodyrate_pitch_temp = (constraints.pitch_rate - std::abs(body_rate_pitch))/constraints.pitch_rate;
+    double rel_diff_bodyrate_yaw_temp = (constraints.yaw_rate - std::abs(body_rate_yaw))/constraints.yaw_rate;
+    //ROS_INFO_STREAM("rel_diff_bodyrate_roll_temp = \n" << rel_diff_bodyrate_roll_temp); // printing this gives error
+    if (rel_diff_bodyrate_roll_temp < rel_diff_bodyrate) {
+      rel_diff_bodyrate = rel_diff_bodyrate_roll_temp;
+    }
+    if (rel_diff_bodyrate_pitch_temp < rel_diff_bodyrate) {
+      rel_diff_bodyrate = rel_diff_bodyrate_pitch_temp;
+    }
+    if (rel_diff_bodyrate_yaw_temp < rel_diff_bodyrate) {
+      rel_diff_bodyrate = rel_diff_bodyrate_yaw_temp;
+    }
+  }
+  double DSM_sw = _kappa_sw_*rel_diff_bodyrate; // scaled DSM in _kappa_sw_*[0, 1]  
+  return DSM_sw;
 }
 
 
@@ -6106,12 +6338,22 @@ void DergbryanTracker::anchoring_point_follower_for_leader_callback(const mrs_ms
 void DergbryanTracker::position_cmd_follower_for_leader_callback(const mrs_msgs::PositionCommand::ConstPtr& msg){
   position_cmd_follower_for_leader_=*msg;
   // ROS_INFO_STREAM("Received position cmd of follower from for the leader: "<< position_cmd_follower_for_leader_);
-  }
+}
 
+void DergbryanTracker::goal_position_cmd_follower_for_leader_callback(const mrs_msgs::PositionCommand::ConstPtr& msg){
+  goal_position_cmd_follower_for_leader_=*msg;
+  // ROS_INFO_STREAM("Received goal position cmd of follower from for the leader: "<< goal_position_cmd_follower_for_leader_);
+}
+  
 void DergbryanTracker::position_cmd_follower_from_leader_callback(const mrs_msgs::PositionCommand::ConstPtr& msg){
   position_cmd_follower_from_leader_=*msg;
   // ROS_INFO_STREAM("Received position cmd of follower from leader \n"<< position_cmd_follower_from_leader_);
-  }
+}
+
+void DergbryanTracker::goal_position_cmd_follower_from_leader_callback(const mrs_msgs::PositionCommand::ConstPtr& msg){
+  goal_position_cmd_follower_from_leader_=*msg;
+  // ROS_INFO_STREAM("Received position cmd of follower from leader \n"<< goal_position_cmd_follower_from_leader_);
+}
 
 void DergbryanTracker::callbackOtherUavAppliedRef(const mrs_msgs::FutureTrajectoryConstPtr& msg) {
   mrs_lib::Routine profiler_routine = profiler.createRoutine("callbackOtherUavAppliedRef");
