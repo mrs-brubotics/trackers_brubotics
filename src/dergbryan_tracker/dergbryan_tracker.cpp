@@ -105,6 +105,8 @@ public:
   void computePSCTrajectoryPredictions(mrs_msgs::PositionCommand position_cmd, double uav_heading, const mrs_msgs::AttitudeCommand::ConstPtr &last_attitude_cmd); //mother function that calls the correct prediction function depending on the cases.
   double computeDSM_sT_trajpred(geometry_msgs::PoseArray predicted_thrust);
   double computeDSM_sw_trajpred(geometry_msgs::PoseArray predicted_attrate);
+  double computeDSM_swing_trajpred(geometry_msgs::PoseArray predicted_swing_angle);
+  double computeDSM_Tc_trajpred(geometry_msgs::PoseArray predicted_cable_tension);
   void clearMsgsAfterUpdate();
 private:
   ros::NodeHandle                                     nh_;
@@ -166,7 +168,7 @@ private:
   bool _enable_dsm_a_;
   bool _enable_dsm_w_;
   bool _enable_dsm_o_;
-  bool _enable_dsm_swing_c_; //DSM for the swing angle of the cable transporting the payload. TODO set this via config file.
+  bool _enable_dsm_swing_c_;
   bool _enable_dsm_Tc_;
   double _T_min_; // lower saturation limit of total thrust
   double _extra_thrust_saturation_ratio_;
@@ -287,6 +289,11 @@ private:
   ros::Publisher predicted_uav2_thrust_publisher_; 
   ros::Publisher predicted_uav1_attitude_rate_publisher_;   
   ros::Publisher predicted_uav2_attitude_rate_publisher_;  
+  ros::Publisher predicted_uav1_swing_angle_publisher_; 
+  ros::Publisher predicted_uav2_swing_angle_publisher_; 
+  ros::Publisher predicted_uav1_tension_force_publisher_; 
+  ros::Publisher predicted_uav2_tension_force_publisher_; 
+
   //|-----------------------------D-ERG--------------------------------|//
   // TODO: bryan clean when improving ERG
   //    - Multi-uav collision avoidance:
@@ -356,8 +363,6 @@ private:
   geometry_msgs::PoseArray predicted_uav2_anchoring_point_pose_out_;
   geometry_msgs::PoseArray predicted_uav2_anchoring_point_vel_out_;
   geometry_msgs::PoseArray predicted_uav2_anchoring_point_acc_out_;
-  geometry_msgs::PoseArray predicted_uav1_tension_force_out_;
-  geometry_msgs::PoseArray predicted_uav2_tension_force_out_;
   geometry_msgs::PoseArray predicted_uav1_thrust_out_;
   geometry_msgs::PoseArray predicted_uav2_thrust_out_;
   geometry_msgs::PoseArray predicted_uav1_attitude_rate_out_;
@@ -369,6 +374,10 @@ private:
   geometry_msgs::PoseArray predicted_wl_out_;
   geometry_msgs::PoseArray predicted_dotnl_out_;
   geometry_msgs::PoseArray predicted_dotwl_out_;
+  geometry_msgs::PoseArray predicted_uav1_swing_angle_out_;
+  geometry_msgs::PoseArray predicted_uav2_swing_angle_out_;
+  geometry_msgs::PoseArray predicted_uav1_tension_force_out_;
+  geometry_msgs::PoseArray predicted_uav2_tension_force_out_;
   //|-----------------------------D-ERG--------------------------------|//
   //    - Multi-uav collision avoidance:
   mrs_msgs::FutureTrajectory future_trajectory_out_;
@@ -492,9 +501,13 @@ private:
   double DSM_sw_uav2_ = 100000;;
   // finish added by bryan
   double DSM_swing_c_ = 100000; //Dynamic Safety Margin for swing angle.
-  double DSM_Tc_ = 100000; //Dynamic Safety Margin for tension in the cable.
+  double DSM_swing_c_uav1_ = 100000;
+  double DSM_swing_c_uav2_ = 100000;
 
-  
+  double DSM_Tc_ = 100000; //Dynamic Safety Margin for tension in the cable.
+  double DSM_Tc_uav1_ = 100000;
+  double DSM_Tc_uav2_ = 100000;
+
   // Static obstacle avoidance 
   double DSM_o_ = 100000; // Dynamic Safety Margin for static obstacle avoidance
   // wall avoidance 
@@ -891,9 +904,10 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   predicted_uav2_thrust_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav2_thrust", 1);
   predicted_uav1_attitude_rate_publisher_ =  nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav1_attitude_rate", 1);
   predicted_uav2_attitude_rate_publisher_ =  nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav2_attitude_rate", 1);
-  
-  
-  
+  predicted_uav1_swing_angle_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav1_swing_angle", 1);
+  predicted_uav2_swing_angle_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav2_swing_angle", 1);
+  predicted_uav1_tension_force_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav1_tension_force", 1);
+  predicted_uav2_tension_force_publisher_= nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav2_tension_force", 1);
   //for communication between the two uav's, if I am uav1, I subscribe to UAV2 states/position_cmd/anchoring points. If I am uav2, I advertise on the correct topic.
 
   // TODO: 
@@ -1461,6 +1475,10 @@ void DergbryanTracker::clearMsgsAfterUpdate(){
   predicted_uav2_thrust_out_.poses.clear();
   predicted_uav1_attitude_rate_out_.poses.clear();
   predicted_uav2_attitude_rate_out_.poses.clear();
+  predicted_uav1_swing_angle_out_.poses.clear();
+  predicted_uav2_swing_angle_out_.poses.clear();
+  predicted_uav1_tension_force_out_.poses.clear();
+  predicted_uav2_tension_force_out_.poses.clear();
   //  - DERG - collision avoidance:
   uav_applied_ref_out_.points.clear();
   uav_position_out_.points.clear();
@@ -2290,7 +2308,6 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
       Eigen::Vector3d uav_position(uav_state.pose.position.x,uav_state.pose.position.y,uav_state.pose.position.z); //get a vector of the UAV position to ease the following computations.
       Eigen::Vector3d mu; //Unit vector indicating cable orientation.
       Eigen::Vector3d zB; //unit vector z_B of the UAV body frame
-      
       mu = (uav_position-Opl).normalized();
       // ROS_INFO_STREAM("mu after norm"<<mu);
       zB = R.col(2);
@@ -2301,7 +2318,7 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
       predicted_swing_angle_out_.poses.push_back(predicted_swing_angle); 
 
       // Compute cable tension predictions:
-      double mq = total_mass - _load_mass_; // Mass of the UAV // TODO: why not just use uav_mass_?
+      double mq = uav_mass_; // Mass of the UAV
       Tc = (-mq*acceleration_uav + mq*(Eigen::Vector3d(0, 0, -common_handlers_->g)) + f).dot(mu.transpose());
       predicted_Tc.position.x = Tc;
       predicted_Tc_out_.poses.push_back(predicted_Tc); 
@@ -2474,13 +2491,13 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
         ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_load_acc_publisher_.getTopic().c_str());
       }
       try {
-      predicted_swing_angle_publisher_.publish(predicted_swing_angle_out_);
+        predicted_swing_angle_publisher_.publish(predicted_swing_angle_out_);
       }
       catch (...) {
         ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_swing_angle_publisher_.getTopic().c_str());
       }
       try {
-      predicted_Tc_publisher_.publish(predicted_Tc_out_);
+        predicted_Tc_publisher_.publish(predicted_Tc_out_);
       }
       catch (...) {
         ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_Tc_publisher_.getTopic().c_str());
@@ -2797,13 +2814,18 @@ void DergbryanTracker::trajectory_prediction_general_load_2UAV(mrs_msgs::Positio
   predicted_dotwl_out_.header.stamp=uav1_state.header.stamp;
   predicted_dotwl_out_.header.frame_id = uav1_state.header.frame_id;
 
-  predicted_uav1_tension_force_out_.header.stamp=uav1_state.header.stamp;
+  predicted_uav1_swing_angle_out_.header.stamp = uav1_state.header.stamp;
+  predicted_uav1_swing_angle_out_.header.frame_id = uav1_state.header.frame_id;
+  predicted_uav2_swing_angle_out_.header.stamp = uav2_state.header.stamp;
+  predicted_uav2_swing_angle_out_.header.frame_id = uav2_state.header.frame_id;
+  
+  
+  predicted_uav1_tension_force_out_.header.stamp = uav1_state.header.stamp;
   predicted_uav1_tension_force_out_.header.frame_id = uav1_state.header.frame_id;
-  predicted_uav2_tension_force_out_.header.stamp=uav2_state.header.stamp;
+  predicted_uav2_tension_force_out_.header.stamp = uav2_state.header.stamp;
   predicted_uav2_tension_force_out_.header.frame_id = uav2_state.header.frame_id;
 
   // TODO: Don't we need uav1/2-specific similar to predicted_phi_out_, predicted_theta_out_, predicted_phi_dot_out_, predicted_theta_dot_out_, predicted_phi_dot_dot_out_, predicted_theta_dot_dot_out_?
-  // TODO: Don't we need uav1/2-specific similar to predicted_swing_angle_out_?
   // TODO: Don't we need uav1/2-specific similar to predicted_load_position_errors_out_?
 
   // Definition of custom quantities, used as "pose" typed version of the other quantities. See these as "to publish" variables.
@@ -2817,17 +2839,15 @@ void DergbryanTracker::trajectory_prediction_general_load_2UAV(mrs_msgs::Positio
   geometry_msgs::Pose custom_uav2_vel;
   geometry_msgs::Pose custom_uav2_acceleration;
   
- // AnchoringPoint of uav1
+  // AnchoringPoint of uav1
   geometry_msgs::Pose custom_uav1_anchoring_point_pose;
   geometry_msgs::Pose custom_uav1_anchoring_point_vel;
   geometry_msgs::Pose custom_uav1_anchoring_point_acceleration;
-  geometry_msgs::Pose custom_uav1_tension_force;
   
   // AnchoringPoint of uav2
   geometry_msgs::Pose custom_uav2_anchoring_point_pose;
   geometry_msgs::Pose custom_uav2_anchoring_point_vel;
   geometry_msgs::Pose custom_uav2_anchoring_point_acceleration;
-  geometry_msgs::Pose custom_uav2_tension_force;
 
   // Control Inputs uav1
   geometry_msgs::Pose predicted_uav1_thrust; 
@@ -2844,7 +2864,14 @@ void DergbryanTracker::trajectory_prediction_general_load_2UAV(mrs_msgs::Positio
   geometry_msgs::Pose custom_Payload_velocity ;
   geometry_msgs::Pose custom_Payload_acc;
 
-  
+  // Swing angle uav1 and uav2
+  geometry_msgs::Pose predicted_uav1_swing_angle;
+  geometry_msgs::Pose predicted_uav2_swing_angle;
+
+  // Tension force  uav1 and uav2
+  geometry_msgs::Pose custom_uav1_tension_force;
+  geometry_msgs::Pose custom_uav2_tension_force;
+
   // Beam payload orientation unit vector and angular velocity to publish
   geometry_msgs::Pose custom_nl ;
   geometry_msgs::Pose custom_wl ;
@@ -3137,9 +3164,7 @@ void DergbryanTracker::trajectory_prediction_general_load_2UAV(mrs_msgs::Positio
     predicted_uav2_anchoring_point_vel_out_.poses.push_back(custom_uav2_anchoring_point_vel);
     // predicted_uav2_anchoring_point_acc_out_.poses.push_back(custom_uav2_anchoring_point_acceleration);
 
-    // predicted_uav1_tension_force_out_.poses.push_back(custom_uav1_tension_force);
-    // predicted_uav2_tension_force_out_.poses.push_back(custom_uav2_tension_force);
-
+ 
     predicted_uav1_attituderate.position.x = uav1_attitude_rate_pred(0,0);
     predicted_uav1_attituderate.position.y = uav1_attitude_rate_pred(1,0);
     predicted_uav1_attituderate.position.z = uav1_attitude_rate_pred(2,0);
@@ -3216,9 +3241,9 @@ void DergbryanTracker::trajectory_prediction_general_load_2UAV(mrs_msgs::Positio
     Eigen::Vector3d f2=thrust_force2*uav2_R.col(2);
     //-------------------------Prediction with eom part------------------------// (pandolfo model + My kinematic/kinetic study equations)
 
-    // Compute mu 1,2 in the given configuration
-    Eigen::Vector3d mu1= (uav1_position-uav1_anchoring_point_position).normalized();
-    Eigen::Vector3d mu2= (uav2_position-uav2_anchoring_point_position).normalized();
+    // Compute unit vector indicating cable orientation in the given configuration
+    Eigen::Vector3d mu1 = (uav1_position-uav1_anchoring_point_position).normalized();
+    Eigen::Vector3d mu2 = (uav2_position-uav2_anchoring_point_position).normalized();
 
     // compute d(x,u)
     Eigen::MatrixXd d_matrix = Eigen::MatrixXd(2,1);
@@ -3277,15 +3302,22 @@ void DergbryanTracker::trajectory_prediction_general_load_2UAV(mrs_msgs::Positio
     double T1=T_matrix(0);
     double T2=T_matrix(1);
     // ROS_INFO_STREAM("T   = \n" << T_matrix);
-        // EOM to get the accelerations.
+
+    // Compute cable tension predictions:
+    custom_uav1_tension_force.position.x = T1;
+    predicted_uav1_tension_force_out_.poses.push_back(custom_uav1_tension_force);
+    custom_uav2_tension_force.position.x = T2;
+    predicted_uav2_tension_force_out_.poses.push_back(custom_uav2_tension_force);
+    
+    // EOM to get the accelerations.
     Eigen::Vector3d zw(0,0,1.0);
     ////////////////
 
-    Payload_acc=(1.0/ml)*T1*mu1+(1.0/ml)*T2*mu2-9.81*zw;
+    Payload_acc=(1.0/ml)*T1*mu1+(1.0/ml)*T2*mu2-common_handlers_->g*zw;
     dotnl = wl.cross(nl); 
     dotwl=(d1/J_l)*T1*nl.cross(mu1)+(d2/J_l)*T2*nl.cross(mu2);
-    uav1_acc=(1.0/m1)*f1-(1.0/m1)*T1*mu1-9.81*zw;
-    uav2_acc=(1.0/m2)*f2-(1.0/m2)*T2*mu2-9.81*zw;
+    uav1_acc=(1.0/m1)*f1-(1.0/m1)*T1*mu1-common_handlers_->g*zw;
+    uav2_acc=(1.0/m2)*f2-(1.0/m2)*T2*mu2-common_handlers_->g*zw;
     // ROS_INFO_STREAM("Payload_acc   = \n" << Payload_acc);
     // ROS_INFO_STREAM("dotnl   = \n" << dotnl);
     // ROS_INFO_STREAM("uav1_acc   = \n" << uav1_acc);
@@ -3311,7 +3343,23 @@ void DergbryanTracker::trajectory_prediction_general_load_2UAV(mrs_msgs::Positio
     custom_uav2_acceleration.position.x=uav2_acc[0];
     custom_uav2_acceleration.position.y=uav2_acc[1];
     custom_uav2_acceleration.position.z=uav2_acc[2];
+
+
+    // Compute swing angle predictions:
+    Eigen::Vector3d zB1 = uav1_R.col(2);
+    // ROS_INFO_STREAM("zB1"<<zB1);
+    double swing_angle_uav1 = acos((mu1.dot(zB1))/(mu1.norm()*zB1.norm())); //Compute this swing angle (positive only, between 0 and pi)
+    // ROS_INFO_STREAM("swing_angle_uav1"<<swing_angle_uav1);
+    predicted_uav1_swing_angle.position.x = swing_angle_uav1;
+    predicted_uav1_swing_angle_out_.poses.push_back(predicted_uav1_swing_angle); 
+    Eigen::Vector3d zB2 = uav2_R.col(2);
+    // ROS_INFO_STREAM("zB1"<<zB1);
+    double swing_angle_uav2 = acos((mu2.dot(zB2))/(mu2.norm()*zB2.norm())); //Compute this swing angle (positive only, between 0 and pi)
+    // ROS_INFO_STREAM("swing_angle_uav2"<<swing_angle_uav2);
+    predicted_uav2_swing_angle.position.x = swing_angle_uav2;
+    predicted_uav2_swing_angle_out_.poses.push_back(predicted_uav2_swing_angle); 
   } // end for loop prediction
+
   //Publish the PoseArray that have been filled during the predictions.
   // ROS_INFO_STREAM("Gets to the publishing");
   try {
@@ -3384,12 +3432,41 @@ void DergbryanTracker::trajectory_prediction_general_load_2UAV(mrs_msgs::Positio
   catch (...) {
     ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_uav1_attitude_rate_publisher_.getTopic().c_str());
   }
-  // predicted_uav1_attitude_rate_publisher_:
+  // predicted_uav2_attitude_rate_publisher_:
   try {
     predicted_uav2_attitude_rate_publisher_.publish(predicted_uav2_attitude_rate_out_);
   }
   catch (...) {
     ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_uav2_attitude_rate_publisher_.getTopic().c_str());
+  }
+  // predicted_uav1_swing_angle_publisher_:
+  try {
+    predicted_uav1_swing_angle_publisher_.publish(predicted_uav1_swing_angle_out_);
+  }
+  catch (...) {
+    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_uav1_swing_angle_publisher_.getTopic().c_str());
+  }
+  // predicted_uav2_swing_angle_publisher_:
+  try {
+    predicted_uav2_swing_angle_publisher_.publish(predicted_uav2_swing_angle_out_);
+  }
+  catch (...) {
+    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_uav2_swing_angle_publisher_.getTopic().c_str());
+  }
+  // predicted_uav1_tension_force_publisher_:
+  try {
+    predicted_uav1_tension_force_publisher_.publish(predicted_uav1_tension_force_out_);
+  }
+  catch (...) {
+    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_uav1_tension_force_publisher_.getTopic().c_str());
+  }
+
+  // predicted_uav2_tension_force_publisher_:
+  try {
+    predicted_uav2_tension_force_publisher_.publish(predicted_uav2_tension_force_out_);
+  }
+  catch (...) {
+    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_uav2_tension_force_publisher_.getTopic().c_str());
   }
 
 }
@@ -4213,31 +4290,46 @@ void DergbryanTracker::computeERG(){
 
   //ROS_INFO_STREAM("before swing angle constraints \n");
   // Cable suspended UAV constraints (swing angle and taut cable)
-  // TODO: enable these for 2 uav cooperative transport
   if (_DSM_type_== 2){ // Trajectory based
     if(_type_of_system_== "1uav_payload" && payload_spawned_ && _enable_dsm_swing_c_){ //Swing angle DSM
-      double diff_alpha_min = _constraint_swing_c_; //init the difference as the highest possible value
-      for (size_t i = 0; i < _num_pred_samples_; i++) {
-        double diff_alpha = _constraint_swing_c_ - predicted_swing_angle_out_.poses[i].position.x;
-        if (diff_alpha < diff_alpha_min) { //if we find a lower value we store it
-        diff_alpha_min = diff_alpha;  //diff_alpha_min will be the minimal value we get over the whole prediction horizon.
-        }
-      }
-      DSM_swing_c_ = _kappa_swing_c_ * diff_alpha_min / _constraint_swing_c_; // scaled between 0 and _kappa_swing_c_
+      DSM_swing_c_ = computeDSM_swing_trajpred(predicted_swing_angle_out_);
       DSM_msg_.DSM_swing_c = DSM_swing_c_;
       //ROS_INFO_STREAM("DSM_swing_c_ = \n" << DSM_swing_c_);
     }
+    else if(_type_of_system_=="2uavs_payload" && payload_spawned_ && callback_data_follower_valid_ && _enable_dsm_swing_c_){
+      // uav1:
+      DSM_swing_c_uav1_ = computeDSM_swing_trajpred(predicted_uav1_swing_angle_out_);
+      DSM_uav1_msg_.DSM_swing_c = DSM_swing_c_uav1_;
+      // ROS_INFO_STREAM("DSM_swing_c_uav1_ = \n" << DSM_swing_c_uav1_);
+      // uav2:
+      DSM_swing_c_uav2_ = computeDSM_swing_trajpred(predicted_uav2_swing_angle_out_);
+      DSM_uav2_msg_.DSM_swing_c = DSM_swing_c_uav2_;
+      // ROS_INFO_STREAM("DSM_swing_c_uav1_ = \n" << DSM_swing_c_uav1_);
+      // min of both uav1 and uav2:
+      DSM_swing_c_ = std::min(DSM_swing_c_uav1_, DSM_swing_c_uav2_);
+      DSM_msg_.DSM_s = DSM_swing_c_;
+      // ROS_INFO_STREAM("DSM_swing_c_ = \n" << DSM_swing_c_);
+    }
+
     //ROS_INFO_STREAM("before cable tension constraints \n");
     if(_type_of_system_== "1uav_payload" && payload_spawned_ && _enable_dsm_Tc_){ // Tension cable DSM
-      double min_Tc = 100000.0; //init at very high value;
-      for (size_t i = 0; i < _num_pred_samples_; i++) {
-        if (predicted_Tc_out_.poses[i].position.x < min_Tc) { //if we find a lower value we store it
-        min_Tc = predicted_Tc_out_.poses[i].position.x;  //diff_alpha_min will be the minimal value we get over the whole prediction horizon.
-        }
-      }
-      DSM_Tc_ = _kappa_Tc_ * min_Tc / (_load_mass_ * common_handlers_->g); // at hover the min_Tc = _load_mass_ * common_handlers_->g and then DSM = _kappa_Tc_
+      DSM_Tc_ = computeDSM_Tc_trajpred(predicted_Tc_out_);
       DSM_msg_.DSM_Tc = DSM_Tc_;
       //ROS_INFO_STREAM("DSM_Tc_ = \n" << DSM_Tc_);
+    }
+    else if(_type_of_system_=="2uavs_payload" && payload_spawned_ && callback_data_follower_valid_ && _enable_dsm_Tc_){
+      // uav1:
+      DSM_Tc_uav1_ = computeDSM_Tc_trajpred(predicted_uav1_tension_force_out_);
+      DSM_uav1_msg_.DSM_Tc = DSM_Tc_uav1_;
+      // ROS_INFO_STREAM("DSM_Tc_uav1_ = \n" << DSM_Tc_uav1_);
+      // uav2:
+      DSM_Tc_uav2_ = computeDSM_Tc_trajpred(predicted_uav2_tension_force_out_);
+      DSM_uav2_msg_.DSM_Tc = DSM_Tc_uav2_;
+      // ROS_INFO_STREAM("DSM_Tc_uav2_ = \n" << DSM_Tc_uav2_);
+      // min of both uav1 and uav2:
+      DSM_Tc_ = std::min(DSM_Tc_uav1_, DSM_Tc_uav2_);
+      DSM_msg_.DSM_Tc = DSM_Tc_;
+      // ROS_INFO_STREAM("DSM_Tc_ = \n" << DSM_Tc_);
     }
   }
 
@@ -5964,6 +6056,32 @@ double DergbryanTracker::computeDSM_sw_trajpred(geometry_msgs::PoseArray predict
   double DSM_sw = _kappa_sw_*rel_diff_bodyrate; // scaled DSM in _kappa_sw_*[0, 1]  
   return DSM_sw;
 }
+
+double DergbryanTracker::computeDSM_swing_trajpred(geometry_msgs::PoseArray predicted_swing_angle){
+  double diff_alpha_min = _constraint_swing_c_; //init the difference as the highest possible value
+  for (size_t i = 0; i < _num_pred_samples_; i++) {
+    double diff_alpha = _constraint_swing_c_ - predicted_swing_angle.poses[i].position.x;
+    if (diff_alpha < diff_alpha_min) { //if we find a lower value we store it
+      diff_alpha_min = diff_alpha;  //diff_alpha_min will be the minimal value we get over the whole prediction horizon.
+    }
+  }
+  double DSM_swing_c = _kappa_swing_c_ * diff_alpha_min / _constraint_swing_c_; // scaled between 0 and _kappa_swing_c_    
+  return DSM_swing_c;
+}
+
+double DergbryanTracker::computeDSM_Tc_trajpred(geometry_msgs::PoseArray predicted_cable_tension){
+  double min_Tc = 100000.0; //init at very high value;
+  for (size_t i = 0; i < _num_pred_samples_; i++) {
+    if (predicted_cable_tension.poses[i].position.x < min_Tc) { //if we find a lower value we store it
+      min_Tc = predicted_cable_tension.poses[i].position.x;  //diff_alpha_min will be the minimal value we get over the whole prediction horizon.
+    }
+  }
+  // TODO: adapt scaling fot 2UAV case
+  double DSM_Tc = _kappa_Tc_ * min_Tc / (_load_mass_ * common_handlers_->g); // at hover the min_Tc = _load_mass_ * common_handlers_->g and then DSM = _kappa_Tc_
+  return DSM_Tc;
+}
+
+
 
 
 // FROM kelly's repo
