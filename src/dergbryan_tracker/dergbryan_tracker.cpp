@@ -268,7 +268,6 @@ private:
   ros::Publisher predicted_swing_angle_publisher_;           // predicted LOAD swing angles relative to body frame (between cable -mu and -z_B )
   ros::Publisher predicted_Tc_publisher_;                    // predicted LOAD tension in the cable, alongside mu
   //|------------------2UAVsLOAD------------------------|//
-  // TODO: check after 1 UAV works
   // For communication between uav1 (leader) and uav2 (follower):
   ros::Publisher uav_state_follower_for_leader_pub_;
   ros::Publisher anchoring_point_follower_for_leader_pub_;
@@ -314,7 +313,6 @@ private:
   ros::Publisher sa_perp_max_publisher_;
 
   // -------------
-  // TODO: put these global msgs and related under the publisher / subscriber
   // ROS Messages and related global:
   // -------------
   //|-----------------------------UAV--------------------------------|//
@@ -347,7 +345,6 @@ private:
   geometry_msgs::PoseArray predicted_Tc_out_;                   // array of predicted LOAD tension of the cable; alongside mu. If positive => tension, if negative => compression (to be avoided with ERG)
 
   //|-----------------------------2UAVsLOAD----------------------|//
-  // TODO: check after 1 UAV works
   // transfer information of UAV2 to UAV1
   mrs_msgs::UavState anchoring_point_follower_for_leader_msg_;
   //Store and publish the predictions (over whole horizon).
@@ -394,9 +391,11 @@ private:
   // TODO: the subscriber names below (load_state_sub_ & data_payload_sub_) are not chosen well. Why not using a common name and add simulation and uav?
   ros::Subscriber load_state_sub_;
   void GazeboLoadStatesCallback(const gazebo_msgs::LinkStatesConstPtr& loadmsg); // TODO: document
-  bool payload_spawned_ = false;     // TODO: document
-  bool callback_data_follower_valid_ = false;  // TODO: document
-  bool callback_data_leader_valid_ = false;      // TODO: document
+  bool payload_spawned_ = false;  // TODO: document
+  bool callback_data_follower_no_delay_ = false; // true if all the data that is published by the follower and subscribed on by leader is not too much delayed
+  bool callback_data_leader_no_delay_ = false;   // true if all the data that is published by the leader and subscribed on by follower is not too much delayed
+  double _max_time_delay_on_callback_data_follower_; //= 0.100;// = 10*dt_;
+  double _max_time_delay_on_callback_data_leader_;// = 0.200;// = 20*dt_;
   Eigen::Vector3d anchoring_pt_pose_position_ = Eigen::Vector3d::Zero(3); // TODO why must it be inititliazed to zero here?
   geometry_msgs::Twist anchoring_pt_velocity_;               // anchoring point/payload velocity 
   Eigen::Vector3d anchoring_pt_lin_vel_ = Eigen::Vector3d::Zero(3); // TODO why must it be inititliazed to zero here?
@@ -813,6 +812,9 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   param_loader2.loadParam("navigation_field/repulsion/static_obstacle/obstacle_position_x", obs_position(0,0));
   param_loader2.loadParam("navigation_field/repulsion/static_obstacle/obstacle_position_y", obs_position(1,0));
   param_loader2.loadParam("navigation_field/repulsion/static_obstacle/radius", R_o_);
+  param_loader2.loadParam("two_uavs_payload/callback_data_max_time_delay/follower", _max_time_delay_on_callback_data_follower_);
+  param_loader2.loadParam("two_uavs_payload/callback_data_max_time_delay/leader", _max_time_delay_on_callback_data_leader_);
+  
   // Visualization (rviz):
   param_loader2.loadParam("enable_visualization", _enable_visualization_);
   param_loader2.loadParam("enable_diagnostics_pub", _enable_diagnostics_pub_);
@@ -1266,14 +1268,12 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
         // ROS_INFO_STREAM("[DergbryanTracker]: time_delay_2 = " << time_delay_2);
         // ROS_INFO_STREAM("[DergbryanTracker]: time_delay_3 = " << time_delay_3);
         // ROS_INFO_STREAM("[DergbryanTracker]: time_delay_4 = " << time_delay_4);
-        double max_time_delay = 2*dt_; // max 2*sampling time // TODO: tune for practice, test if delayed too much
-        if (time_delay_1<max_time_delay && payload_spawned_ && time_delay_2<max_time_delay && time_delay_3<max_time_delay && time_delay_4<max_time_delay){
-          callback_data_follower_valid_ = true;
+        if (time_delay_1<_max_time_delay_on_callback_data_follower_ && payload_spawned_ && time_delay_2<_max_time_delay_on_callback_data_follower_ && time_delay_3<_max_time_delay_on_callback_data_follower_ && time_delay_4<_max_time_delay_on_callback_data_follower_){
+          callback_data_follower_no_delay_ = true;
         } else {
-          callback_data_follower_valid_ = false;
+          callback_data_follower_no_delay_ = false;
           ROS_WARN_STREAM("[DergbryanTracker]: follower data is delayed too much and/or payload_not yet spawned!");
         }
-        // TODO: fix the global vars used to they cnanot be changed during execution but if older msgs are sufficently new, then new msg for sure
       }
   }
 
@@ -1285,7 +1285,7 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
     if(_type_of_system_=="1uav_no_payload" || (_type_of_system_=="1uav_payload" && payload_spawned_)){
       computeERG(); // computes the applied_ref_x_, applied_ref_y_, applied_ref_z_
     } 
-    else if((_type_of_system_=="2uavs_payload" && _uav_name_ == "uav1" && payload_spawned_ && callback_data_follower_valid_)){
+    else if((_type_of_system_=="2uavs_payload" && _uav_name_ == "uav1" && payload_spawned_ && callback_data_follower_no_delay_)){
       computeERG(); // computes the applied_ref_x_, applied_ref_y_, applied_ref_z_, position_cmd_follower_from_leader_, goal_position_cmd_follower_from_leader_
     }
     else if ((_type_of_system_=="2uavs_payload" || _type_of_system_=="1uav_payload") && !payload_spawned_){
@@ -1301,9 +1301,8 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
       double time_delay_2 = std::abs(goal_position_cmd_follower_from_leader_.header.stamp.toSec() - uav_state_.header.stamp.toSec());
       // ROS_INFO_STREAM("[DergbryanTracker]: time_delay_1 = " << time_delay_1);
       // ROS_INFO_STREAM("[DergbryanTracker]: time_delay_2 = " << time_delay_2);
-      double max_time_delay = 2*2*dt_; // max 2*sampling time // TODO: tune for practice, test if delayed too much
-      if (time_delay_1<max_time_delay && time_delay_2<max_time_delay){
-        callback_data_leader_valid_ = true;
+      if (time_delay_1 < _max_time_delay_on_callback_data_leader_ && time_delay_2 < _max_time_delay_on_callback_data_leader_){
+        callback_data_leader_no_delay_ = true;
         // update the follower's applied ref:
         applied_ref_x_ = position_cmd_follower_from_leader_.position.x;
         applied_ref_y_ = position_cmd_follower_from_leader_.position.y;
@@ -1318,7 +1317,7 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
            goal_z_ = goal_position_cmd_follower_from_leader_.position.z;
         */
       } else {
-        callback_data_leader_valid_ = false;
+        callback_data_leader_no_delay_ = false;
         // don't update the follower's applied_ref_x_, applied_ref_y_, applied_ref_z_
         ROS_WARN_STREAM("[DergbryanTracker]: leader data is delayed too much!");
       }
@@ -1494,7 +1493,7 @@ void DergbryanTracker::computePSCTrajectoryPredictions(mrs_msgs::PositionCommand
   */
   erg_predictions_theta_trusted_ = true; // initialize
 
-  if(_type_of_system_=="2uavs_payload" && _uav_name_=="uav1" && callback_data_follower_valid_){
+  if(_type_of_system_=="2uavs_payload" && _uav_name_=="uav1" && callback_data_follower_no_delay_){
     trajectory_prediction_general_load_2UAV(position_cmd, uav_heading, last_attitude_cmd); // TODO: check 2 uav case later  
   }
   else if(_type_of_system_=="1uav_no_payload" || (_type_of_system_=="1uav_payload" && payload_spawned_)){
@@ -4296,7 +4295,7 @@ void DergbryanTracker::computeERG(){
       DSM_msg_.DSM_swing_c = DSM_swing_c_;
       //ROS_INFO_STREAM("DSM_swing_c_ = \n" << DSM_swing_c_);
     }
-    else if(_type_of_system_=="2uavs_payload" && payload_spawned_ && callback_data_follower_valid_ && _enable_dsm_swing_c_){
+    else if(_type_of_system_=="2uavs_payload" && payload_spawned_ && callback_data_follower_no_delay_ && _enable_dsm_swing_c_){
       // uav1:
       DSM_swing_c_uav1_ = computeDSM_swing_trajpred(predicted_uav1_swing_angle_out_);
       DSM_uav1_msg_.DSM_swing_c = DSM_swing_c_uav1_;
@@ -4317,7 +4316,7 @@ void DergbryanTracker::computeERG(){
       DSM_msg_.DSM_Tc = DSM_Tc_;
       //ROS_INFO_STREAM("DSM_Tc_ = \n" << DSM_Tc_);
     }
-    else if(_type_of_system_=="2uavs_payload" && payload_spawned_ && callback_data_follower_valid_ && _enable_dsm_Tc_){
+    else if(_type_of_system_=="2uavs_payload" && payload_spawned_ && callback_data_follower_no_delay_ && _enable_dsm_Tc_){
       // uav1:
       DSM_Tc_uav1_ = computeDSM_Tc_trajpred(predicted_uav1_tension_force_out_);
       DSM_uav1_msg_.DSM_Tc = DSM_Tc_uav1_;
@@ -5717,7 +5716,7 @@ void DergbryanTracker::computeERG(){
       applied_ref_z_ = applied_ref_z_ + applied_ref_dot(2)*dt_;
     }
   }
-  else if(_type_of_system_=="2uavs_payload"){// && _uav_name_ == "uav1" && payload_spawned_ && callback_data_follower_valid_){
+  else if(_type_of_system_=="2uavs_payload"){// && _uav_name_ == "uav1" && payload_spawned_ && callback_data_follower_no_delay_){
     // store leader and follower v and r in Eigen::vector3d
     // applied_ref_leader:
     Eigen::Vector3d applied_ref_leader;
