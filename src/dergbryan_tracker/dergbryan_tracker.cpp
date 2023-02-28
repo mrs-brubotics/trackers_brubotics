@@ -247,13 +247,6 @@ private:
   ros::Publisher predicted_des_attrate_publisher_;  // predicted UAV desired attitude rate
   ros::Publisher predicted_tiltangle_publisher_;    // predicted UAV tilt angle
   //|-----------------------------LOAD--------------------------------|//
-  // TODO: which ones of the commented do we need?
-  //ros::Publisher tracker_uav_state_publisher_;
-  //ros::Publisher tracker_load_pose_publisher_;
-  //ros::Publisher tracker_load_vel_publisher_;
-  //ros::Publisher load_pose_experiments_publisher_;
-  //ros::Publisher load_pose_error_publisher_;
-  //ros::Publisher load_velocity_error_publisher_;
   //  - ERG trajectory predictions: 
   ros::Publisher predicted_load_pose_publisher_;             // predicted LOAD pose
   ros::Publisher predicted_load_vel_publisher_;              // predicted LOAD velocity
@@ -297,6 +290,8 @@ private:
   // TODO: bryan clean when improving ERG
   //    - Multi-uav collision avoidance:
   ros::Publisher DSM_publisher_;
+  ros::Publisher DSM_uav1_publisher_;
+  ros::Publisher DSM_uav2_publisher_;
   ros::Publisher DistanceBetweenUavs_publisher_;
   ros::Publisher avoidance_trajectory_publisher_;   
   ros::Publisher avoidance_applied_ref_publisher_;   
@@ -872,74 +867,65 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   predicted_des_attrate_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_des_predicted_attrate", 1);
   predicted_tiltangle_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_tiltangle", 1);
   // TODO: create topic similar to predicted_load_position_errors_publisher_
-  // LOAD:
-  // TODO: unlcear definitions what tracker_ publishers represent:
-  // tracker_load_pose_publisher_   = nh2_.advertise<geometry_msgs::Pose>("tracker_load_pose",1); // TODO: this is computed in the controller and would be logical to publish there. // It is also computed in the tracker as the callback is the same. So I guess it's why they added tracker in the name, as it's the same info as in the controller. Probably just to check that the two are the same, and that there is no issues with this load callback.
-  // tracker_load_vel_publisher_   = nh2_.advertise<geometry_msgs::Twist>("tracker_load_vel",1); // TODO: this is computed in the controller and would be logical to publish there
-  // tracker_uav_state_publisher_   = nh2_.advertise<mrs_msgs::UavState>("tracker_uav_state",1); // TODO: a tracker can never be linked to a full UAV state, that why above I used applied_ref_pose_publisher_
-  predicted_load_pose_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_load_poses", 1);
-  predicted_load_vel_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_load_vels", 1);
-  predicted_load_acc_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_load_accs", 1);
-  // TODO: (see comment before) unlcear definitions what phi and theta represent (encoders? world angles?)  
-  //  =>published that can be usefull to monitor the world angles (i.e. the one predicted in the model, not the one of the encoder) when predicting. 
-  //    not needed anlymore now as the model is working fine, but I keep them just in case. 
-  predicted_phi_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_phi", 1);
-  predicted_theta_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_theta", 1);
-  predicted_phi_dot_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_phi_dot", 1);
-  predicted_theta_dot_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_theta_dot", 1);
-  predicted_phi_dot_dot_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_phi_dot_dot", 1);
-  predicted_theta_dot_dot_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_theta_dot_dot", 1);
-  predicted_load_position_errors_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_load_position_errors", 1); // The error vector of the load position, predicted.
-  predicted_swing_angle_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_swing_angle", 1);
-  predicted_Tc_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_Tc", 1);
-  // 2UAVsLOAD:
-  // TODO: it is not good to explicitely use a uav id  (e.g., uav 1 , uav2) in the names as with the hardware (nuc and nimbro) you won't be able to choose the uav id (these are hardcoded in the nuc and must not be changed). There is just one "leader" (what you call uav1) and one "follower" (what you call uav2). I would advice to always use the highest priority uav as the leader. So do a check on _avoidance_other_uav_names_ defined above to see which uavs are defined and add an extra requirement that there may be at most 2 uavs specified in the list, else return a ROS_ERROR.
-  predicted_uav1_poses_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav1_pose", 1);
-  predicted_uav2_poses_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav2_pose", 1);
-  predicted_uav1_vel_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav1_vel", 1);
-  predicted_uav2_vel_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav2_vel", 1);
-  predicted_uav1_anchoring_point_pose_publisher_= nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav1_anchoring_point_pose", 1);
-  predicted_uav2_anchoring_point_pose_publisher_= nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav2_anchoring_point_pose", 1);
-  predicted_uav1_anchoring_point_vel_publisher_= nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav1_anchoring_point_vel", 1);
-  predicted_uav2_anchoring_point_vel_publisher_= nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav2_anchoring_point_vel", 1);
-  predicted_uav1_thrust_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav1_thrust", 1);
-  predicted_uav2_thrust_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav2_thrust", 1);
-  predicted_uav1_attitude_rate_publisher_ =  nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav1_attitude_rate", 1);
-  predicted_uav2_attitude_rate_publisher_ =  nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav2_attitude_rate", 1);
-  predicted_uav1_swing_angle_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav1_swing_angle", 1);
-  predicted_uav2_swing_angle_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav2_swing_angle", 1);
-  predicted_uav1_tension_force_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav1_tension_force", 1);
-  predicted_uav2_tension_force_publisher_= nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav2_tension_force", 1);
-  //for communication between the two uav's, if I am uav1, I subscribe to UAV2 states/position_cmd/anchoring points. If I am uav2, I advertise on the correct topic.
+  
+  // 1 UAV LOAD:
+  if (_type_of_system_=="1uav_payload"){
+    predicted_load_pose_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_load_poses", 1);
+    predicted_load_vel_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_load_vels", 1);
+    predicted_load_acc_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_load_accs", 1); 
+    //  phi and theta are used to monitor the world angles (i.e., the ones predicted in the model, not the ones of the encoder). 
+    predicted_phi_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_phi", 1);
+    predicted_theta_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_theta", 1);
+    predicted_phi_dot_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_phi_dot", 1);
+    predicted_theta_dot_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_theta_dot", 1);
+    predicted_phi_dot_dot_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_phi_dot_dot", 1);
+    predicted_theta_dot_dot_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_theta_dot_dot", 1);
+    predicted_load_position_errors_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_load_position_errors", 1); // The error vector of the load position, predicted.
+    predicted_swing_angle_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_swing_angle", 1);
+    predicted_Tc_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_Tc", 1);
+  }
 
+  // 2UAVsLOAD:
   // TODO: 
   // generlize the code below based on leader and follower comments above on publishers and not just hardcoded for uav 1 or uav 2. So that code works for any id.
   // See below for subscribers on _avoidance_other_uav_names_ to embed the subcriber part in an automated way to subscibe on info of other uavs. 
   // Make sure the code checks that if a sessions is loaded for , that _avoidance_other_uav_names_ entered via session.yaml contains exactly 2 ids where the lowest id has the highest prioirty and hence is the leader. Esle return an error.
   // So also split the code in a part for publishing and part for subscribing and add it at the correct place.
-
+  // TODO: it is not good to explicitely use a uav id  (e.g., uav 1 , uav2) in the names as with the hardware (nuc and nimbro) you won't be able to choose the uav id (these are hardcoded in the nuc and must not be changed). There is just one "leader" (what you call uav1) and one "follower" (what you call uav2). I would advice to always use the highest priority uav as the leader. So do a check on _avoidance_other_uav_names_ defined above to see which uavs are defined and add an extra requirement that there may be at most 2 uavs specified in the list, else return a ROS_ERROR.
   if (_type_of_system_ == "2uavs_payload"){
-    if (_uav_name_ == "uav1"){  // to see which UAV it is
-        // subscribers:
-        uav_state_follower_for_leader_sub_ = nh2_.subscribe("/uav2/control_manager/dergbryan_tracker/uav_state_follower_for_leader", 1, &DergbryanTracker::uav_state_follower_for_leader_callback, this, ros::TransportHints().tcpNoDelay());
-        anchoring_point_follower_for_leader_sub_ = nh2_.subscribe("/uav2/control_manager/dergbryan_tracker/anchoring_point_follower_for_leader", 1, &DergbryanTracker::anchoring_point_follower_for_leader_callback, this, ros::TransportHints().tcpNoDelay());
-        position_cmd_follower_for_leader_sub_ = nh2_.subscribe("/uav2/control_manager/dergbryan_tracker/position_cmd_follower_for_leader", 1, &DergbryanTracker::position_cmd_follower_for_leader_callback, this, ros::TransportHints().tcpNoDelay());
-        goal_position_cmd_follower_for_leader_sub_ = nh2_.subscribe("/uav2/control_manager/dergbryan_tracker/goal_position_cmd_follower_for_leader", 1, &DergbryanTracker::goal_position_cmd_follower_for_leader_callback, this, ros::TransportHints().tcpNoDelay());
-        // publishers:
-        position_cmd_follower_from_leader_pub_ = nh2_.advertise<mrs_msgs::PositionCommand>("position_cmd_follower_from_leader", 1); 
-        goal_position_cmd_follower_from_leader_pub_ = nh2_.advertise<mrs_msgs::PositionCommand>("goal_position_cmd_follower_from_leader", 1); 
+    predicted_uav1_poses_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav1_pose", 1);
+    predicted_uav2_poses_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav2_pose", 1);
+    predicted_uav1_vel_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav1_vel", 1);
+    predicted_uav2_vel_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav2_vel", 1);
+    predicted_uav1_anchoring_point_pose_publisher_= nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav1_anchoring_point_pose", 1);
+    predicted_uav2_anchoring_point_pose_publisher_= nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav2_anchoring_point_pose", 1);
+    predicted_uav1_anchoring_point_vel_publisher_= nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav1_anchoring_point_vel", 1);
+    predicted_uav2_anchoring_point_vel_publisher_= nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav2_anchoring_point_vel", 1);
+    predicted_uav1_thrust_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav1_thrust", 1);
+    predicted_uav2_thrust_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav2_thrust", 1);
+    predicted_uav1_attitude_rate_publisher_ =  nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav1_attitude_rate", 1);
+    predicted_uav2_attitude_rate_publisher_ =  nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav2_attitude_rate", 1);
+    predicted_uav1_swing_angle_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav1_swing_angle", 1);
+    predicted_uav2_swing_angle_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav2_swing_angle", 1);
+    predicted_uav1_tension_force_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav1_tension_force", 1);
+    predicted_uav2_tension_force_publisher_= nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav2_tension_force", 1);
+    if (_uav_name_ == "uav1"){  // leader
+      DSM_uav1_publisher_ = nh2_.advertise<trackers_brubotics::DSM>("DSM_leader", 1);
+      DSM_uav2_publisher_ = nh2_.advertise<trackers_brubotics::DSM>("DSM_follower", 1);
     }
-    else if (_uav_name_ == "uav2"){ // uav2
-        // publishers required for state feedback in leader UAV
-        uav_state_follower_for_leader_pub_ = nh2_.advertise<mrs_msgs::UavState>("uav_state_follower_for_leader", 1);
-        anchoring_point_follower_for_leader_pub_ = nh2_.advertise<mrs_msgs::UavState>("anchoring_point_follower_for_leader", 1);
-        position_cmd_follower_for_leader_pub_ = nh2_.advertise<mrs_msgs::PositionCommand>("position_cmd_follower_for_leader", 1); 
-        goal_position_cmd_follower_for_leader_pub_ = nh2_.advertise<mrs_msgs::PositionCommand>("goal_position_cmd_follower_for_leader", 1); 
-        // subscribers:
-        position_cmd_follower_from_leader_sub_=nh2_.subscribe("/uav1/control_manager/dergbryan_tracker/position_cmd_follower_from_leader", 1, &DergbryanTracker::position_cmd_follower_from_leader_callback, this, ros::TransportHints().tcpNoDelay());
-        goal_position_cmd_follower_from_leader_sub_=nh2_.subscribe("/uav1/control_manager/dergbryan_tracker/goal_position_cmd_follower_from_leader", 1, &DergbryanTracker::goal_position_cmd_follower_from_leader_callback, this, ros::TransportHints().tcpNoDelay());
+    // for communication between the leader and follower uavs: follower publishes state feedback to leader and leader commands the reference to the follower
+    if (_uav_name_ == "uav1"){  // leader
+      position_cmd_follower_from_leader_pub_ = nh2_.advertise<mrs_msgs::PositionCommand>("position_cmd_follower_from_leader", 1); 
+      goal_position_cmd_follower_from_leader_pub_ = nh2_.advertise<mrs_msgs::PositionCommand>("goal_position_cmd_follower_from_leader", 1); 
+    }
+    else if (_uav_name_ == "uav2"){ // follower
+      uav_state_follower_for_leader_pub_ = nh2_.advertise<mrs_msgs::UavState>("uav_state_follower_for_leader", 1);
+      anchoring_point_follower_for_leader_pub_ = nh2_.advertise<mrs_msgs::UavState>("anchoring_point_follower_for_leader", 1);
+      position_cmd_follower_for_leader_pub_ = nh2_.advertise<mrs_msgs::PositionCommand>("position_cmd_follower_for_leader", 1); 
+      goal_position_cmd_follower_for_leader_pub_ = nh2_.advertise<mrs_msgs::PositionCommand>("goal_position_cmd_follower_for_leader", 1); 
     }
   }
+
   // general:
   DSM_publisher_ = nh2_.advertise<trackers_brubotics::DSM>("DSM", 1);
   DistanceBetweenUavs_publisher_ = nh2_.advertise<trackers_brubotics::DistanceBetweenUavs>("DistanceBetweenUavs", 1);
@@ -963,21 +949,36 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
 
   // | ------------------- create subscribers ------------------- |
   // this uav subscribes to own (i.e., of this uav) load states:
-  // TODO: this block was initially placed in update function above "get the current heading". Replacing it here, it works in sim, but to be tested on hardware. 
-  if (_run_type_ == "simulation"){ // subscriber of the gazebo simulation
-    load_state_sub_ =  nh_.subscribe("/gazebo/link_states", 1, &DergbryanTracker::GazeboLoadStatesCallback, this, ros::TransportHints().tcpNoDelay());
-  }
-  else if (_run_type_ == "uav"){ // subscriber of the hardware encoders
-    std::string slash = "/";
-    data_payload_sub_ = nh_.subscribe(slash.append(_uav_name_.append("/serial/received_message")), 1, &DergbryanTracker::BacaLoadStatesCallback, this, ros::TransportHints().tcpNoDelay()); // TODO: explain how this is used for 2 uav hardware
-  }
-  else{ // undefined
-    ROS_ERROR("[DergbryanTracker]: undefined _run_type_ used!");
-    ros::requestShutdown();
+  if(_type_of_system_=="1uav_payload" || _type_of_system_=="2uavs_payload"){
+    if (_run_type_ == "simulation"){ // subscriber of the gazebo simulation
+      load_state_sub_ =  nh_.subscribe("/gazebo/link_states", 1, &DergbryanTracker::GazeboLoadStatesCallback, this, ros::TransportHints().tcpNoDelay());
+    }
+    else if (_run_type_ == "uav"){ // subscriber of the hardware encoders
+      std::string slash = "/";
+      data_payload_sub_ = nh_.subscribe(slash.append(_uav_name_.append("/serial/received_message")), 1, &DergbryanTracker::BacaLoadStatesCallback, this, ros::TransportHints().tcpNoDelay()); // TODO: explain how this is used for 2 uav hardware
+    }
+    else{ // undefined
+      ROS_ERROR("[DergbryanTracker]: undefined _run_type_ used for uav with payload!");
+      ros::requestShutdown();
+    }
+    if (_type_of_system_ == "2uavs_payload"){
+      // for communication between the leader and follower uavs: leader subscribes to state feedback of follower and follower to the reference the leader commanded
+      if (_uav_name_ == "uav1"){  // leader
+        uav_state_follower_for_leader_sub_ = nh2_.subscribe("/uav2/control_manager/dergbryan_tracker/uav_state_follower_for_leader", 1, &DergbryanTracker::uav_state_follower_for_leader_callback, this, ros::TransportHints().tcpNoDelay());
+        anchoring_point_follower_for_leader_sub_ = nh2_.subscribe("/uav2/control_manager/dergbryan_tracker/anchoring_point_follower_for_leader", 1, &DergbryanTracker::anchoring_point_follower_for_leader_callback, this, ros::TransportHints().tcpNoDelay());
+        position_cmd_follower_for_leader_sub_ = nh2_.subscribe("/uav2/control_manager/dergbryan_tracker/position_cmd_follower_for_leader", 1, &DergbryanTracker::position_cmd_follower_for_leader_callback, this, ros::TransportHints().tcpNoDelay());
+        goal_position_cmd_follower_for_leader_sub_ = nh2_.subscribe("/uav2/control_manager/dergbryan_tracker/goal_position_cmd_follower_for_leader", 1, &DergbryanTracker::goal_position_cmd_follower_for_leader_callback, this, ros::TransportHints().tcpNoDelay());
+      }
+      else if (_uav_name_ == "uav2"){ // follower
+        position_cmd_follower_from_leader_sub_ = nh2_.subscribe("/uav1/control_manager/dergbryan_tracker/position_cmd_follower_from_leader", 1, &DergbryanTracker::position_cmd_follower_from_leader_callback, this, ros::TransportHints().tcpNoDelay());
+        goal_position_cmd_follower_from_leader_sub_ = nh2_.subscribe("/uav1/control_manager/dergbryan_tracker/goal_position_cmd_follower_from_leader", 1, &DergbryanTracker::goal_position_cmd_follower_from_leader_callback, this, ros::TransportHints().tcpNoDelay());
+      }
+    }
   }
 
   // this uav subscribes to these topics of other uavs:
   mrs_lib::SubscribeHandlerOptions shopts;
+   // TODO !!! see mpc tracker for other options
   shopts.nh                 = nh_; // TODO: shouldn't this be nh2 as this is related to tracker and not to controller?
   shopts.node_name          = "DergbryanTracker";
   shopts.no_message_timeout = mrs_lib::no_timeout;
@@ -985,7 +986,6 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   shopts.autostart          = true;
   shopts.queue_size         = 10;
   shopts.transport_hints    = ros::TransportHints().tcpNoDelay();
-  // TODO !!! see mpc tracker for other options
   for (int i = 0; i < int(_avoidance_other_uav_names_.size()); i++) {
     // just an example:
     std::string chatter_topic_name = std::string("/") + _avoidance_other_uav_names_[i] + std::string("/") + std::string("control_manager/dergbryan_tracker/chatter");
@@ -1012,8 +1012,6 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
     std::string future_trajectory_tube_topic_name = std::string("/") + _avoidance_other_uav_names_[i] + std::string("/") + std::string("control_manager/dergbryan_tracker/future_trajectory_tube");
     ROS_INFO("[DergbryanTracker]: subscribing to %s", future_trajectory_tube_topic_name.c_str());
     other_uav_subscribers4_.push_back(mrs_lib::SubscribeHandler<trackers_brubotics::FutureTrajectoryTube>(shopts, future_trajectory_tube_topic_name, &DergbryanTracker::callbackOtherUavFutureTrajectoryTube, this));
-
-    // TODO: add cooperative load transport topics here in a similar fashion
   }
   ROS_INFO("[DergbryanTracker]: linked all subscribers to their callbacks.");
 
@@ -2461,12 +2459,6 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
       ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_tiltangle_publisher_.getTopic().c_str());
     }
   }
-  // try {
-  //   tracker_uav_state_publisher_.publish(uav_state_);
-  // }
-  // catch (...) {
-  //   ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", tracker_uav_state_publisher_.getTopic().c_str());
-  // }
 
   // -------------1UAV+payload-----------------------//
   if(_type_of_system_=="1uav_payload"&& payload_spawned_){
@@ -2544,18 +2536,6 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
         ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", predicted_load_position_errors_publisher_.getTopic().c_str());
       }
     }
-    // try {
-    //   tracker_load_pose_publisher_.publish(anchoring_pt_pose_position_);
-    // }
-    // catch (...) {
-    //   ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", tracker_load_pose_publisher_.getTopic().c_str());
-    // }
-    // try {
-    //   tracker_load_vel_publisher_.publish(anchoring_pt_lin_vel_); //not a ros msg ! gives strange error. Check if all graphs are still working without this and delete it if it is the case.
-    // }
-    // catch (...) {
-    //   ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", tracker_load_vel_publisher_.getTopic().c_str());
-    // }
   }
 } // end of the prediction_general function.
 
@@ -5921,6 +5901,20 @@ void DergbryanTracker::computeERG(){
   }
   catch (...) {
     ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", DSM_publisher_.getTopic().c_str());
+  }
+
+  try {
+     DSM_uav1_publisher_.publish(DSM_uav1_msg_);
+  }
+  catch (...) {
+    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", DSM_uav1_publisher_.getTopic().c_str());
+  }
+
+  try {
+     DSM_uav2_publisher_.publish(DSM_uav2_msg_);
+  }
+  catch (...) {
+    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", DSM_uav2_publisher_.getTopic().c_str());
   }
 
   // Diagnostics Publisher - distance to collisions:
