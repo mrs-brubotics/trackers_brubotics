@@ -144,7 +144,8 @@ private:
   bool   _tilt_angle_failsafe_enabled_;
   double _tilt_angle_failsafe_;
   double _thrust_saturation_; // total thrust limit in [0,1]
-  int    output_mode_;  // attitude_rate / quaternion
+  int    output_mode_; // attitude_rate / quaternion
+  double _Epl_min_;    // [m], below this payload error norm, the payload error is disabled
   // DergBryanTracker:
   // TODO: bryan clean ERG paramters and code
   bool _use_derg_;
@@ -393,7 +394,6 @@ private:
   double _max_time_delay_on_callback_data_follower_; //= 0.100;// = 10*dt_;
   double _max_time_delay_on_callback_data_leader_;// = 0.200;// = 20*dt_;
   Eigen::Vector3d anchoring_pt_pose_position_ = Eigen::Vector3d::Zero(3); // TODO why must it be inititliazed to zero here?
-  geometry_msgs::Twist anchoring_pt_velocity_;               // anchoring point/payload velocity 
   Eigen::Vector3d anchoring_pt_lin_vel_ = Eigen::Vector3d::Zero(3); // TODO why must it be inititliazed to zero here?
   ros::Subscriber data_payload_sub_;
   void BacaLoadStatesCallback(const mrs_msgs::BacaProtocolConstPtr& msg);            // TODO: document
@@ -755,6 +755,8 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   param_loader.loadParam("constraints/thrust_saturation", _thrust_saturation_); // is further reduced by _thrust_saturation_ratio_
   // output mode:
   param_loader.loadParam("output_mode", output_mode_);
+  // payload:
+  param_loader.loadParam("payload/Epl_min", _Epl_min_);
   // TODO: any other Se3CopyController params to load?
   if (!param_loader.loadedSuccessfully()) {
     ROS_ERROR("[DergbryanTracker]: could not load all Se3CopyController parameters!");
@@ -2717,8 +2719,8 @@ void DergbryanTracker::trajectory_prediction_general_load_2UAV(mrs_msgs::Positio
     // | --------------------- initialize the state of the UAV2 --------------------- |
 
     mrs_msgs::UavState uav2_state = uav_state_follower_for_leader_; // uav2_state represents the locally defined predicted state
-    Eigen::Vector3d uav2_position=uav_position_follower_; // uav2 states in vector forms
-    Eigen::Vector3d uav2_velocity=uav_velocity_follower_;
+    Eigen::Vector3d uav2_position = uav_position_follower_; // uav2 states in vector forms
+    Eigen::Vector3d uav2_velocity = uav_velocity_follower_;
 
     Eigen::Vector3d uav2_anchoring_point_position = anchoring_point_follower_position_; //anchoring point 2
     Eigen::Vector3d uav2_anchoring_point_velocity = anchoring_point_follower_velocity_;
@@ -3556,7 +3558,7 @@ std::tuple< double, Eigen::Vector3d,double> DergbryanTracker::ComputeSe3CopyCont
   Eigen::Vector3d Epl = Eigen::Vector3d::Zero(3); // Load position control error
   Eigen::Vector3d Evl = Eigen::Vector3d::Zero(3); // Load velocity control error
 
-  if (_run_type_ == "simulation" && payload_spawned_){
+  if (payload_spawned_){
     // load position control error
     if (position_cmd.use_position_horizontal || position_cmd.use_position_vertical) {
       Eigen::Vector3d e3(0.0, 0.0, 1.0);
@@ -3569,36 +3571,20 @@ std::tuple< double, Eigen::Vector3d,double> DergbryanTracker::ComputeSe3CopyCont
       position_cmd.use_position_vertical) {  // even when use_position_vertical to provide dampening
       Evl = Ov - Ovl; // speed relative to base frame
     }
-    // Epl[2] = 0;
-    // Evl[2] = 0;
+    
+    // Sanity checks: 
+    if (Epl.norm()>_cable_length_*sqrt(2)){ // Largest possible error when cable is oriented 90°.
+      ROS_ERROR("[DergbryanTracker]: Control error of the anchoring point Epl was larger than expected (> _cable_length_*sqrt(2)), hence it has been set to zero");
+      Epl = Eigen::Vector3d::Zero(3);
+      // TODO: trigger eland?
+    }
+    // Ignore small load position errors to deal with small, but non-zero load offsets in steady-state and prevent aggressive actions on small errors 
+    if(Epl.norm() < _Epl_min_){ // When the payload is very close to equilibrium vertical position, the error is desactivated so the UAV doesn't try to compensate and let it damp naturally.
+      ROS_INFO_THROTTLE(1.0,"[DergbryanTracker]: Control error of the anchoring point Epl = %fm < _Epl_min_ = %fm, hence it has been set to zero", Epl.norm(), _Epl_min_);
+      Epl = Eigen::Vector3d::Zero(3);
+    }
+
   } 
-  else if(_run_type_ == "uav" && payload_spawned_){ 
-
-    if (position_cmd.use_position_horizontal || position_cmd.use_position_vertical) {
-      Eigen::Vector3d e3(0.0, 0.0, 1.0);
-      Epl = Op - _cable_length_*e3 - Opl; 
-    }
-    // load velocity control error
-    if (position_cmd.use_velocity_horizontal || position_cmd.use_velocity_vertical ||
-      position_cmd.use_position_vertical) {  // even when use_position_vertical to provide dampening
-      Evl = Ov - Ovl; // speed relative to base frame
-    }
-
-    if (Epl.norm()>_cable_length_*sqrt(2)){ //Sanity check : Largest possible error when cable is oriented 90degrees. If Epl is larger, there must be an error in the FK, or in the values returned by the encoders.
-      ROS_ERROR("[se3_copy_controller]: Control error of the anchoring point Epl was larger than expected, it has been set to zero");
-      Epl= Eigen::Vector3d::Zero(3);
-      payload_spawned_=false; // TODO: check this case
-    }
-      
-
-  }
-
-  // Ignore small load position errors to deal with load offsets and prevent agressive actions on small errors
-  // TODO: make a yaml param of 0.05 threshold  
-  if(payload_spawned_ && Epl.norm() < 0.05){ // When the payload is very close to equilibrium vertical position, the error is desactivated so the UAV doesn't try to compensate and let it damp naturally.
-    Epl = Eigen::Vector3d::Zero(3);
-  }
-
   // | --------------------- load the gains --------------------- |
   // NOTE: do not move the gains outside the for loop or this function! Due to "Kp = Kp * (uav_mass_ + uav_mass_difference_);"
   /*NOTE: for now on disable the filterGains used in the original se3 controller*/
@@ -6330,12 +6316,11 @@ void DergbryanTracker::GazeboLoadStatesCallback(const gazebo_msgs::LinkStatesCon
     anchoring_pt_pose_position_[0] = anchoring_pt_pose.position.x;
     anchoring_pt_pose_position_[1] = anchoring_pt_pose.position.y;
     anchoring_pt_pose_position_[2] = anchoring_pt_pose.position.z;
-
-    anchoring_pt_velocity_ = loadmsg->twist[anchoring_pt_index];
+    geometry_msgs::Twist anchoring_pt_velocity = loadmsg->twist[anchoring_pt_index];  // anchoring point/payload velocity 
     // This is anchoring point linear velocity, it will be used to deduce rotational velocity of the beam in the first iteration of the prediction
-    anchoring_pt_lin_vel_[0]= anchoring_pt_velocity_.linear.x;
-    anchoring_pt_lin_vel_[1]= anchoring_pt_velocity_.linear.y;
-    anchoring_pt_lin_vel_[2]= anchoring_pt_velocity_.linear.z;
+    anchoring_pt_lin_vel_[0] = anchoring_pt_velocity.linear.x;
+    anchoring_pt_lin_vel_[1] = anchoring_pt_velocity.linear.y;
+    anchoring_pt_lin_vel_[2] = anchoring_pt_velocity.linear.z;
 
     // TODO: if we want to measure other variables (e.g., 2uav bar load COM linear and rotatinal velocity)
   //-------------------------------------------------//
@@ -6375,73 +6360,70 @@ void DergbryanTracker::BacaLoadStatesCallback(const mrs_msgs::BacaProtocolConstP
 
   // Sanity checks
   /* in theory, the encoder angles would be possibe to have in the range [-M_PI/2.0, M_PI/2.0], but in practice
-  the encoder fixation is results in different offsets for each UAV*/
-  double encoder_angle_1_max = 1.24;
-  double encoder_angle_1_min = -2.04;
-  double encoder_angle_2_max = 2.13;
-  double encoder_angle_2_min = -1.61;
+  the encoder fixation is results in different offsets for each UAV.
+  The maximum offsets of the asymtric encoder mddule are given in comments.*/
+  double encoder_angle_1_max = M_PI;//1.24;
+  double encoder_angle_1_min = -M_PI;//-2.04;
+  double encoder_angle_2_max = M_PI;//2.13;
+  double encoder_angle_2_min = -M_PI;//-1.61;
   double msg_time_delay = std::abs(msg->stamp.toSec() - uav_state_.header.stamp.toSec());
   int bound_num_samples_delay = 2;
   if (!std::isfinite(encoder_angle_1_)||!std::isfinite(encoder_angle_2_)) {
     ROS_ERROR("[DergbryanTracker]: NaN detected in encoder angles");
-    payload_spawned_=false; //Put payload_spawned back to false in case the encoder stops giving finite values during a flight. Epl stays equal to zero when this flag is false, avoiding strange behaviors or non finite Epl. 
+    payload_spawned_ = false; //Put payload_spawned back to false in case the encoder stops giving finite values during a flight. Epl stays equal to zero when this flag is false, avoiding strange behaviors or non finite Epl. 
   }
   else if (!std::isfinite(encoder_velocity_1_)||!std::isfinite(encoder_velocity_2_)) {
     ROS_ERROR("[DergbryanTracker]: NaN detected in encoder angular velocities");
-    payload_spawned_=false;  
+    payload_spawned_ = false;  
   }
   else if ((encoder_angle_1_>encoder_angle_1_max && encoder_angle_1_< encoder_angle_1_min) || (encoder_angle_2_>encoder_angle_2_max && encoder_angle_2_< encoder_angle_2_min)) {
     ROS_ERROR("[DergbryanTracker]: Out of expected range [-pi/2, pi/2] detected in encoder angles");
-    payload_spawned_=false; 
+    payload_spawned_ = false; 
   }
   else if (msg_time_delay > dt_*bound_num_samples_delay) {
     ROS_ERROR("[DergbryanTracker]: Encoder msg is delayed by at least %d samples and is = %f", bound_num_samples_delay, msg_time_delay);
-    payload_spawned_=false; 
+    payload_spawned_ = false; 
   }
   else{
-    ROS_INFO_THROTTLE(20.0,"[DergbryanTracker]: Encoder angles and angular velocities returned are finite values and the angles are within the expected range");
-    payload_spawned_=true; // Values are finite and withing the expect range and thus can be used in the computations
+    ROS_INFO_THROTTLE(1.0,"[DergbryanTracker]: Encoder angles and angular velocities returned are finite values and the angles are within the expected range");
+    payload_spawned_ = true; // Values are finite and withing the expect range and thus can be used in the computations
   }
 
-  Eigen::Vector3d anchoring_pt_pose_position_rel ; // position of the payload in the body frame B
-  Eigen::Vector3d anchoring_pt_lin_vel_rel; //Velocity of the payload in the body frame B.
+  if (payload_spawned_){
+    Eigen::Vector3d anchoring_pt_pose_position_rel ; // position of the payload in the body frame B
+    Eigen::Vector3d anchoring_pt_lin_vel_rel; //Velocity of the payload in the body frame B.
 
-  //Compute position of the anchoring point in body base B. (i.e., relative to drone COM)
-  anchoring_pt_pose_position_rel[0]=_cable_length_*sin(encoder_angle_1_)*cos(encoder_angle_2_);
-  anchoring_pt_pose_position_rel[1]=_cable_length_*sin(encoder_angle_2_);
-  anchoring_pt_pose_position_rel[2]=-_cable_length_*cos(encoder_angle_1_)*cos(encoder_angle_2_);
-  
-  //Compute absolute position of the payload.
-  Eigen::Vector3d Op(uav_state_.pose.position.x, uav_state_.pose.position.y, uav_state_.pose.position.z);
-  Eigen::Vector3d Ov(uav_state_.velocity.linear.x, uav_state_.velocity.linear.y, uav_state_.velocity.linear.z);
-  Eigen::Matrix3d R = mrs_lib::AttitudeConverter(uav_state_.pose.orientation);
-
-  anchoring_pt_pose_position_=Op+R*anchoring_pt_pose_position_rel;
-  
-  //Compute absolute velocity of the anchoring point.
-
-  Eigen::Vector3d Ow(uav_state_.velocity.angular.x, uav_state_.velocity.angular.y, uav_state_.velocity.angular.z); 
-  Eigen::Matrix3d skew_Ow;
-  skew_Ow << 0.0     , -Ow(2), Ow(1),
-            Ow(2) , 0.0,       -Ow(0),
-            -Ow(1), Ow(0),  0.0;
-  Eigen::Matrix3d Rdot = skew_Ow*R;
+    //Compute position of the anchoring point in body base B. (i.e., relative to drone COM)
+    anchoring_pt_pose_position_rel[0]=_cable_length_*sin(encoder_angle_1_)*cos(encoder_angle_2_);
+    anchoring_pt_pose_position_rel[1]=_cable_length_*sin(encoder_angle_2_);
+    anchoring_pt_pose_position_rel[2]=-_cable_length_*cos(encoder_angle_1_)*cos(encoder_angle_2_);
     
-  anchoring_pt_lin_vel_rel[0]=_cable_length_*(cos(encoder_angle_1_)*cos(encoder_angle_2_)*encoder_velocity_1_
-    - sin(encoder_angle_1_)*sin(encoder_angle_2_)*encoder_velocity_2_);
-  anchoring_pt_lin_vel_rel[1]=_cable_length_*cos(encoder_angle_2_)*encoder_velocity_2_;
-  anchoring_pt_lin_vel_rel[2]=_cable_length_*(sin(encoder_angle_2_)*cos(encoder_angle_1_)*encoder_velocity_2_+
-  sin(encoder_angle_1_)*cos(encoder_angle_2_)*encoder_velocity_1_);
-  
-  anchoring_pt_lin_vel_=Ov+Rdot*anchoring_pt_pose_position_rel+R*anchoring_pt_lin_vel_rel;
+    //Compute absolute position of the payload.
+    Eigen::Vector3d Op(uav_state_.pose.position.x, uav_state_.pose.position.y, uav_state_.pose.position.z);
+    Eigen::Vector3d Ov(uav_state_.velocity.linear.x, uav_state_.velocity.linear.y, uav_state_.velocity.linear.z);
+    Eigen::Matrix3d R = mrs_lib::AttitudeConverter(uav_state_.pose.orientation);
 
-  geometry_msgs::Pose anchoring_pt_pose;
-  anchoring_pt_pose.position.x=anchoring_pt_pose_position_[0];
-  anchoring_pt_pose.position.y=anchoring_pt_pose_position_[1];
-  anchoring_pt_pose.position.z=anchoring_pt_pose_position_[2];
-  anchoring_pt_velocity_.linear.x=anchoring_pt_lin_vel_[0];
-  anchoring_pt_velocity_.linear.y=anchoring_pt_lin_vel_[1];
-  anchoring_pt_velocity_.linear.z=anchoring_pt_lin_vel_[2]; 
+    anchoring_pt_pose_position_ = Op + R*anchoring_pt_pose_position_rel;
+    
+    //Compute absolute velocity of the anchoring point.
+    Eigen::Vector3d Ow(uav_state_.velocity.angular.x, uav_state_.velocity.angular.y, uav_state_.velocity.angular.z); 
+    Eigen::Matrix3d skew_Ow;
+    skew_Ow << 0.0     , -Ow(2), Ow(1),
+              Ow(2) , 0.0,       -Ow(0),
+              -Ow(1), Ow(0),  0.0;
+    Eigen::Matrix3d Rdot = skew_Ow*R;
+      
+    anchoring_pt_lin_vel_rel[0] = _cable_length_*(cos(encoder_angle_1_)*cos(encoder_angle_2_)*encoder_velocity_1_
+                                - sin(encoder_angle_1_)*sin(encoder_angle_2_)*encoder_velocity_2_);
+    anchoring_pt_lin_vel_rel[1] = _cable_length_*cos(encoder_angle_2_)*encoder_velocity_2_;
+    anchoring_pt_lin_vel_rel[2] = _cable_length_*(sin(encoder_angle_2_)*cos(encoder_angle_1_)*encoder_velocity_2_+
+                                sin(encoder_angle_1_)*cos(encoder_angle_2_)*encoder_velocity_1_);
+    
+    anchoring_pt_lin_vel_ = Ov + Rdot*anchoring_pt_pose_position_rel + R*anchoring_pt_lin_vel_rel;
+  }
+  else{
+    ROS_ERROR("[DergbryanTracker]: Something is wrong with the encoder msg as payload_spawned_ = false and therefor the encoder and the anchoring point data are NOT globally updated.");
+  }
 }
 
 // TODO: update these callbacks which contain too hardcoded info as uav2
