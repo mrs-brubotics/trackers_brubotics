@@ -6297,7 +6297,7 @@ std::tuple< Eigen::Vector3d, Eigen::Vector3d> DergbryanTracker::getMinDistDirLin
 // | ----------------- load subscribtion callback ---------------- |
 // TODO: streamline, account for prev comments and document the load callbacks below
 void DergbryanTracker::GazeboLoadStatesCallback(const gazebo_msgs::LinkStatesConstPtr& loadmsg) {
-    // TODO: moreover, as this callabck changes global load state variables at asynchronous and higher rates than the tracker update function, one needs to ensure that the global variables used for the state are always the same everywhere (avoid using different global information as the update function is sequentially executed). For this I think at the start of the update function one can "freeze" those global variables. So create 2 sets of global load variables and use everywhere except in this callabck the frozen variables.
+    // TODO: moreover, as this callback changes global load state variables at asynchronous and higher rates than the tracker update function, one needs to ensure that the global variables used for the state are always the same everywhere (avoid using different global information as the update function is sequentially executed). For this I think at the start of the update function one can "freeze" those global variables. So create 2 sets of global load variables and use everywhere except in this callabck the frozen variables.
     // This callback function is only triggered when doing simulation, and will be used to unpack the data coming from the Gazebo topics.
     int anchoring_pt_index; // Stores the index at which the anchoring point appears in the message that is received from Gazebo. 
     std::vector<std::string> link_names = loadmsg->name; // Take a vector containing the name of each link in the simulation. Among these there is the links that are related to the payload. 
@@ -6373,18 +6373,34 @@ void DergbryanTracker::BacaLoadStatesCallback(const mrs_msgs::BacaProtocolConstP
     encoder_velocity_2_ = encoder_output;
   }
 
-  // Sanity check
+  // Sanity checks
+  /* in theory, the encoder angles would be possibe to have in the range [-M_PI/2.0, M_PI/2.0], but in practice
+  the encoder fixation is results in different offsets for each UAV*/
+  double encoder_angle_1_max = 1.24;
+  double encoder_angle_1_min = -2.04;
+  double encoder_angle_2_max = 2.13;
+  double encoder_angle_2_min = -1.61;
+  double msg_time_delay = std::abs(msg->stamp.toSec() - uav_state_.header.stamp.toSec());
+  int bound_num_samples_delay = 2;
   if (!std::isfinite(encoder_angle_1_)||!std::isfinite(encoder_angle_2_)) {
-    ROS_ERROR("[Se3CopyController]: NaN detected in encoder angles");
+    ROS_ERROR("[DergbryanTracker]: NaN detected in encoder angles");
     payload_spawned_=false; //Put payload_spawned back to false in case the encoder stops giving finite values during a flight. Epl stays equal to zero when this flag is false, avoiding strange behaviors or non finite Epl. 
   }
   else if (!std::isfinite(encoder_velocity_1_)||!std::isfinite(encoder_velocity_2_)) {
-    ROS_ERROR("[Se3CopyController]: NaN detected in encoder angular velocities");
+    ROS_ERROR("[DergbryanTracker]: NaN detected in encoder angular velocities");
     payload_spawned_=false;  
   }
+  else if ((encoder_angle_1_>encoder_angle_1_max && encoder_angle_1_< encoder_angle_1_min) || (encoder_angle_2_>encoder_angle_2_max && encoder_angle_2_< encoder_angle_2_min)) {
+    ROS_ERROR("[DergbryanTracker]: Out of expected range [-pi/2, pi/2] detected in encoder angles");
+    payload_spawned_=false; 
+  }
+  else if (msg_time_delay > dt_*bound_num_samples_delay) {
+    ROS_ERROR("[DergbryanTracker]: Encoder msg is delayed by at least %d samples and is = %f", bound_num_samples_delay, msg_time_delay);
+    payload_spawned_=false; 
+  }
   else{
-    ROS_INFO_THROTTLE(20.0,"[Se3CopyController]: Encoder angles returned are finite values");
-    payload_spawned_=true; // Values are finite and thus can be used to compute a finite
+    ROS_INFO_THROTTLE(20.0,"[DergbryanTracker]: Encoder angles and angular velocities returned are finite values and the angles are within the expected range");
+    payload_spawned_=true; // Values are finite and withing the expect range and thus can be used in the computations
   }
 
   Eigen::Vector3d anchoring_pt_pose_position_rel ; // position of the payload in the body frame B
