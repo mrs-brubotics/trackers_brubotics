@@ -113,7 +113,8 @@ private:
   ros::NodeHandle                                     nh2_;
   std::shared_ptr<mrs_uav_managers::CommonHandlers_t> common_handlers_;
   std::string _uav_name_;
- 
+  std::string _leader_uav_name_;  // leader uavID for 2uavs payload transport
+  std::string _follower_uav_name_;// follower uavID for 2uavs payload transport
   // | ------------------- declaring env (session/bashrc) parameters ------------------- |
   std::string _run_type_;       // set to "simulation" (for Gazebo simulation) OR "uav" (for hardware testing) defined in bashrc or session.yaml. Used for payload transport as payload position comes from two different callbacks depending on how the test is ran (in sim or on real UAV).
   std::string _type_of_system_; // defines the dynamic system model to simulate in the prediction using the related controller: can be 1uav_no_payload, 1uav_payload or 2uavs_payload. Set in session.yaml file.
@@ -261,7 +262,7 @@ private:
   ros::Publisher predicted_swing_angle_publisher_;           // predicted LOAD swing angles relative to body frame (between cable -mu and -z_B )
   ros::Publisher predicted_Tc_publisher_;                    // predicted LOAD tension in the cable, alongside mu
   //|------------------2UAVsLOAD------------------------|//
-  // For communication between uav1 (leader) and uav2 (follower):
+  // For communication between leader uav and follower uav:
   ros::Publisher uav_state_follower_for_leader_pub_;
   ros::Publisher anchoring_point_follower_for_leader_pub_;
   ros::Publisher position_cmd_follower_for_leader_pub_;
@@ -682,7 +683,7 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   ros::Time::waitForValid();
 
   // | ------------------- loading env (session/bashrc) parameters ------------------- |
-  ROS_INFO("[DergbryanTracker]: start loading envirenment (session/bashrc) parameters");
+  ROS_INFO("[DergbryanTracker]: start loading environment (session/bashrc) parameters");
   _run_type_          = getenv("RUN_TYPE");
   _type_of_system_    = getenv("TYPE_OF_SYSTEM"); 
   if(_type_of_system_=="1uav_payload" || _type_of_system_=="2uavs_payload"){ // load the required load transportation paramters only if the test is configured for it
@@ -693,8 +694,15 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
     else if (_type_of_system_=="2uavs_payload"){ 
       _load_mass_ = 0.50 * std::stod(getenv("LOAD_MASS")); // in case of 2uavs, each uav takes only half of the total load
       _load_length_ = std::stod(getenv("LOAD_LENGTH"));
+      _leader_uav_name_ = "uav"+std::to_string(std::stoi(getenv("LEADER_UAV_ID")));
+      _follower_uav_name_ = "uav"+std::to_string(std::stoi(getenv("FOLLOWER_UAV_ID")));
+      // Sanity check:
+      if(_uav_name_ !=_leader_uav_name_ && _uav_name_ !=_follower_uav_name_){
+        ROS_ERROR("[DergbryanTracker]: _uav_name_ is different from _leader_uav_name_ and _follower_uav_name_!");
+        ros::requestShutdown();
+      }
     }
-    // Sanity checks:
+    // More sanity checks:
     if(_cable_length_ <=0){
       ROS_ERROR("[DergbryanTracker]: _cable_length_ <=0, use a value > 0!");
       ros::requestShutdown();
@@ -909,16 +917,16 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
     predicted_uav2_swing_angle_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav2_swing_angle", 1);
     predicted_uav1_tension_force_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav1_tension_force", 1);
     predicted_uav2_tension_force_publisher_= nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav2_tension_force", 1);
-    if (_uav_name_ == "uav1"){  // leader
+    if (_uav_name_ == _leader_uav_name_){  // leader
       DSM_uav1_publisher_ = nh2_.advertise<trackers_brubotics::DSM>("DSM_leader", 1);
       DSM_uav2_publisher_ = nh2_.advertise<trackers_brubotics::DSM>("DSM_follower", 1);
     }
     // for communication between the leader and follower uavs: follower publishes state feedback to leader and leader commands the reference to the follower
-    if (_uav_name_ == "uav1"){  // leader
+    if (_uav_name_ == _leader_uav_name_){  // leader
       position_cmd_follower_from_leader_pub_ = nh2_.advertise<mrs_msgs::PositionCommand>("position_cmd_follower_from_leader", 1); 
       goal_position_cmd_follower_from_leader_pub_ = nh2_.advertise<mrs_msgs::PositionCommand>("goal_position_cmd_follower_from_leader", 1); 
     }
-    else if (_uav_name_ == "uav2"){ // follower
+    else if (_uav_name_ == _follower_uav_name_){ // follower
       uav_state_follower_for_leader_pub_ = nh2_.advertise<mrs_msgs::UavState>("uav_state_follower_for_leader", 1);
       anchoring_point_follower_for_leader_pub_ = nh2_.advertise<mrs_msgs::UavState>("anchoring_point_follower_for_leader", 1);
       position_cmd_follower_for_leader_pub_ = nh2_.advertise<mrs_msgs::PositionCommand>("position_cmd_follower_for_leader", 1); 
@@ -963,15 +971,15 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
     }
     if (_type_of_system_ == "2uavs_payload"){
       // for communication between the leader and follower uavs: leader subscribes to state feedback of follower and follower to the reference the leader commanded
-      if (_uav_name_ == "uav1"){  // leader
-        uav_state_follower_for_leader_sub_ = nh2_.subscribe("/uav2/control_manager/dergbryan_tracker/uav_state_follower_for_leader", 1, &DergbryanTracker::uav_state_follower_for_leader_callback, this, ros::TransportHints().tcpNoDelay());
-        anchoring_point_follower_for_leader_sub_ = nh2_.subscribe("/uav2/control_manager/dergbryan_tracker/anchoring_point_follower_for_leader", 1, &DergbryanTracker::anchoring_point_follower_for_leader_callback, this, ros::TransportHints().tcpNoDelay());
-        position_cmd_follower_for_leader_sub_ = nh2_.subscribe("/uav2/control_manager/dergbryan_tracker/position_cmd_follower_for_leader", 1, &DergbryanTracker::position_cmd_follower_for_leader_callback, this, ros::TransportHints().tcpNoDelay());
-        goal_position_cmd_follower_for_leader_sub_ = nh2_.subscribe("/uav2/control_manager/dergbryan_tracker/goal_position_cmd_follower_for_leader", 1, &DergbryanTracker::goal_position_cmd_follower_for_leader_callback, this, ros::TransportHints().tcpNoDelay());
+      if (_uav_name_ == _leader_uav_name_){  // leader
+        uav_state_follower_for_leader_sub_ = nh2_.subscribe("/"+_follower_uav_name_+"/control_manager/dergbryan_tracker/uav_state_follower_for_leader", 1, &DergbryanTracker::uav_state_follower_for_leader_callback, this, ros::TransportHints().tcpNoDelay());
+        anchoring_point_follower_for_leader_sub_ = nh2_.subscribe("/"+_follower_uav_name_+"/control_manager/dergbryan_tracker/anchoring_point_follower_for_leader", 1, &DergbryanTracker::anchoring_point_follower_for_leader_callback, this, ros::TransportHints().tcpNoDelay());
+        position_cmd_follower_for_leader_sub_ = nh2_.subscribe("/"+_follower_uav_name_+"/control_manager/dergbryan_tracker/position_cmd_follower_for_leader", 1, &DergbryanTracker::position_cmd_follower_for_leader_callback, this, ros::TransportHints().tcpNoDelay());
+        goal_position_cmd_follower_for_leader_sub_ = nh2_.subscribe("/"+_follower_uav_name_+"/control_manager/dergbryan_tracker/goal_position_cmd_follower_for_leader", 1, &DergbryanTracker::goal_position_cmd_follower_for_leader_callback, this, ros::TransportHints().tcpNoDelay());
       }
-      else if (_uav_name_ == "uav2"){ // follower
-        position_cmd_follower_from_leader_sub_ = nh2_.subscribe("/uav1/control_manager/dergbryan_tracker/position_cmd_follower_from_leader", 1, &DergbryanTracker::position_cmd_follower_from_leader_callback, this, ros::TransportHints().tcpNoDelay());
-        goal_position_cmd_follower_from_leader_sub_ = nh2_.subscribe("/uav1/control_manager/dergbryan_tracker/goal_position_cmd_follower_from_leader", 1, &DergbryanTracker::goal_position_cmd_follower_from_leader_callback, this, ros::TransportHints().tcpNoDelay());
+      else if (_uav_name_ == _follower_uav_name_){ // follower
+        position_cmd_follower_from_leader_sub_ = nh2_.subscribe("/"+_leader_uav_name_+"/control_manager/dergbryan_tracker/position_cmd_follower_from_leader", 1, &DergbryanTracker::position_cmd_follower_from_leader_callback, this, ros::TransportHints().tcpNoDelay());
+        goal_position_cmd_follower_from_leader_sub_ = nh2_.subscribe("/"+_leader_uav_name_+"/control_manager/dergbryan_tracker/goal_position_cmd_follower_from_leader", 1, &DergbryanTracker::goal_position_cmd_follower_from_leader_callback, this, ros::TransportHints().tcpNoDelay());
       }
     }
   }
@@ -1256,7 +1264,7 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
   */
   if(_type_of_system_=="2uavs_payload"){
       publishFollowerDataForLeaderIn2uavs_payload(position_cmd); // published by follower uav
-      if(_uav_name_ == "uav1"){
+      if(_uav_name_ == _leader_uav_name_){
         // check the accompanying callbacks of the leader uav if the msgs of the follower are received from timestamps which are not delayed too much wrt the current timestamp of the uav_state_.
         double time_delay_1 = std::abs(uav_state_follower_for_leader_.header.stamp.toSec() - uav_state_.header.stamp.toSec());
         double time_delay_2 = std::abs(anchoring_point_follower_for_leader_.header.stamp.toSec() - uav_state_.header.stamp.toSec());
@@ -1283,7 +1291,7 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
     if(_type_of_system_=="1uav_no_payload" || (_type_of_system_=="1uav_payload" && payload_spawned_)){
       computeERG(); // computes the applied_ref_x_, applied_ref_y_, applied_ref_z_
     } 
-    else if((_type_of_system_=="2uavs_payload" && _uav_name_ == "uav1" && payload_spawned_ && callback_data_follower_no_delay_)){
+    else if((_type_of_system_=="2uavs_payload" && _uav_name_ == _leader_uav_name_ && payload_spawned_ && callback_data_follower_no_delay_)){
       computeERG(); // computes the applied_ref_x_, applied_ref_y_, applied_ref_z_, position_cmd_follower_from_leader_, goal_position_cmd_follower_from_leader_
     }
     else if ((_type_of_system_=="2uavs_payload" || _type_of_system_=="1uav_payload") && !payload_spawned_){
@@ -1293,7 +1301,7 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
       applied_ref_y_ = goal_y_;
       applied_ref_z_ = goal_z_;
     }
-    else if (_type_of_system_=="2uavs_payload" && _uav_name_ == "uav2" && payload_spawned_){
+    else if (_type_of_system_=="2uavs_payload" && _uav_name_ == _follower_uav_name_ && payload_spawned_){
       // check the callback of the follower uav if the msgs of the leader is received from a timestamp which is not delayed too much wrt the current timestamp of the uav_state_.
       double time_delay_1 = std::abs(position_cmd_follower_from_leader_.header.stamp.toSec() - uav_state_.header.stamp.toSec());
       double time_delay_2 = std::abs(goal_position_cmd_follower_from_leader_.header.stamp.toSec() - uav_state_.header.stamp.toSec());
@@ -1491,14 +1499,14 @@ void DergbryanTracker::computePSCTrajectoryPredictions(mrs_msgs::PositionCommand
   */
   erg_predictions_theta_trusted_ = true; // initialize
 
-  if(_type_of_system_=="2uavs_payload" && _uav_name_=="uav1" && callback_data_follower_no_delay_){
-    trajectory_prediction_general_load_2UAV(position_cmd, uav_heading, last_attitude_cmd); // TODO: check 2 uav case later  
+  if(_type_of_system_=="2uavs_payload" && _uav_name_==_leader_uav_name_ && callback_data_follower_no_delay_){
+    trajectory_prediction_general_load_2UAV(position_cmd, uav_heading, last_attitude_cmd);  
   }
   else if(_type_of_system_=="1uav_no_payload" || (_type_of_system_=="1uav_payload" && payload_spawned_)){
     trajectory_prediction_general(position_cmd, uav_heading, last_attitude_cmd);  
   }  
   else{
-    ROS_WARN_THROTTLE(1.0, "[DergbryanTracker]: the case variables for the computePSCTrajectoryPredictions() routine did not allow to compute the trajectory predictions");
+    ROS_WARN_THROTTLE(1.0, "[DergbryanTracker]: the case variables for the computePSCTrajectoryPredictions() routine did not allow to compute the trajectory predictions for this uav");
   }
 }
 
@@ -1509,7 +1517,7 @@ This function ensures that the data of the follower UAV (i.e., state of the uav,
 The publishing of the payload state is only allowed from when the payload has spawned as to pevent NaN from being used in the trajectory predictions on the leader uav. 
 */
   if (_run_type_ == "simulation"){
-    if (_uav_name_ == "uav2"){  // only publish info of the follower UAV, not of the leader
+    if (_uav_name_ == _follower_uav_name_){  // only publish info of the follower UAV, not of the leader
       // 1) uav_state_follower_for_leader_pub_:
       try {
         uav_state_follower_for_leader_pub_.publish(uav_state_);
@@ -5696,7 +5704,7 @@ void DergbryanTracker::computeERG(){
       applied_ref_z_ = applied_ref_z_ + applied_ref_dot(2)*dt_;
     }
   }
-  else if(_type_of_system_=="2uavs_payload"){// && _uav_name_ == "uav1" && payload_spawned_ && callback_data_follower_no_delay_){
+  else if(_type_of_system_=="2uavs_payload"){// && _uav_name_ == _leader_uav_name_ && payload_spawned_ && callback_data_follower_no_delay_){
     // store leader and follower v and r in Eigen::vector3d
     // applied_ref_leader:
     Eigen::Vector3d applied_ref_leader;
@@ -6301,14 +6309,14 @@ void DergbryanTracker::GazeboLoadStatesCallback(const gazebo_msgs::LinkStatesCon
         }
       }
       if (_type_of_system_ == "2uavs_payload"){ // 2UAVs transporting beam payload case. Need to return different link if this UAV is the uav1 or 2. 
-        if (_uav_name_=="uav1"){
+        if (_uav_name_==_leader_uav_name_){
           if(link_names[i] == "bar::link_04"){ //link_04 corresponds to the anchoring point of uav1 (see bar.xacro)
               anchoring_pt_index = i;
               payload_spawned_ = true;
               //ROS_INFO_STREAM("payload_spawned_ for uav1 = \n" << payload_spawned_);
           }
         }
-        else if (_uav_name_=="uav2") { // for uav2
+        else if (_uav_name_==_follower_uav_name_) { // for uav2
           if(link_names[i] == "bar::link_01"){ //link_01 corresponds to the anchoring point of uav1 (see bar.xacro)
               anchoring_pt_index = i;
               payload_spawned_ = true;
