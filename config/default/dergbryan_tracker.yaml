@@ -1,5 +1,8 @@
 # issue: why can't we use the dergbryantracker.yaml in testing package? it shshould be loaded in the session.yaml
 use_derg: true # if false it bypasses the desired goal reference directly, but still computes the trajectory predictions
+
+run_ERG_each_N_updates: 1 # run ERG and trajectroy predictions after calling the update() routine N times
+
 network:
   robot_names: [
     uav1, uav2, uav3, uav4 , uav5, uav6, uav7, uav8, uav9 , uav10, uav11, uav12, uav13, uav14, uav15, uav16, uav17, uav18, uav19, uav20, uav21, uav22, uav23, uav24, uav25, uav26, uav27, uav28, uav29, uav30
@@ -15,7 +18,7 @@ constraints:
     # max thrust can be changed via _thrust_saturation_ ratio [0, 1] in the se3_brubotics.yaml
     extra_saturation_ratio: 0.92 #0.90 # ratio [0, 1] allows some overshoot over the hard thrust limit _thrust_saturation_ to reduce the chance of triggering the emergency controller after 1s of saturation
   payload:
-    swing: 1.72787596 # rad, max swing angle
+    swing: deg(84.8) # rad, max swing angle
   # other constraints need to be set in the constraint_manager.yaml
 
 #TODO bring strategy_id inside agent collision constraints under constraints
@@ -79,8 +82,8 @@ navigation_field:
 
 two_uavs_payload:
   callback_data_max_time_delay:
-    follower: 0.100 # = 10*dt_
-    leader: 0.200 # = 20*dt_
+    follower: 0.50 # = 10*_dt_0_
+    leader: 0.100 # = 20*_dt_0_
 
 enable_visualization: false   # RVIZ
 enable_diagnostics_pub: false # Publish diagnostics: distance between agents over time + settling time
