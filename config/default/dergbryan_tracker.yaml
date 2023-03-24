@@ -19,11 +19,41 @@ constraints:
     extra_saturation_ratio: 0.92 #0.90 # ratio [0, 1] allows some overshoot over the hard thrust limit _thrust_saturation_ to reduce the chance of triggering the emergency controller after 1s of saturation
   payload:
     swing: deg(84.8) # rad, max swing angle
+  static_obstacles:
+    # spheres:
+    cylinder:
+      # [name1,
+      #  name2]
+      name:           ["cylinder1", 
+                       "cylinder2"] 
+      # cylinder center position
+      # [x1, y1, z1,
+      #  x2, y2, z2]
+      position:       [6.0, 2.0, 0.5, 
+                      10.0, 6.0, 1.5,
+                       6.0, 6.0, 5.5]
+      # [x1, y1, z1, w1,
+      #  x2, y2, z2, w2]
+      orientation:    [0.0, 0.0, 0.0, 1.0, 
+                       0.0, 0.0, 0.0, 1.0,
+                       0.0, 0.0, 0.0, 1.0]
+      # [height1, radius1,
+      #  height2, radius2]
+      dimensions:     [1.0, 0.14, 
+                       3.0, 0.14,
+                       3.0, 0.14]
+      # [color1,
+      #  color2]
+      color:          [1.0, 0.2, 0.2, 0.9,
+                       1.0, 0.2, 0.2, 0.9,
+                       1.0, 0.2, 0.2, 0.9]
+      # number of cylinders (rows) to use from start to #rows
+      rows:           3 
   # other constraints need to be set in the constraint_manager.yaml
 
 #TODO bring strategy_id inside agent collision constraints under constraints
 strategy_id: 4 #1 #4 #0 / 1 / 2 / 3 / 4TODO / 5
-use_distance_xy: true # if enabled the distance ebtween tubes along z will be ignored. Only horizontal xy plane distance is used.
+use_distance_xy: true # if enabled the distance ebtween tubes and cylinders along z will be ignored. Only horizontal xy plane distance is used.
 agent_collision_volumes:
   sphere:
     radius: 5.0 # a step of 4.5m in xy does not lead to instability.
@@ -45,6 +75,7 @@ dynamic_safety_margin: # BE CAREFUL!
     o: 27 
     swing_c: 15.0
     Tc: 15.0
+    sc: 15.0
   enable_dsm:
     constant_dsm: -1.0 # 10 # used dsm if all dsms below are disabled or if the value is >= 0.0
     sT: true
@@ -54,6 +85,7 @@ dynamic_safety_margin: # BE CAREFUL!
     o: false
     swing_c: true
     Tc: true
+    sc: true
 navigation_field:
   attraction:
     smoothing_ratio: 0.10 # smoothing factor
@@ -70,20 +102,24 @@ navigation_field:
       influence_margin: 4.0 # called before sigma, now zeta
       static_safety_margin: 2.0 # d_w
       wall_position_x : 100000 # //Frank : Very big so don't disturb usual tests... TODO : link this yaml with world file
-    static_obstacle: #Frank : TO BE ADDED IN DERGTRACKER.CPP
+    static_obstacle:
       enabled: false
-      influence_margin: 4.0 # called before sigma, now zeta
-      static_safety_margin: 1.0 # delta_w
+      influence_margin: 4.0 
+      static_safety_margin: 0.07
       circulation_gain: 0.05 
-      circulation_type: "xy" # "xy", "xz", "yz", "xyz"
-      obstacle_position_x : 100000
-      obstacle_position_y: 10000
-      radius : 1 #0.5 +0.5 of security (see /worlds/...)
+      circulation_type: "xy" # only works for "xy" 
+      combination_type: "sum" # "max"
+    self_collision:
+      enabled: false
+      influence_margin: deg(70) 
+      static_safety_margin: deg(7)
 
 two_uavs_payload:
   callback_data_max_time_delay:
     follower: 0.50 # = 10*_dt_0_
     leader: 0.100 # = 20*_dt_0_
+  rotation_scaling: 0.1 # keep it small
+
 
 enable_visualization: false   # RVIZ
 enable_diagnostics_pub: false # Publish diagnostics: distance between agents over time + settling time
