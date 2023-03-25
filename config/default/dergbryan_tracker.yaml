@@ -29,9 +29,9 @@ constraints:
       # cylinder center position
       # [x1, y1, z1,
       #  x2, y2, z2]
-      position:       [6.0, 2.0, 0.5, 
-                      10.0, 6.0, 1.5,
-                       6.0, 6.0, 5.5]
+      position:       [8.0, 5.0, 1.25, 
+                      13.0, 9.0, 1.5,
+                       9.0, 9.0, 4.5]
       # [x1, y1, z1, w1,
       #  x2, y2, z2, w2]
       orientation:    [0.0, 0.0, 0.0, 1.0, 
@@ -39,7 +39,7 @@ constraints:
                        0.0, 0.0, 0.0, 1.0]
       # [height1, radius1,
       #  height2, radius2]
-      dimensions:     [1.0, 0.14, 
+      dimensions:     [2.5, 0.14, 
                        3.0, 0.14,
                        3.0, 0.14]
       # [color1,

@@ -132,6 +132,7 @@ private:
   std::string _type_of_system_; // defines the dynamic system model to simulate in the prediction using the related controller: can be 1uav_no_payload, 1uav_payload or 2uavs_payload. Set in session.yaml file.
   std::string _uav_type_;       // type of uav platform: f450, t650
   double _cable_length_;        // length of the cable between payload COM / anchoring point and COM of the UAV
+  double _cable_length_offset_; // accounts for the fact that the cable is attached below the UAV's COM
   double _cable_radius_ = 0.02; // radius of the cable + load between payload COM / anchoring point and COM of the UAV // TODO add via session
   double _load_mass_;           // feedforward load mass per uav  defined in the session.yaml of every test file (session variable also used by the xacro for Gazebo simulation)
   double _load_length_;         // length of bar load transported by 2uavs
@@ -715,6 +716,12 @@ private:
   trackers_brubotics::ComputationalTime ComputationalTime_msg_;
   // method Zakaria & Frank
   std::stack<clock_t> tictoc_stack; 
+
+
+
+  // debug:
+  double ROS_INFO_THROTTLE_PERIOD = 10.0*_dt_;
+  double ROS_WARN_THROTTLE_PERIOD = 10.0*_dt_;//1.0*_dt_;
 };
 //}
 
@@ -750,6 +757,8 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
 
   if(_type_of_system_=="1uav_payload" || _type_of_system_=="2uavs_payload"){ // load the required load transportation paramters only if the test is configured for it
     _cable_length_      = std::stod(getenv("CABLE_LENGTH")); 
+    _cable_length_offset_ = - std::stod(getenv("UAV_LOAD_OFFSET_Z")); 
+    _cable_length_ = _cable_length_ + _cable_length_offset_;
     if (_type_of_system_=="1uav_payload"){
       _load_mass_         = std::stod(getenv("LOAD_MASS")); // LOAD_MASS is the total load mass of the to be transported object
     }
@@ -5718,25 +5727,33 @@ void DergbryanTracker::computeERG(){
 
   /* Determining DSM_total */
   DSM_total_ = 100000; // initialize very high
-
   if(_enable_dsm_sT_){
-    ROS_INFO_THROTTLE(1.0,"[DergbryanTracker]: DSM_sT_ = %.03f", DSM_sT_);
+    ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: DSM_sT_ = %.03f", DSM_sT_);
     if(DSM_sT_ <= DSM_total_){
       DSM_total_ = DSM_sT_;
+    }
+    if(DSM_sT_ < 0){
+      ROS_WARN_THROTTLE(ROS_WARN_THROTTLE_PERIOD,"[DergbryanTracker]: DSM_sT_ = %.03f < 0!", DSM_sT_);
     }
   }
 
   if(_enable_dsm_sw_){
-    ROS_INFO_THROTTLE(1.0,"[DergbryanTracker]: DSM_sw_ = %.03f", DSM_sw_);
+    ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: DSM_sw_ = %.03f", DSM_sw_);
     if(DSM_sw_ <= DSM_total_){
       DSM_total_ = DSM_sw_;
+    }
+    if(DSM_sw_ < 0){
+      ROS_WARN_THROTTLE(ROS_WARN_THROTTLE_PERIOD,"[DergbryanTracker]: DSM_sw_ = %.03f < 0!", DSM_sw_);
     }
   }
 
   if(_enable_dsm_a_){
-    ROS_INFO_THROTTLE(1.0,"[DergbryanTracker]: DSM_a_ = %.03f", DSM_a_);
+    ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: DSM_a_ = %.03f", DSM_a_);
     if(DSM_a_ <= DSM_total_){
       DSM_total_ = DSM_a_;
+    }
+    if(DSM_a_ < 0){
+      ROS_WARN_THROTTLE(ROS_WARN_THROTTLE_PERIOD,"[DergbryanTracker]: DSM_a_ = %.03f < 0!", DSM_a_);
     }
   }
 
@@ -5746,38 +5763,50 @@ void DergbryanTracker::computeERG(){
   // }
 
   if(_enable_dsm_sc_ && payload_spawned_){
-    ROS_INFO_THROTTLE(1.0,"[DergbryanTracker]: DSM_sc_ = %.03f", DSM_sc_);
+    ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: DSM_sc_ = %.03f", DSM_sc_);
     if(DSM_sc_ <= DSM_total_ ){
       DSM_total_ = DSM_sc_;
+    }
+    if(DSM_sc_ < 0){
+      ROS_WARN_THROTTLE(ROS_WARN_THROTTLE_PERIOD,"[DergbryanTracker]: DSM_sc_ = %.03f < 0!", DSM_sc_);
     }
   }
 
   if(_enable_dsm_o_){
-    ROS_INFO_THROTTLE(1.0,"[DergbryanTracker]: DSM_o_ = %.03f", DSM_o_);
+    ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: DSM_o_ = %.03f", DSM_o_);
     if(DSM_o_ <= DSM_total_){
       DSM_total_ = DSM_o_;
+    }
+    if(DSM_o_ < 0){
+      ROS_WARN_THROTTLE(ROS_WARN_THROTTLE_PERIOD,"[DergbryanTracker]: DSM_o_ = %.03f < 0!", DSM_o_);
     }
   }
 
   if(_enable_dsm_swing_c_ && payload_spawned_){
-    ROS_INFO_THROTTLE(1.0,"[DergbryanTracker]: DSM_swing_c_ = %.03f", DSM_swing_c_);
+    ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: DSM_swing_c_ = %.03f", DSM_swing_c_);
     if(DSM_swing_c_ <= DSM_total_ ){
       DSM_total_ = DSM_swing_c_;
+    }
+    if(DSM_swing_c_ < 0){
+      ROS_WARN_THROTTLE(ROS_WARN_THROTTLE_PERIOD,"[DergbryanTracker]: DSM_swing_c_ = %.03f < 0!", DSM_swing_c_);
     }
   }
 
   if(_enable_dsm_Tc_ && payload_spawned_){
-    ROS_INFO_THROTTLE(1.0,"[DergbryanTracker]: DSM_Tc_ = %.03f", DSM_Tc_);
+    ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: DSM_Tc_ = %.03f", DSM_Tc_);
     if(DSM_Tc_ <= DSM_total_){
       DSM_total_ = DSM_Tc_;
+    }
+    if(DSM_Tc_ < 0){
+      ROS_WARN_THROTTLE(ROS_WARN_THROTTLE_PERIOD,"[DergbryanTracker]: DSM_Tc_ = %.03f < 0!", DSM_Tc_);
     }
   }
 
   if(!_enable_dsm_sT_ && !_enable_dsm_sw_ && !_enable_dsm_a_){
-    ROS_WARN_THROTTLE(1.0, "[DergbryanTracker]: all default UAV DSMs (thrust, body rate, agents) are disabled! \n");
+    ROS_WARN_THROTTLE(ROS_WARN_THROTTLE_PERIOD, "[DergbryanTracker]: all default UAV DSMs (thrust, body rate, agents) are disabled! \n");
   }
   if(!_enable_dsm_swing_c_ && !_enable_dsm_Tc_ && payload_spawned_){
-    ROS_WARN_THROTTLE(1.0, "[DergbryanTracker]: all payload specific DSMs (swing, cable tension) are disabled although payload is spawned! \n");
+    ROS_WARN_THROTTLE(ROS_WARN_THROTTLE_PERIOD, "[DergbryanTracker]: all payload specific DSMs (swing, cable tension) are disabled although payload is spawned! \n");
   }
 
   if(_constant_dsm_ >= 0.0){ // if all of the DSMs are disabled or a positive constant DSM is added, TODO add other DSMs here
@@ -5786,14 +5815,14 @@ void DergbryanTracker::computeERG(){
   }
 
   if(DSM_total_ < 0.0){ // make sure it is >= 0
-    ROS_WARN_STREAM("[DergbryanTracker]: DSM_total_ = 0.0 since DSM_total_ = " << DSM_total_);
+    ROS_WARN_STREAM("[DergbryanTracker]: DSM_total_ saturated to 0.0 since DSM_total_ was negative: " << DSM_total_);
     DSM_total_ = 0.0;
   }
   if(!erg_predictions_trusted_){
     DSM_total_ = 0.0;
     ROS_WARN_STREAM("[DergbryanTracker]: DSM_total_ = 0.0 since erg_predictions_trusted_=false");
   }
-  ROS_INFO_THROTTLE(1.0,"[DergbryanTracker]: DSM_total_ = %.03f", DSM_total_);
+  ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: DSM_total_ = %.03f", DSM_total_);
 
   // Further prepare DSM_msg_:
   DSM_msg_.stamp = uav_state_.header.stamp;
@@ -5840,6 +5869,11 @@ void DergbryanTracker::computeERG(){
 
   // | ------------------------------ D-ERG output -------------------------------|
   MatrixXd applied_ref_dot = MatrixXd::Zero(3, 1); // derivative of the applied reference
+  ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: translation NF_total = [%0.2f,%0.2f,%0.2f] with norm %0.2f", NF_total[0], NF_total[1], NF_total[2], NF_total.norm()); 
+  ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: translation NF_att_leader_follower_transl = [%0.2f,%0.2f,%0.2f] with norm %0.2f", NF_att_leader_follower_transl[0], NF_att_leader_follower_transl[1], NF_att_leader_follower_transl[2], NF_att_leader_follower_transl.norm()); 
+  ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: translation NF_o = [%0.2f,%0.2f,%0.2f] with norm %0.2f", NF_o[0], NF_o[1], NF_o[2], NF_o.norm()); 
+  ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: translation NF_a = [%0.2f,%0.2f,%0.2f] with norm %0.2f", NF_a[0], NF_a[1], NF_a[2], NF_a.norm()); 
+  
   applied_ref_dot = DSM_total_*NF_total;
   if(_type_of_system_!="2uavs_payload"){
     if(erg_predictions_trusted_){
@@ -5891,67 +5925,74 @@ void DergbryanTracker::computeERG(){
     applied_ref_follower = applied_ref_follower + applied_ref_dot*_dt_;
 
     // update applied_ref for rotation parts:
+    Eigen::Vector3d rot_axis; // declare
+    double max_rot_angle; // declare
+    double rot_angle; // declare
+    Eigen::Affine3d T_rt; // declare
     /* rotation of applied reference wrt goal (attraction)*/
-    // compute unit axis of rotation of v:
-    Eigen::Vector3d rot_axis = (applied_ref_leader-applied_ref_follower).cross(goal_leader-goal_follower);
-    // max rotation angle required to align v with r
-    double max_rot_angle = std::acos((applied_ref_leader-applied_ref_follower).dot(goal_leader-goal_follower)/((applied_ref_leader-applied_ref_follower).norm()*(goal_leader-goal_follower).norm()));
-    // define angle of rotation for this v update
-    double rot_angle = _rotation_scaling_*_dt_*DSM_total_; // TODO: tune scaling
-    if(rot_axis.norm()<0.001){ // both lines v,r between leader-follower are already parallel
-      // // in case angle near M_PI
-      // if(max_rot_angle >= M_PI*0.95){
-      //   // TODO: why is perpendicular to bar required? it can be any vector in the COM, so easier to just choose the z axis of world frame
-      //   // choose any unit vector perpendicular to bar. We choose the one with max z coordinate:
-      //   rot_axis = ((applied_ref_leader-applied_ref_follower).cross(Eigen::Vector3d::UnitZ())).cross(applied_ref_leader-applied_ref_follower);
-      //   rot_axis = rot_axis/rot_axis.norm(); // norm is never 0 as first cross is never between parallel vectors as drone references can never physically be only displaced in z
-      // } else{ // close to 0
-      //   rot_angle = 0.0;
-        rot_axis = Eigen::Vector3d::UnitZ(); // could be any axis
-      // }
-    } 
-    else{ // do a rotation with fixed angle
-      rot_axis = rot_axis/rot_axis.norm(); // make unitary
-      // if(std::abs(rot_axis[2]) < std::sin(10.0/180.0*M_PI) && max_rot_angle >= 0.75*M_PI/2.0){ 
-      //   /* this condition deals with rotations about axes that are inside the xy plane tilted with +-10°.
-      //   When the max_rot_angle is large, this can cause the system to be pushed in a configuration where it 
-      //   self-collides (if self-collision is disabled) or in a deadlock. Therefor we change the rot_axis to
-      //   the one in the plane of the system (cables, load) such that these problems are prevented. The only
-      //   drawback is that the full rotation can take longer.*/
-      //   // choose any unit vector perpendicular to bar. We choose the one with max z coordinate:
-      //   int sign = 1;
-      //   if(rot_axis[2] < 0.0){
-      //     sign = -1;
-      //   }
-      //   rot_axis = Eigen::Vector3d::UnitZ()*sign;
-      //   // rot_axis = ((applied_ref_leader-applied_ref_follower).cross(Eigen::Vector3d::UnitZ()*sign)).cross(applied_ref_leader-applied_ref_follower);
-      //   rot_axis = rot_axis/rot_axis.norm(); // make unitary
-      // }
-    }
-    rot_angle = std::min(rot_angle, max_rot_angle);
-    // apply the rotation
+    // if(index_cylinder_NF_o_co_amplitude_max_ < 0){
+    if(NF_o_co_amplitude_max_ < 0.8){ // 0.5
+      // compute unit axis of rotation of v:
+      rot_axis = (applied_ref_leader-applied_ref_follower).cross(goal_leader-goal_follower);
+      // max rotation angle required to align v with r
+      max_rot_angle = std::acos((applied_ref_leader-applied_ref_follower).dot(goal_leader-goal_follower)/((applied_ref_leader-applied_ref_follower).norm()*(goal_leader-goal_follower).norm()));
+      // define angle of rotation for this v update
+      rot_angle = _rotation_scaling_*_dt_*DSM_total_; // TODO: tune scaling
+      if(rot_axis.norm()<0.001){ // both lines v,r between leader-follower are already parallel
+        // // in case angle near M_PI
+        // if(max_rot_angle >= M_PI*0.95){
+        //   // TODO: why is perpendicular to bar required? it can be any vector in the COM, so easier to just choose the z axis of world frame
+        //   // choose any unit vector perpendicular to bar. We choose the one with max z coordinate:
+        //   rot_axis = ((applied_ref_leader-applied_ref_follower).cross(Eigen::Vector3d::UnitZ())).cross(applied_ref_leader-applied_ref_follower);
+        //   rot_axis = rot_axis/rot_axis.norm(); // norm is never 0 as first cross is never between parallel vectors as drone references can never physically be only displaced in z
+        // } else{ // close to 0
+        //   rot_angle = 0.0;
+          rot_axis = Eigen::Vector3d::UnitZ(); // could be any axis
+        // }
+      } 
+      else{ // do a rotation with fixed angle
+        rot_axis = rot_axis/rot_axis.norm(); // make unitary
+        // if(std::abs(rot_axis[2]) < std::sin(10.0/180.0*M_PI) && max_rot_angle >= 0.75*M_PI/2.0){ 
+        //   /* this condition deals with rotations about axes that are inside the xy plane tilted with +-10°.
+        //   When the max_rot_angle is large, this can cause the system to be pushed in a configuration where it 
+        //   self-collides (if self-collision is disabled) or in a deadlock. Therefor we change the rot_axis to
+        //   the one in the plane of the system (cables, load) such that these problems are prevented. The only
+        //   drawback is that the full rotation can take longer.*/
+        //   // choose any unit vector perpendicular to bar. We choose the one with max z coordinate:
+        //   int sign = 1;
+        //   if(rot_axis[2] < 0.0){
+        //     sign = -1;
+        //   }
+        //   rot_axis = Eigen::Vector3d::UnitZ()*sign;
+        //   // rot_axis = ((applied_ref_leader-applied_ref_follower).cross(Eigen::Vector3d::UnitZ()*sign)).cross(applied_ref_leader-applied_ref_follower);
+        //   rot_axis = rot_axis/rot_axis.norm(); // make unitary
+        // }
+      }
+      rot_angle = std::min(rot_angle, max_rot_angle);
+      // apply the rotation
 
-    // TEST: does not work!
-    // Eigen::Vector3d applied_ref_leader_test = applied_ref_leader;
-    // Eigen::Vector3d applied_ref_follower_test = applied_ref_follower;
-    // Eigen::Vector3d translation = 0.5*(applied_ref_leader_test + applied_ref_follower_test);  
-    // // Transform<double,3,Affine> T_rt_test = Translation3d(translation) * AngleAxisd(rot_angle, rot_axis);
-    // Transform<double,3,Affine> T_rt_test = AngleAxisd(rot_angle, rot_axis)*Translation3d(translation);
-    // applied_ref_leader_test =  T_rt_test * (applied_ref_leader_test-applied_ref_follower_test)*0.5;
-    // applied_ref_follower_test = T_rt_test * (applied_ref_follower_test-applied_ref_leader_test)*0.5;
-    // ROS_INFO_THROTTLE(0.01,"After goal alignment: applied_ref_leader_test = [%0.2f,%0.2f,%0.2f] and applied_ref_follower_test = [%0.2f,%0.2f,%0.2f]", applied_ref_leader_test[0],applied_ref_leader_test[1], applied_ref_leader_test[2], applied_ref_follower_test[0], applied_ref_follower_test[1], applied_ref_follower_test[2]); 
-   
-    // original:
-    Eigen::Affine3d T_rt;
-    T_rt = (Eigen::AngleAxisd(rot_angle, rot_axis)); // homogeneous transformation matrix
-    applied_ref_leader = 0.5*(applied_ref_leader + applied_ref_follower) + T_rt.rotation() * (applied_ref_leader-applied_ref_follower)*0.5;
-    applied_ref_follower = 0.5*(applied_ref_leader + applied_ref_follower) + T_rt.rotation() * (applied_ref_follower-applied_ref_leader)*0.5;
-    ROS_INFO_THROTTLE(0.01,"Goal alignment: rotate applied references leader-follower around unit vector [%0.2f,%0.2f,%0.2f] over angle of %0.5fdeg", rot_axis[0],rot_axis[1], rot_axis[2], rot_angle); 
-      
+      // TEST: does not work!
+      // Eigen::Vector3d applied_ref_leader_test = applied_ref_leader;
+      // Eigen::Vector3d applied_ref_follower_test = applied_ref_follower;
+      // Eigen::Vector3d translation = 0.5*(applied_ref_leader_test + applied_ref_follower_test);  
+      // // Transform<double,3,Affine> T_rt_test = Translation3d(translation) * AngleAxisd(rot_angle, rot_axis);
+      // Transform<double,3,Affine> T_rt_test = AngleAxisd(rot_angle, rot_axis)*Translation3d(translation);
+      // applied_ref_leader_test =  T_rt_test * (applied_ref_leader_test-applied_ref_follower_test)*0.5;
+      // applied_ref_follower_test = T_rt_test * (applied_ref_follower_test-applied_ref_leader_test)*0.5;
+      // ROS_INFO_THROTTLE(0.01,"After goal alignment: applied_ref_leader_test = [%0.2f,%0.2f,%0.2f] and applied_ref_follower_test = [%0.2f,%0.2f,%0.2f]", applied_ref_leader_test[0],applied_ref_leader_test[1], applied_ref_leader_test[2], applied_ref_follower_test[0], applied_ref_follower_test[1], applied_ref_follower_test[2]); 
+    
+      // original:
+      T_rt = (Eigen::AngleAxisd(rot_angle, rot_axis)); // homogeneous transformation matrix
+      applied_ref_leader = 0.5*(applied_ref_leader + applied_ref_follower) + T_rt.rotation() * (applied_ref_leader-applied_ref_follower)*0.5;
+      applied_ref_follower = 0.5*(applied_ref_leader + applied_ref_follower) + T_rt.rotation() * (applied_ref_follower-applied_ref_leader)*0.5;
+      ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: Goal alignment: rotate applied references leader-follower around unit vector [%0.2f,%0.2f,%0.2f] over angle of %0.5fdeg", rot_axis[0],rot_axis[1], rot_axis[2], rot_angle); 
+    } 
     /* rotation around cylindrical obstacles (repulsion)*/
     // TODO: only works for cylinders if _combination_type_o_ == "max"
+
     if(index_cylinder_NF_o_co_amplitude_max_ >= 0){
-      ROS_INFO_THROTTLE(0.01,"Obstacle-avoidance: index_cylinder_NF_o_co_amplitude_max_: %0.2d >= 0", index_cylinder_NF_o_co_amplitude_max_);
+    // if(false){
+      ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"Obstacle-avoidance: index_cylinder_NF_o_co_amplitude_max_: %d >= 0, NF_o_co_amplitude_max_: %f", index_cylinder_NF_o_co_amplitude_max_, NF_o_co_amplitude_max_);
       /* positions */
       Eigen::Vector3d cyl_center_pos(
         _static_obstacles_cylinder_positions_[_cols_positions_*index_cylinder_NF_o_co_amplitude_max_+0],
@@ -5978,7 +6019,7 @@ void DergbryanTracker::computeERG(){
       double S_obs_max = cyl_top_pos[2] + cyl_radius;
 
       if((S_obs_min <= S_v_min && S_v_min <= S_obs_max) || (S_obs_min <= S_v_max && S_v_max <= S_obs_max)){
-        ROS_INFO_THROTTLE(0.01,"Obstacle-avoidance: S_obs_min: %0.2f <= S_v_min: %0.2f <= S_obs_max: %0.2f || S_obs_min: %0.2f <= S_v_max: %0.2f <= S_obs_max: %0.2f", S_obs_min,S_v_min,S_obs_max,S_obs_min,S_v_max,S_obs_max);
+        ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"Obstacle-avoidance: S_obs_min: %0.2f <= S_v_min: %0.2f <= S_obs_max: %0.2f || S_obs_min: %0.2f <= S_v_max: %0.2f <= S_obs_max: %0.2f", S_obs_min,S_v_min,S_obs_max,S_obs_min,S_v_max,S_obs_max);
         // compute parametrization factor lambda for cylinder wrt load */
 
         /* TODO: only do this for load and not full trapezoid. 
@@ -6003,10 +6044,11 @@ void DergbryanTracker::computeERG(){
         rot_angle = sgn(max_rot_angle)*std::min(rot_angle, std::abs(max_rot_angle));
 
         // apply the rotation
+        //rot_angle = 0.0; //!!!!!!!!!!!!!!!!!!!!!!!!!
         T_rt = (Eigen::AngleAxisd(rot_angle, rot_axis)); // homogeneous transformation matrix
         applied_ref_leader = 0.5*(applied_ref_leader + applied_ref_follower) + T_rt.rotation() * (applied_ref_leader-applied_ref_follower)*0.5;
         applied_ref_follower = 0.5*(applied_ref_leader + applied_ref_follower) + T_rt.rotation() * (applied_ref_follower-applied_ref_leader)*0.5;
-        ROS_INFO_THROTTLE(0.01,"Obstacle-avoidance: rotate applied references leader-follower around unit vector [%0.2f,%0.2f,%0.2f] over angle of %0.5fdeg", rot_axis[0],rot_axis[1], rot_axis[2], rot_angle);
+        ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: Obstacle-avoidance: rotate applied references leader-follower around unit vector [%0.2f,%0.2f,%0.2f] over angle of %0.5fdeg", rot_axis[0],rot_axis[1], rot_axis[2], rot_angle);
       }
     }
 
@@ -6026,29 +6068,29 @@ void DergbryanTracker::computeERG(){
       double angle_to_collision; // >=0
       // TODO: first compute angles, compute most scherpe, then define axis
       if(lambda_leader > lambda_follower){ // leader is closer to bar
-        // ROS_INFO_THROTTLE(0.01," if: lambda_leader = %0.5f", lambda_leader); 
-        // ROS_INFO_THROTTLE(0.01," if: lambda_follower = %0.5f", lambda_follower); 
+        // ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD," if: lambda_leader = %0.5f", lambda_leader); 
+        // ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD," if: lambda_follower = %0.5f", lambda_follower); 
         angle_to_collision = std::asin((applied_ref_leader - point_load_lambda_leader).norm()/_cable_length_);
-        // ROS_INFO_THROTTLE(0.01," if: angle_to_collision = %0.5f", angle_to_collision); 
+        // ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD," if: angle_to_collision = %0.5f", angle_to_collision); 
         rot_axis = (Eigen::Vector3d::UnitZ()).cross(applied_ref_follower - applied_ref_leader);
       } 
       else{ // follower is closer to bar
-        // ROS_INFO_THROTTLE(0.01," else: lambda_leader = %0.5f", lambda_leader); 
-        // ROS_INFO_THROTTLE(0.01," else: lambda_follower = %0.5f", lambda_follower);
+        // ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD," else: lambda_leader = %0.5f", lambda_leader); 
+        // ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD," else: lambda_follower = %0.5f", lambda_follower);
         angle_to_collision = std::asin((applied_ref_follower - point_load_lambda_follower).norm()/_cable_length_);
-        // ROS_INFO_THROTTLE(0.01," else: angle_to_collision = %0.5f", angle_to_collision); 
+        // ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD," else: angle_to_collision = %0.5f", angle_to_collision); 
         rot_axis = (Eigen::Vector3d::UnitZ()).cross(applied_ref_leader - applied_ref_follower);
       }
       rot_axis = rot_axis/rot_axis.norm(); // make unitary, vectors are never // so no 0-norm check needed
       double dist = angle_to_collision - angle_on_collision;
       double linear_amplitude = std::max((_zeta_sc_ - dist)/(_zeta_sc_ - _delta_sc_), 0.0);
       rot_angle = _rotation_scaling_*linear_amplitude*_dt_*DSM_total_; // smaller or equal to attraction
-      ROS_INFO_THROTTLE(0.01,"Self-collision: linear_amplitude = %0.5f", linear_amplitude); 
+      ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"Self-collision: linear_amplitude = %0.5f", linear_amplitude); 
       // apply the rotation
       T_rt = (Eigen::AngleAxisd(rot_angle, rot_axis)); // homogeneous transformation matrix
       applied_ref_leader = 0.5*(applied_ref_leader + applied_ref_follower) + T_rt.rotation() * (applied_ref_leader-applied_ref_follower)*0.5;
       applied_ref_follower = 0.5*(applied_ref_leader + applied_ref_follower) + T_rt.rotation() * (applied_ref_follower-applied_ref_leader)*0.5;
-      ROS_INFO_THROTTLE(0.01,"Self-collision: rotate applied references leader-follower around unit vector [%0.2f,%0.2f,%0.2f] over angle of %0.5fdeg", rot_axis[0],rot_axis[1], rot_axis[2], rot_angle);
+      ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: Self-collision: rotate applied references leader-follower around unit vector [%0.2f,%0.2f,%0.2f] over angle of %0.5fdeg", rot_axis[0],rot_axis[1], rot_axis[2], rot_angle);
 
       if((linear_amplitude > 0.6) && ((applied_ref_leader-applied_ref_follower).dot(goal_leader-goal_follower)< -0.8)){
         rot_axis = Eigen::Vector3d::UnitZ();
@@ -6056,11 +6098,11 @@ void DergbryanTracker::computeERG(){
         T_rt = (Eigen::AngleAxisd(rot_angle, rot_axis)); // homogeneous transformation matrix
         if(lambda_leader > lambda_follower){ // leader is closer to bar
           applied_ref_leader = applied_ref_follower + T_rt.rotation() * (applied_ref_leader-applied_ref_follower);
-          ROS_INFO_THROTTLE(0.01,"Self-collision: rotate applied reference leader around unit vector [%0.2f,%0.2f,%0.2f] over angle of %0.5fdeg", rot_axis[0],rot_axis[1], rot_axis[2], rot_angle);
+          ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: Self-collision: rotate applied reference leader around unit vector [%0.2f,%0.2f,%0.2f] over angle of %0.5fdeg", rot_axis[0],rot_axis[1], rot_axis[2], rot_angle);
         } 
         else{ // follower is closer to bar
           applied_ref_follower = applied_ref_leader + T_rt.rotation() * (applied_ref_follower-applied_ref_leader);
-          ROS_INFO_THROTTLE(0.01,"Self-collision: rotate applied reference follower around unit vector [%0.2f,%0.2f,%0.2f] over angle of %0.5fdeg", rot_axis[0],rot_axis[1], rot_axis[2], rot_angle);
+          ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: Self-collision: rotate applied reference follower around unit vector [%0.2f,%0.2f,%0.2f] over angle of %0.5fdeg", rot_axis[0],rot_axis[1], rot_axis[2], rot_angle);
         }
       }
     }
@@ -6501,6 +6543,7 @@ double DergbryanTracker::computeDSM_oc_2uavspayload_trajpred(geometry_msgs::Pose
     Eigen::Vector3d load_pos(predicted_load_poses.poses[i].position.x,
                              predicted_load_poses.poses[i].position.y,
                              predicted_load_poses.poses[i].position.z);
+
     Eigen::Vector3d load_pos_other_uav(predicted_load_poses_other_uav.poses[i].position.x,
                                        predicted_load_poses_other_uav.poses[i].position.y,
                                        predicted_load_poses_other_uav.poses[i].position.z);
@@ -6522,6 +6565,7 @@ double DergbryanTracker::computeDSM_oc_2uavspayload_trajpred(geometry_msgs::Pose
       double dist_temp = (point_link_lambda - uav_pos).norm() - _Ra_ - cyl_radius;
       if (dist_temp < min_dist){  // choose smallest over the predicted trajectory
         min_dist = dist_temp;
+        //ROS_INFO_STREAM("DSM cylinder wrt UAV: min_dist = \n" << min_dist);
       }
       /* compute parametrization factors mu and nu of cylinder wrt cable */
       Eigen::Vector3d point_mu_cyl;
@@ -6530,6 +6574,7 @@ double DergbryanTracker::computeDSM_oc_2uavspayload_trajpred(geometry_msgs::Pose
       dist_temp = (point_mu_cyl - point_nu_cable).norm() - _cable_radius_ - cyl_radius;
       if (dist_temp < min_dist){  // choose smallest over the predicted trajectory
         min_dist = dist_temp;
+        //ROS_INFO_STREAM("DSM cylinder wrt cable: min_dist = \n" << min_dist);
       }
       /* compute parametrization factors mu2 and nu2 of cylinder wrt bar load */
       Eigen::Vector3d point_mu_cyl2;
@@ -6538,9 +6583,14 @@ double DergbryanTracker::computeDSM_oc_2uavspayload_trajpred(geometry_msgs::Pose
       dist_temp = (point_mu_cyl2 - point_nu_bar).norm() - _load_radius_ - cyl_radius;
       if (dist_temp < min_dist){  // choose smallest over the predicted trajectory
         min_dist = dist_temp;
+        //ROS_INFO_STREAM("[DergbryanTracker]: DSM cylinder wrt bar load: min_dist = \n" << min_dist);
       }
     }
+    if(i == 0){
+      ROS_INFO_STREAM("[DergbryanTracker]: Cylinder-UAV: current (i=0) min_dist = " << min_dist);
+    }
   }
+  // ROS_INFO_STREAM("[DergbryanTracker]: Cylinder-UAV: predicted min_dist = " << min_dist);
   double DSM_oc = _kappa_o_*min_dist/_zeta_o_; // scaled DSM 
   return DSM_oc;
 }
@@ -6579,7 +6629,7 @@ Eigen::Vector3d DergbryanTracker::computeNF_oc(void){
     // Non-conservative part:
     Eigen::Vector3d NF_o_nco = Vector3d::Zero(3);
     if (NF_o_co_amplitude > 0.0) { // a non-zero repulsion 
-        NF_o_nco = calcCirculationField(_alpha_o_, _circ_type_o_, NF_o_co_direction[0], NF_o_co_direction[1], NF_o_co_direction[2], NF_o_co_amplitude);
+        NF_o_nco = calcCirculationField(_alpha_o_, _circ_type_o_, NF_o_co_direction[0], NF_o_co_direction[1], NF_o_co_direction[2], NF_o_co_direction.norm());
     }
     // Combine:
     if(_combination_type_o_ == "sum"){  
@@ -6663,7 +6713,7 @@ Eigen::Vector3d DergbryanTracker::computeNF_oc_1uavpayload(void){
     // Non-conservative part:
     Eigen::Vector3d NF_o_nco = Vector3d::Zero(3);
     if (NF_o_co_amplitude > 0.0) { // a non-zero repulsion 
-        NF_o_nco = calcCirculationField(_alpha_o_, _circ_type_o_, NF_o_co_direction[0], NF_o_co_direction[1], NF_o_co_direction[2], NF_o_co_amplitude);
+        NF_o_nco = calcCirculationField(_alpha_o_, _circ_type_o_, NF_o_co_direction[0], NF_o_co_direction[1], NF_o_co_direction[2], NF_o_co_direction.norm());
     }
     // Combine:
     if(_combination_type_o_ == "sum"){  
@@ -6681,7 +6731,6 @@ Eigen::Vector3d DergbryanTracker::computeNF_oc_1uavpayload(void){
 
 
 Eigen::Vector3d DergbryanTracker::computeNF_oc_2uavspayload(void){
-  // TODO : finish this fucntion, think about how circulation affects this 2 uav case? diable? and better to rotate whole body 
   Eigen::Vector3d NF_o = Vector3d::Zero(3);
   double NF_o_co_amplitude_max = -1.0; // negative value such that for j == 0 _combination_type_o_ == "max" sets NF_o
   Eigen::Vector3d uav_applied_ref_pos(applied_ref_x_,
@@ -6690,11 +6739,18 @@ Eigen::Vector3d DergbryanTracker::computeNF_oc_2uavspayload(void){
   Eigen::Vector3d load_applied_ref_pos(applied_ref_x_,
                                        applied_ref_y_,
                                        applied_ref_z_ - _cable_length_);
-
+  Eigen::Vector3d other_uav_applied_ref_pos(position_cmd_follower_for_leader_.position.x,
+                                            position_cmd_follower_for_leader_.position.y,
+                                            position_cmd_follower_for_leader_.position.z);
   Eigen::Vector3d load_applied_ref_pos_other_uav(position_cmd_follower_for_leader_.position.x,
                                                  position_cmd_follower_for_leader_.position.y,
                                                  position_cmd_follower_for_leader_.position.z - _cable_length_);
   index_cylinder_NF_o_co_amplitude_max_ = -1; // init
+  NF_o_co_amplitude_max_ = 0.0; // init
+  double dist_at_NF_o_co_amplitude_max = 0; // init
+  double dist;
+  Eigen::Vector3d NF_o_co_max; // init
+  Eigen::Vector3d NF_o_nco_max; // init
   for(int j = 0; j<_static_obstacles_cylinder_rows_; j++){ 
     /* positions */
     Eigen::Vector3d cyl_center_pos(_static_obstacles_cylinder_positions_[_cols_positions_*j+0],
@@ -6711,65 +6767,110 @@ Eigen::Vector3d DergbryanTracker::computeNF_oc_2uavspayload(void){
     double max_radius_uav_cable_load = std::max(_Ra_, _cable_radius_);
     max_radius_uav_cable_load = std::max(max_radius_uav_cable_load, _load_radius_);
 
-    // 1) compute parametrization factor lambda for cylinder wrt uav */
-    double lambda = getLambda(cyl_bottom_pos, cyl_top_pos, uav_applied_ref_pos, true);
-    Eigen::Vector3d point_link_lambda = cyl_bottom_pos + lambda*(cyl_top_pos - cyl_bottom_pos);
+    double min_dist = 10000; // init
+
+    double lambda;
+    // 1a) compute parametrization factor lambda for cylinder wrt uav leader */
+    lambda = getLambda(cyl_bottom_pos, cyl_top_pos, uav_applied_ref_pos, true);
+    Eigen::Vector3d point_cyl_1a = cyl_bottom_pos + lambda*(cyl_top_pos - cyl_bottom_pos);
     // if we only want to account for distances in the xy plane, we project the vectors:
     if (_use_distance_xy_){ // TODO add param specific for cylinder
-      point_link_lambda[2] = 0.0;
+      point_cyl_1a[2] = 0.0;
       uav_applied_ref_pos[2] = 0.0;
     }
-    double dist1 = (point_link_lambda - uav_applied_ref_pos).norm() - max_radius_uav_cable_load - cyl_radius; // - _Ra_
-    
-    /* 2) compute parametrization factors mu and nu of cylinder wrt cable */
-    Eigen::Vector3d point_mu_cyl;
-    Eigen::Vector3d point_nu_cable;
-    std::tie(point_mu_cyl, point_nu_cable) = getMinDistDirLineSegments(cyl_bottom_pos, cyl_top_pos, load_applied_ref_pos, uav_applied_ref_pos);
+    double dist1a = (point_cyl_1a - uav_applied_ref_pos).norm() - max_radius_uav_cable_load - cyl_radius; // - _Ra_
+    min_dist = std::min(min_dist, dist1a);
+
+    // 1b) compute parametrization factor lambda for cylinder wrt uav follower */
+    lambda = getLambda(cyl_bottom_pos, cyl_top_pos, other_uav_applied_ref_pos, true);
+    Eigen::Vector3d point_cyl_1b = cyl_bottom_pos + lambda*(cyl_top_pos - cyl_bottom_pos);
     // if we only want to account for distances in the xy plane, we project the vectors:
     if (_use_distance_xy_){ // TODO add param specific for cylinder
-      point_mu_cyl[2] = 0.0;
-      point_nu_cable[2] = 0.0;
+      point_cyl_1b[2] = 0.0;
+      other_uav_applied_ref_pos[2] = 0.0;
     }
-    double dist2 = (point_mu_cyl - point_nu_cable).norm() - max_radius_uav_cable_load - cyl_radius; // _cable_radius_
+    double dist1b = (point_cyl_1b - other_uav_applied_ref_pos).norm() - max_radius_uav_cable_load - cyl_radius; // - _Ra_
+    min_dist = std::min(min_dist, dist1b);
+
+    /* 2a) compute parametrization factors mu and nu of cylinder wrt cable leader UAV */
+    Eigen::Vector3d point_mu_cyl_2a;
+    Eigen::Vector3d point_nu_cable_2a;
+    std::tie(point_mu_cyl_2a, point_nu_cable_2a) = getMinDistDirLineSegments(cyl_bottom_pos, cyl_top_pos, load_applied_ref_pos, uav_applied_ref_pos);
+    // if we only want to account for distances in the xy plane, we project the vectors:
+    if (_use_distance_xy_){ // TODO add param specific for cylinder
+      point_mu_cyl_2a[2] = 0.0;
+      point_nu_cable_2a[2] = 0.0;
+    }
+    double dist2a = (point_mu_cyl_2a - point_nu_cable_2a).norm() - max_radius_uav_cable_load - cyl_radius; // _cable_radius_
+    min_dist = std::min(min_dist, dist2a);
+
+    /* 2b) compute parametrization factors mu and nu of cylinder wrt cable follower UAV */
+    Eigen::Vector3d point_mu_cyl_2b;
+    Eigen::Vector3d point_nu_cable_2b;
+    std::tie(point_mu_cyl_2b, point_nu_cable_2b) = getMinDistDirLineSegments(cyl_bottom_pos, cyl_top_pos, load_applied_ref_pos_other_uav, other_uav_applied_ref_pos);
+    // if we only want to account for distances in the xy plane, we project the vectors:
+    if (_use_distance_xy_){ // TODO add param specific for cylinder
+      point_mu_cyl_2b[2] = 0.0;
+      point_nu_cable_2b[2] = 0.0;
+    }
+    double dist2b = (point_mu_cyl_2b - point_nu_cable_2b).norm() - max_radius_uav_cable_load - cyl_radius; // _cable_radius_
+    min_dist = std::min(min_dist, dist2b);
     
     /* 3) compute parametrization factors mu and nu of cylinder wrt bar load */
-    Eigen::Vector3d point_mu2_cyl;
-    Eigen::Vector3d point_nu_load;
-    std::tie(point_mu2_cyl, point_nu_load) = getMinDistDirLineSegments(cyl_bottom_pos, cyl_top_pos, load_applied_ref_pos, load_applied_ref_pos_other_uav);
+    Eigen::Vector3d point_mu_cyl_3;
+    Eigen::Vector3d point_nu_load_3;
+    std::tie(point_mu_cyl_3, point_nu_load_3) = getMinDistDirLineSegments(cyl_bottom_pos, cyl_top_pos, load_applied_ref_pos, load_applied_ref_pos_other_uav);
     // if we only want to account for distances in the xy plane, we project the vectors:
     if (_use_distance_xy_){ // TODO add param specific for cylinder
-      point_mu2_cyl[2] = 0.0;
-      point_nu_load[2] = 0.0;
+      point_mu_cyl_3[2] = 0.0;
+      point_nu_load_3[2] = 0.0;
     }
-    double dist3 = (point_mu2_cyl - point_nu_load).norm() - max_radius_uav_cable_load - cyl_radius; // _load_radius_
+    double dist3 = (point_mu_cyl_3 - point_nu_load_3).norm() - max_radius_uav_cable_load - cyl_radius; // _load_radius_
+    min_dist = std::min(min_dist, dist3);
 
-    // take the max contribution of 1, 2, and 3:
+    // take the max contribution of 1a, 1b, 2a, 2b, and 3:
     Eigen::Vector3d point_cyl;
-    Eigen::Vector3d point_uav_cables_load;
-    double dist;
-    if (dist2 < dist1 && dist2 < dist3){
-      dist = dist2;
-      point_cyl = point_mu_cyl;
-      point_uav_cables_load = point_nu_cable;
+    Eigen::Vector3d point_uavs_cables_load;
+    if (dist1a == min_dist){
+      dist = dist1a;
+      point_cyl = point_cyl_1a;
+      point_uavs_cables_load = uav_applied_ref_pos;
     } 
-    else if(dist3 < dist1 && dist3 < dist2){
+    else if (dist1b == min_dist){
+      dist = dist1b;
+      point_cyl = point_cyl_1b;
+      point_uavs_cables_load = other_uav_applied_ref_pos;
+    } 
+    else if (dist2a == min_dist){
+      dist = dist2a;
+      point_cyl = point_mu_cyl_2a;
+      point_uavs_cables_load = point_nu_cable_2a;
+    } 
+    else if (dist2b == min_dist){
+      dist = dist2b;
+      point_cyl = point_mu_cyl_2b;
+      point_uavs_cables_load = point_nu_cable_2b;
+    } 
+    else if(dist3 == min_dist){
       dist = dist3;
-      point_cyl = point_mu2_cyl;
-      point_uav_cables_load = point_nu_load;
-    }
-    else{ // dist2 >= dist1 && dist3 >= dist1
-      dist = dist1;
-      point_cyl = point_link_lambda;
-      point_uav_cables_load = uav_applied_ref_pos;
+      point_cyl = point_mu_cyl_3;
+      point_uavs_cables_load = point_nu_load_3;
     }
     // Conservative part:
     double NF_o_co_amplitude = std::max((_zeta_o_ - dist)/(_zeta_o_ - _delta_o_), 0.0);
-    Eigen::Vector3d NF_o_co_direction = (point_uav_cables_load - point_cyl).normalized();
+    Eigen::Vector3d NF_o_co_direction = (point_uavs_cables_load - point_cyl).normalized(); // !!!!!!!!!
+    Eigen::Vector3d NF_o_co_direction_NEW = (point_uavs_cables_load - point_cyl)/(point_uavs_cables_load - point_cyl).norm();
+    Eigen::Vector3d NF_o_co_direction_notnormalized = (point_uavs_cables_load - point_cyl);
+    // ROS_INFO_STREAM("[DergbryanTracker]: Cylinder-UAV: nor norm NF_o_co_direction_notnormalized  = " << NF_o_co_direction_notnormalized);
+    // ROS_INFO_STREAM("[DergbryanTracker]: Cylinder-UAV: .normalized() NF_o_co_direction  = " << NF_o_co_direction);
+    // ROS_INFO_STREAM("[DergbryanTracker]: Cylinder-UAV: /.norm() NF_o_co_direction_NEW  = " << NF_o_co_direction_NEW);
+    
+    
     Eigen::Vector3d NF_o_co = NF_o_co_amplitude * NF_o_co_direction;
     // Non-conservative part:
     Eigen::Vector3d NF_o_nco = Vector3d::Zero(3);
     if (NF_o_co_amplitude > 0.0) { // a non-zero repulsion 
-        NF_o_nco = calcCirculationField(_alpha_o_, _circ_type_o_, NF_o_co_direction[0], NF_o_co_direction[1], NF_o_co_direction[2], NF_o_co_amplitude);
+        NF_o_nco = calcCirculationField(_alpha_o_, _circ_type_o_, NF_o_co_direction[0], NF_o_co_direction[1], NF_o_co_direction[2], NF_o_co_direction.norm());
     }
     // Combine:
     if(_combination_type_o_ == "sum"){  
@@ -6779,12 +6880,20 @@ Eigen::Vector3d DergbryanTracker::computeNF_oc_2uavspayload(void){
       if(NF_o_co_amplitude > NF_o_co_amplitude_max){ // true at j==0 as NF_o_co_amplitude_max<0
         NF_o = NF_o_co + NF_o_nco; // reset NF_o to only sum these j-th co+nco max amplitude terms
         NF_o_co_amplitude_max = NF_o_co_amplitude; // reset the max found
-        if(NF_o_co_amplitude_max > 0.0) // strictly to ignore when out of influence margin
+        if(NF_o_co_amplitude_max > 0.0){ // strictly to ignore when out of influence margin
           index_cylinder_NF_o_co_amplitude_max_ = j;   
-          NF_o_co_amplitude_max_ = NF_o_co_amplitude_max; 
+          NF_o_co_amplitude_max_ = NF_o_co_amplitude_max;
+          dist_at_NF_o_co_amplitude_max = dist;
+          NF_o_co_max = NF_o_co;
+          NF_o_nco_max = NF_o_nco;
         }
       }    
     }
+  }
+  ROS_INFO_STREAM("[DergbryanTracker]: Cylinder-UAV: NF_o_co_amplitude_max_ = " << NF_o_co_amplitude_max_);
+  ROS_INFO_STREAM("[DergbryanTracker]: Cylinder-UAV: dist_at_NF_o_co_amplitude_max = " << dist_at_NF_o_co_amplitude_max);
+  ROS_INFO_STREAM("[DergbryanTracker]: Cylinder-UAV: NF_o_co_max = \n" << NF_o_co_max);
+  ROS_INFO_STREAM("[DergbryanTracker]: Cylinder-UAV: NF_o_nco_max = \n" << NF_o_nco_max);
   return NF_o;
 }
 
