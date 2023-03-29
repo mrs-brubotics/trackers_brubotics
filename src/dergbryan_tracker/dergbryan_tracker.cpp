@@ -6687,10 +6687,11 @@ Eigen::Vector3d DergbryanTracker::computeNF_oc_1uavpayload(void){
     Eigen::Vector3d cyl_bottom_pos = cyl_center_pos - Eigen::Vector3d(0, 0, cyl_height/2.0);
     Eigen::Vector3d cyl_top_pos = cyl_center_pos + Eigen::Vector3d(0, 0, cyl_height/2.0);
     
-    // use max_radius_uav_cable_load to prevent non-convexity in the system and local minima (deadlocks)
+    // [currently disabled and using two radii below] use max_radius_uav_cable_load to prevent non-convexity in the system and local minima (deadlocks)
     double max_radius_uav_cable_load = std::max(_Ra_, _cable_radius_);
     max_radius_uav_cable_load = std::max(max_radius_uav_cable_load, _load_radius_);
-
+    // [currently enabled]
+    double max_radius_cable_load = std::max(max_radius_uav_cable_load, _load_radius_);
     // 1) compute parametrization factor lambda for cylinder wrt uav */
     double lambda = getLambda(cyl_bottom_pos, cyl_top_pos, uav_applied_ref_pos, true);
     Eigen::Vector3d point_link_lambda = cyl_bottom_pos + lambda*(cyl_top_pos - cyl_bottom_pos);
@@ -6699,7 +6700,7 @@ Eigen::Vector3d DergbryanTracker::computeNF_oc_1uavpayload(void){
       point_link_lambda[2] = 0.0;
       uav_applied_ref_pos[2] = 0.0;
     }
-    double dist1 = (point_link_lambda - uav_applied_ref_pos).norm() - max_radius_uav_cable_load - cyl_radius; // - _Ra_
+    double dist1 = (point_link_lambda - uav_applied_ref_pos).norm() - cyl_radius - _Ra_; //- max_radius_uav_cable_load
     
     /* 2) compute parametrization factors mu and nu of cylinder wrt cable */
     Eigen::Vector3d point_mu_cyl;
@@ -6710,7 +6711,7 @@ Eigen::Vector3d DergbryanTracker::computeNF_oc_1uavpayload(void){
       point_mu_cyl[2] = 0.0;
       point_nu_cable[2] = 0.0;
     }
-    double dist2 = (point_mu_cyl - point_nu_cable).norm() - max_radius_uav_cable_load - cyl_radius; 
+    double dist2 = (point_mu_cyl - point_nu_cable).norm() - cyl_radius - max_radius_cable_load; //- _cable_radius_; //- max_radius_uav_cable_load; 
     // take the max contribution of 1 and 2:
     Eigen::Vector3d point_cyl;
     Eigen::Vector3d point_uav_cable;
