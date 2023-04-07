@@ -139,6 +139,8 @@ private:
   double _load_mass_;           // feedforward load mass per uav  defined in the session.yaml of every test file (session variable also used by the xacro for Gazebo simulation)
   double _load_length_;         // length of bar load transported by 2uavs
   double _load_radius_ = 0.04;  // radius of the bar load // TODO add via session
+  bool _baca_in_simulation_=false;// Used to validate the encoder angles, and the FK without having to make the UAV fly. Gains related to payload must be set on 0 to perform this. Set on false by default.
+
   // | ------------------- declaring .yaml parameters ------------------- |
   // Se3CopyController:
   std::string _version_;
