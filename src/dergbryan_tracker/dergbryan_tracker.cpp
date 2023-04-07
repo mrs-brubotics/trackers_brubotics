@@ -1066,7 +1066,7 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
       }
       else if (_uav_name_ == _follower_uav_name_){ // follower
         position_cmd_follower_from_leader_sub_ = nh2_.subscribe("/"+_leader_uav_name_+"/control_manager/dergbryan_tracker/position_cmd_f_from_l", 1, &DergbryanTracker::position_cmd_follower_from_leader_callback, this, ros::TransportHints().tcpNoDelay());
-        goal_position_cmd_f_from_l_sub_ = nh2_.subscribe("/"+_leader_uav_name_+"/control_manager/dergbryan_tracker/goal_position_cmd_follower_from_leader", 1, &DergbryanTracker::goal_position_cmd_follower_from_leader_callback, this, ros::TransportHints().tcpNoDelay());
+        goal_position_cmd_follower_from_leader_sub_ = nh2_.subscribe("/"+_leader_uav_name_+"/control_manager/dergbryan_tracker/goal_position_cmd_f_from_l", 1, &DergbryanTracker::goal_position_cmd_follower_from_leader_callback, this, ros::TransportHints().tcpNoDelay());
       }
     }
   }
