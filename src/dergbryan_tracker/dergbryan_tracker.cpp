@@ -1021,7 +1021,7 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
     // for communication between the leader and follower uavs: follower publishes state feedback to leader and leader commands the reference to the follower
     if (_uav_name_ == _leader_uav_name_){  // leader
       position_cmd_follower_from_leader_pub_ = nh2_.advertise<mrs_msgs::PositionCommand>("position_cmd_f_from_l", 1); 
-      goal_position_cmd_follower_from_leader_pub_ = nh2_.advertise<mrs_msgs::PositionCommand>("goal_position_cmd_f_from_l", 1); 
+      goal_position_cmd_follower_from_leader_pub_ = nh2_.advertise<mrs_msgs::PositionCommand>("goal_pos_cmd_f_from_l", 1); 
     }
     else if (_uav_name_ == _follower_uav_name_){ // follower
       uav_state_follower_for_leader_pub_ = nh2_.advertise<mrs_msgs::UavState>("uav_state_f_for_l", 1);
@@ -1082,7 +1082,7 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
       }
       else if (_uav_name_ == _follower_uav_name_){ // follower
         position_cmd_follower_from_leader_sub_ = nh2_.subscribe("/"+_leader_uav_name_+"/control_manager/dergbryan_tracker/position_cmd_f_from_l", 1, &DergbryanTracker::position_cmd_follower_from_leader_callback, this, ros::TransportHints().tcpNoDelay());
-        goal_position_cmd_follower_from_leader_sub_ = nh2_.subscribe("/"+_leader_uav_name_+"/control_manager/dergbryan_tracker/goal_position_cmd_f_from_l", 1, &DergbryanTracker::goal_position_cmd_follower_from_leader_callback, this, ros::TransportHints().tcpNoDelay());
+        goal_position_cmd_follower_from_leader_sub_ = nh2_.subscribe("/"+_leader_uav_name_+"/control_manager/dergbryan_tracker/goal_pos_cmd_f_from_l", 1, &DergbryanTracker::goal_position_cmd_follower_from_leader_callback, this, ros::TransportHints().tcpNoDelay());
       }
     }
   }
@@ -1228,7 +1228,7 @@ bool DergbryanTracker::resetStatic(void) {
 /*update()//{*/
 const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msgs::UavState::ConstPtr &                        uav_state,
                                                               [[maybe_unused]] const mrs_msgs::AttitudeCommand::ConstPtr &last_attitude_cmd) {
-  ROS_INFO("[DergbryanTracker]: updating the DergbryanTracker");
+  // ROS_INFO("[DergbryanTracker]: updating the DergbryanTracker");
   mrs_lib::Routine profiler_routine = profiler.createRoutine("update");
   {
     std::scoped_lock lock(mutex_uav_state_);
@@ -1390,15 +1390,10 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
       For the 2UAVs+payload case we must first ensure the required information of 
       the follower UAV is published so that leader UAV can perform the predictions.
     */
-    ROS_INFO_STREAM("debug 1");
     if(_type_of_system_=="2uavs_payload"){
-        ROS_INFO_STREAM("debug 2");
-        // ROS_INFO_STREAM("uav_name_ = " << _uav_name_);
-        // ROS_INFO_STREAM("_leader_uav_name_ = " << _leader_uav_name_);
         publishFollowerDataForLeaderIn2uavs_payload(position_cmd); // published by follower uav
       
         if(_uav_name_ == _leader_uav_name_){
-          ROS_INFO_STREAM("debug 3");
           // check the accompanying callbacks of the leader uav if the msgs of the follower are received from timestamps which are not delayed too much wrt the current timestamp of the uav_state_.
           double time_delay_1 = std::abs(uav_state_follower_for_leader_.header.stamp.toSec() - uav_state_.header.stamp.toSec());
           double time_delay_2 = std::abs(anchoring_point_follower_for_leader_.header.stamp.toSec() - uav_state_.header.stamp.toSec());
@@ -1415,7 +1410,6 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
             callback_data_follower_no_delay_ = true;
           } 
           else {
-            ROS_INFO_STREAM("debug 4");
             callback_data_follower_no_delay_ = false;
           }
           if(!callback_data_follower_no_delay_ && payload_spawned_){
@@ -1505,7 +1499,6 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
       position_cmd.position.z     = applied_ref_z_;
       position_cmd.heading        = goal_heading_;
       // but still compute the predictions
-      ROS_INFO_STREAM("debug 5");
       computePSCTrajectoryPredictions(position_cmd, uav_heading, last_attitude_cmd);
     }                                                        
   }
@@ -1677,11 +1670,7 @@ void DergbryanTracker::computePSCTrajectoryPredictions(mrs_msgs::PositionCommand
     trajectory_prediction_general(position_cmd, uav_heading, last_attitude_cmd);  
   }  
   else{
-    ROS_INFO_STREAM("debug 6");
     ROS_WARN_THROTTLE(1.0, "[DergbryanTracker]: the case variables for the computePSCTrajectoryPredictions() routine did not allow to compute the trajectory predictions for this uav");
-    ROS_INFO_STREAM("[DergbryanTracker]: uav_name_ = " << _uav_name_);
-    // ROS_INFO_STREAM("callback_data_follower_no_delay_= " << callback_data_follower_no_delay_);
-    // ROS_INFO_STREAM("callback_data_leader_no_delay_= " << callback_data_leader_no_delay_);
   }
 }
 
@@ -7190,7 +7179,7 @@ void DergbryanTracker::GazeboLoadStatesCallback(const gazebo_msgs::LinkStatesCon
 // TODO: combine with BacaLoadStatesCallback of controller as (almost) same code
 void DergbryanTracker::BacaLoadStatesCallback(const mrs_msgs::BacaProtocolConstPtr& msg) {
   // TODO: similar to GazeboLoadStatesCallback, update the variable payload_spawned_ if this the data is correctly received from arduino
-  ROS_INFO_STREAM("[DergbryanTracker]: Started BacaLoadStatesCallback");
+  // ROS_INFO_STREAM("[DergbryanTracker]: Started BacaLoadStatesCallback");
   int message_id;
   int payload_1;
   int payload_2;
