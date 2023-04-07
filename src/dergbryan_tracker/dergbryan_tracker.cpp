@@ -788,6 +788,15 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
       ROS_ERROR("[DergbryanTracker]: _load_mass_ <=0, use a value > 0!");
       ros::requestShutdown();
     }
+    std::string BACA_IN_SIMULATION = getenv("BACA_IN_SIMULATION");
+    if (BACA_IN_SIMULATION == "true" && _run_type_ == "simulation"){// "true" or "false" as string, then changed into a boolean. 
+      _baca_in_simulation_ = true;
+      ROS_INFO("[DergbryanTracker]: Use Baca in simulation: true");
+    }
+    else{
+      _baca_in_simulation_ = false;
+      ROS_INFO("[DergbryanTracker]: Use Baca in simulation: false");
+    }
   }
   ROS_INFO("[DergbryanTracker]: finished loading environment (session/bashrc) parameters");
 
@@ -1044,10 +1053,10 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   // | ------------------- create subscribers ------------------- |
   // this uav subscribes to own (i.e., of this uav) load states:
   if(_type_of_system_=="1uav_payload" || _type_of_system_=="2uavs_payload"){
-    if (_run_type_ == "simulation"){ // subscriber of the gazebo simulation
+    if (_run_type_ == "simulation" && !_baca_in_simulation_ ){ // subscriber of the gazebo simulation
       load_state_sub_ =  nh_.subscribe("/gazebo/link_states", 1, &DergbryanTracker::GazeboLoadStatesCallback, this, ros::TransportHints().tcpNoDelay());
     }
-    else if (_run_type_ == "uav"){ // subscriber of the hardware encoders
+    else if (_run_type_ == "uav" || (_baca_in_simulation_ && _run_type_ == "simulation") ){ // subscriber of the hardware encoders
       std::string slash = "/";
       data_payload_sub_ = nh_.subscribe(slash.append(_uav_name_.append("/serial/received_message")), 1, &DergbryanTracker::BacaLoadStatesCallback, this, ros::TransportHints().tcpNoDelay()); // TODO: explain how this is used for 2 uav hardware
     }
@@ -7164,6 +7173,7 @@ void DergbryanTracker::GazeboLoadStatesCallback(const gazebo_msgs::LinkStatesCon
 // TODO: combine with BacaLoadStatesCallback of controller as (almost) same code
 void DergbryanTracker::BacaLoadStatesCallback(const mrs_msgs::BacaProtocolConstPtr& msg) {
   // TODO: similar to GazeboLoadStatesCallback, update the variable payload_spawned_ if this the data is correctly received from arduino
+  ROS_INFO_STREAM("[DergbryanTracker]: Started BacaLoadStatesCallback");
   int message_id;
   int payload_1;
   int payload_2;
