@@ -1014,9 +1014,9 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
     }
     else if (_uav_name_ == _follower_uav_name_){ // follower
       uav_state_follower_for_leader_pub_ = nh2_.advertise<mrs_msgs::UavState>("uav_state_f_for_l", 1);
-      anchoring_point_follower_for_leader_pub_ = nh2_.advertise<mrs_msgs::UavState>("anchoring_point_f_for_l", 1);
+      anchoring_point_follower_for_leader_pub_ = nh2_.advertise<mrs_msgs::UavState>("anch_point_f_for_l", 1);
       position_cmd_follower_for_leader_pub_ = nh2_.advertise<mrs_msgs::PositionCommand>("position_cmd_f_for_l", 1); 
-      goal_position_cmd_follower_for_leader_pub_ = nh2_.advertise<mrs_msgs::PositionCommand>("goal_position_cmd_f_for_l", 1); 
+      goal_position_cmd_follower_for_leader_pub_ = nh2_.advertise<mrs_msgs::PositionCommand>("goal_pos_cmd_f_for_l", 1); 
     }
   }
 
@@ -1059,9 +1059,9 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
       // for communication between the leader and follower uavs: leader subscribes to state feedback of follower and follower to the reference the leader commanded
       if (_uav_name_ == _leader_uav_name_){  // leader
         uav_state_follower_for_leader_sub_ = nh2_.subscribe("/"+_follower_uav_name_+"/control_manager/dergbryan_tracker/uav_state_f_for_l", 1, &DergbryanTracker::uav_state_follower_for_leader_callback, this, ros::TransportHints().tcpNoDelay());
-        anchoring_point_follower_for_leader_sub_ = nh2_.subscribe("/"+_follower_uav_name_+"/control_manager/dergbryan_tracker/anchoring_point_f_for_l", 1, &DergbryanTracker::anchoring_point_follower_for_leader_callback, this, ros::TransportHints().tcpNoDelay());
+        anchoring_point_follower_for_leader_sub_ = nh2_.subscribe("/"+_follower_uav_name_+"/control_manager/dergbryan_tracker/anch_point_f_for_l", 1, &DergbryanTracker::anchoring_point_follower_for_leader_callback, this, ros::TransportHints().tcpNoDelay());
         position_cmd_follower_for_leader_sub_ = nh2_.subscribe("/"+_follower_uav_name_+"/control_manager/dergbryan_tracker/position_cmd_f_for_l", 1, &DergbryanTracker::position_cmd_follower_for_leader_callback, this, ros::TransportHints().tcpNoDelay());
-        goal_position_cmd_follower_for_leader_sub_ = nh2_.subscribe("/"+_follower_uav_name_+"/control_manager/dergbryan_tracker/goal_position_cmd_f_for_l", 1, &DergbryanTracker::goal_position_cmd_follower_for_leader_callback, this, ros::TransportHints().tcpNoDelay());
+        goal_position_cmd_follower_for_leader_sub_ = nh2_.subscribe("/"+_follower_uav_name_+"/control_manager/dergbryan_tracker/goal_pos_cmd_f_for_l", 1, &DergbryanTracker::goal_position_cmd_follower_for_leader_callback, this, ros::TransportHints().tcpNoDelay());
         estimated_uav_mass_follower_for_leader_sub_ = nh2_.subscribe("/"+_follower_uav_name_+"/control_manager/mass_estimate", 1, &DergbryanTracker::estimated_uav_mass_follower_for_leader_callback, this, ros::TransportHints().tcpNoDelay());
       }
       else if (_uav_name_ == _follower_uav_name_){ // follower
