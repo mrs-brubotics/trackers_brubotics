@@ -1391,20 +1391,20 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
       the follower UAV is published so that leader UAV can perform the predictions.
     */
 
-    if(_type_of_system_=="1uav_no_payload" ){
-      if(_uav_name_=="uav2"){
-        double time_delay_1 = std::abs(other_uavs_applied_references_["uav3"].stamp.toSec() - uav_state_.header.stamp.toSec());
-        double time_delay_2 = std::abs(other_uavs_positions_["uav3"].stamp.toSec() - uav_state_.header.stamp.toSec());
-        ROS_INFO_STREAM("[DergbryanTracker]: time_delay_1 = " << time_delay_1);
-        ROS_INFO_STREAM("[DergbryanTracker]: time_delay_2 = " << time_delay_2);
-      }
-      else if(_uav_name_=="uav3"){
-        double time_delay_1 = std::abs(other_uavs_applied_references_["uav2"].stamp.toSec() - uav_state_.header.stamp.toSec());
-        double time_delay_2 = std::abs(other_uavs_positions_["uav2"].stamp.toSec() - uav_state_.header.stamp.toSec());
-        ROS_INFO_STREAM("[DergbryanTracker]: time_delay_1 = " << time_delay_1);
-        ROS_INFO_STREAM("[DergbryanTracker]: time_delay_2 = " << time_delay_2);
-      }
-    }
+    // if(_type_of_system_=="1uav_no_payload" ){
+    //   if(_uav_name_=="uav2"){
+    //     double time_delay_1 = std::abs(other_uavs_applied_references_["uav3"].stamp.toSec() - uav_state_.header.stamp.toSec());
+    //     double time_delay_2 = std::abs(other_uavs_positions_["uav3"].stamp.toSec() - uav_state_.header.stamp.toSec());
+    //     ROS_INFO_STREAM("[DergbryanTracker]: time_delay_1 = " << time_delay_1);
+    //     ROS_INFO_STREAM("[DergbryanTracker]: time_delay_2 = " << time_delay_2);
+    //   }
+    //   else if(_uav_name_=="uav3"){
+    //     double time_delay_1 = std::abs(other_uavs_applied_references_["uav2"].stamp.toSec() - uav_state_.header.stamp.toSec());
+    //     double time_delay_2 = std::abs(other_uavs_positions_["uav2"].stamp.toSec() - uav_state_.header.stamp.toSec());
+    //     ROS_INFO_STREAM("[DergbryanTracker]: time_delay_1 = " << time_delay_1);
+    //     ROS_INFO_STREAM("[DergbryanTracker]: time_delay_2 = " << time_delay_2);
+    //   }
+    // }
 
 
 
