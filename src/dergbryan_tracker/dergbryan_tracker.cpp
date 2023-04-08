@@ -1395,7 +1395,7 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
       if(_uav_name_=="uav2"){
         // double time_delay_1 = std::abs(other_uavs_applied_references_["uav3"].stamp.toSec() - uav_state_.header.stamp.toSec());
         // double time_delay_2 = std::abs(other_uavs_positions_["uav3"].stamp.toSec() - uav_state_.header.stamp.toSec());
-        double time_delay_3 = ros::Time::now() - other_uav_tube_["uav3"].stamp.toSec();
+        double time_delay_3 = (ros::Time::now() - other_uav_tube_["uav3"].stamp).toSec();
         // ROS_INFO_STREAM("[DergbryanTracker]: time_delay_1 = " << time_delay_1);
         // ROS_INFO_STREAM("[DergbryanTracker]: time_delay_2 = " << time_delay_2);
 
@@ -1406,7 +1406,7 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
       else if(_uav_name_=="uav3"){
         // double time_delay_1 = std::abs(other_uavs_applied_references_["uav2"].stamp.toSec() - uav_state_.header.stamp.toSec());
         // double time_delay_2 = std::abs(other_uavs_positions_["uav2"].stamp.toSec() - uav_state_.header.stamp.toSec());
-        double time_delay_3 = ros::Time::now() - other_uav_tube_["uav2"].stamp.toSec();
+        double time_delay_3 = (ros::Time::now() - other_uav_tube_["uav2"].stamp).toSec();
         // ROS_INFO_STREAM("[DergbryanTracker]: time_delay_1 = " << time_delay_1);
         // ROS_INFO_STREAM("[DergbryanTracker]: time_delay_2 = " << time_delay_2);
         ROS_INFO_STREAM("[DergbryanTracker]: time_delay_3 = " << time_delay_3);
@@ -7406,7 +7406,7 @@ void DergbryanTracker::callbackOtherUavFutureTrajectoryTube(mrs_lib::SubscribeHa
   // ROS_INFO_STREAM("Received minimal radius: '" << sh_ptr.getMsg()->min_radius << "' from topic '" << sh_ptr.topicName() << "'");
   trackers_brubotics::FutureTrajectoryTube temp_tube = *sh_ptr.getMsg(); // use *!
   other_uav_tube_[sh_ptr.getMsg()->uav_name] = temp_tube;
-  othe_uav_tube_.stamp = ros::Time::now();
+  other_uav_tube_[sh_ptr.getMsg()->uav_name].stamp = ros::Time::now();
   // double temp_radius = sh_ptr.getMsg()->min_radius;
   // other_uav_tube_min_radius_[sh_ptr.getMsg()->uav_name] = temp_radius;
 
