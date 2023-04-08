@@ -1061,7 +1061,7 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
     else if (_run_type_ == "uav" || (_baca_in_simulation_ && _run_type_ == "simulation") ){ // subscriber of the hardware encoders
       std::string slash = "/";
       std::string _uav_name_copy_ = _uav_name_;
-      ROS_INFO_STREAM("[DergbryanTracker]: uav_name_ = " << _uav_name_);
+      ROS_INFO_THROTTLE("[DergbryanTracker]: uav_name_ = " << _uav_name_);
       ROS_INFO_STREAM("[DergbryanTracker]: uav_name_copy = " << _uav_name_);
       data_payload_sub_ = nh_.subscribe(slash.append(_uav_name_copy_.append("/serial/received_message")), 1, &DergbryanTracker::BacaLoadStatesCallback, this, ros::TransportHints().tcpNoDelay()); // TODO: explain how this is used for 2 uav hardware
       ROS_INFO_STREAM("[DergbryanTracker]: uav_name_ = " << _uav_name_);
@@ -1417,10 +1417,10 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
           double time_delay_2 = std::abs(anchoring_point_follower_for_leader_.header.stamp.toSec() - uav_state_.header.stamp.toSec());
           double time_delay_3 = std::abs(position_cmd_follower_for_leader_.header.stamp.toSec() - uav_state_.header.stamp.toSec());
           double time_delay_4 = std::abs(goal_position_cmd_follower_for_leader_.header.stamp.toSec() - uav_state_.header.stamp.toSec());
-          ROS_INFO_STREAM("[DergbryanTracker]: time_delay_1 = " << time_delay_1);
-          ROS_INFO_STREAM("[DergbryanTracker]: time_delay_2 = " << time_delay_2);
-          ROS_INFO_STREAM("[DergbryanTracker]: time_delay_3 = " << time_delay_3);
-          ROS_INFO_STREAM("[DergbryanTracker]: time_delay_4 = " << time_delay_4);
+          ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: time_delay_1 = %f", time_delay_1);
+          ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: time_delay_2 = %f", time_delay_2);
+          ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: time_delay_3 = %f", time_delay_3);
+          ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: time_delay_4 = %f", time_delay_4);
           double max_time_delay = std::max(time_delay_1, time_delay_2);
           max_time_delay = std::max(max_time_delay, time_delay_3);
           max_time_delay = std::max(max_time_delay, time_delay_4);
@@ -1470,8 +1470,8 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
         // check the callback of the follower uav if the msgs of the leader is received from a timestamp which is not delayed too much wrt the current timestamp of the uav_state_.
         double time_delay_1 = std::abs(position_cmd_follower_from_leader_.header.stamp.toSec() - uav_state_.header.stamp.toSec());
         double time_delay_2 = std::abs(goal_position_cmd_follower_from_leader_.header.stamp.toSec() - uav_state_.header.stamp.toSec());
-        ROS_INFO_STREAM("[DergbryanTracker]: follower from leader time_delay_1 = " << time_delay_1);
-        ROS_INFO_STREAM("[DergbryanTracker]: follower from leader time_delay_2 = " << time_delay_2);
+        ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: follower from leader time_delay_1 = %f",time_delay_1);
+        ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: follower from leader time_delay_2 = %f",time_delay_2);
         double max_time_delay = std::max(time_delay_1, time_delay_2);
         if (max_time_delay < _max_time_delay_on_callback_data_leader_){
           callback_data_leader_no_delay_ = true;
