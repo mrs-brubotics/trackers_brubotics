@@ -1415,8 +1415,10 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
           // check the accompanying callbacks of the leader uav if the msgs of the follower are received from timestamps which are not delayed too much wrt the current timestamp of the uav_state_.
           double time_delay_1 = std::abs(uav_state_follower_for_leader_.header.stamp.toSec() - uav_state_.header.stamp.toSec());
           double time_delay_2 = std::abs(anchoring_point_follower_for_leader_.header.stamp.toSec() - uav_state_.header.stamp.toSec());
-          double time_delay_3 = std::abs(position_cmd_follower_for_leader_.header.stamp.toSec() - uav_state_.header.stamp.toSec());
-          double time_delay_4 = std::abs(goal_position_cmd_follower_for_leader_.header.stamp.toSec() - uav_state_.header.stamp.toSec());
+          // double time_delay_3 = std::abs(position_cmd_follower_for_leader_.header.stamp.toSec() - uav_state_.header.stamp.toSec());
+          // double time_delay_4 = std::abs(goal_position_cmd_follower_for_leader_.header.stamp.toSec() - uav_state_.header.stamp.toSec());
+          double time_delay_3 = std::abs((position_cmd_follower_for_leader_.header.stamp - ros::Time::now()).toSec());
+          double time_delay_4 = std::abs((goal_position_cmd_follower_for_leader_.header.stamp - ros::Time::now()).toSec());
           ROS_INFO_STREAM("[DergbryanTracker]: time_delay_1 = " << time_delay_1);
           ROS_INFO_STREAM("[DergbryanTracker]: time_delay_2 = " << time_delay_2);
           ROS_INFO_STREAM("[DergbryanTracker]: time_delay_3 = " << time_delay_3);
