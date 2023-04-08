@@ -5407,6 +5407,9 @@ void DergbryanTracker::computeERG(){
       try
       {
         temp_tube = other_uav_tube_[this_uav_id];
+        ROS_INFO_STREAM("[DergbryanTracker]: other_uav_tube_ time = " << temp_tube.stamp.toSec());
+        ROS_INFO_STREAM("[DergbryanTracker]: _uav_state_ time = " << uav_state_.header.stamp.toSec());
+        ROS_INFO_STREAM("[DergbryanTracker]: ROS time = " << ros::Time::now().toSec());
       }
       catch(...)
       {
