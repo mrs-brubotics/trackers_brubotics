@@ -1061,11 +1061,11 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
     else if (_run_type_ == "uav" || (_baca_in_simulation_ && _run_type_ == "simulation") ){ // subscriber of the hardware encoders
       std::string slash = "/";
       std::string _uav_name_copy_ = _uav_name_;
-      ROS_INFO_THROTTLE("[DergbryanTracker]: uav_name_ = " << _uav_name_);
-      ROS_INFO_STREAM("[DergbryanTracker]: uav_name_copy = " << _uav_name_);
+      // ROS_INFO_STREAM("[DergbryanTracker]: uav_name_ = " << _uav_name_);
+      // ROS_INFO_STREAM("[DergbryanTracker]: uav_name_copy = " << _uav_name_);
       data_payload_sub_ = nh_.subscribe(slash.append(_uav_name_copy_.append("/serial/received_message")), 1, &DergbryanTracker::BacaLoadStatesCallback, this, ros::TransportHints().tcpNoDelay()); // TODO: explain how this is used for 2 uav hardware
-      ROS_INFO_STREAM("[DergbryanTracker]: uav_name_ = " << _uav_name_);
-      ROS_INFO_STREAM("[DergbryanTracker]: uav_name_copy = " << _uav_name_);
+      // ROS_INFO_STREAM("[DergbryanTracker]: uav_name_ = " << _uav_name_);
+      // ROS_INFO_STREAM("[DergbryanTracker]: uav_name_copy = " << _uav_name_);
     }
     else{ // undefined
       ROS_ERROR("[DergbryanTracker]: undefined _run_type_ used for uav with payload!");
