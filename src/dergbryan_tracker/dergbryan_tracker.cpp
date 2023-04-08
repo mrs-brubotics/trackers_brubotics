@@ -7303,6 +7303,7 @@ void DergbryanTracker::BacaLoadStatesCallback(const mrs_msgs::BacaProtocolConstP
 // TODO: update these callbacks which contain too hardcoded info as uav2
 void DergbryanTracker::uav_state_follower_for_leader_callback(const mrs_msgs::UavState::ConstPtr& msg){
   uav_state_follower_for_leader_ = *msg; //for the header stamp and other quantities that might be interesting
+  uav_state_follower_for_leader_.header.stamp = ros::Time::now(); // Time stamp given when last received
   uav_position_follower_[0]=msg->pose.position.x; // as need to use these as vector in model
   uav_position_follower_[1]=msg->pose.position.y;
   uav_position_follower_[2]=msg->pose.position.z;
