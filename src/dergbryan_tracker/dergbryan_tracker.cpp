@@ -1470,8 +1470,8 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
         // check the callback of the follower uav if the msgs of the leader is received from a timestamp which is not delayed too much wrt the current timestamp of the uav_state_.
         double time_delay_1 = std::abs(position_cmd_follower_from_leader_.header.stamp.toSec() - uav_state_.header.stamp.toSec());
         double time_delay_2 = std::abs(goal_position_cmd_follower_from_leader_.header.stamp.toSec() - uav_state_.header.stamp.toSec());
-        ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: follower from leader time_delay_1 = %f",time_delay_1);
-        ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: follower from leader time_delay_2 = %f",time_delay_2);
+        ROS_INFO_THROTTLE(500,"[DergbryanTracker]: follower from leader time_delay_1 = %f",time_delay_1);
+        ROS_INFO_THROTTLE(500,"[DergbryanTracker]: follower from leader time_delay_2 = %f",time_delay_2);
         double max_time_delay = std::max(time_delay_1, time_delay_2);
         if (max_time_delay < _max_time_delay_on_callback_data_leader_){
           callback_data_leader_no_delay_ = true;
