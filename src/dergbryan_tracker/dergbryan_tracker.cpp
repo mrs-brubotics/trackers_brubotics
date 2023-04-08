@@ -1395,24 +1395,22 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
       if(_uav_name_=="uav2"){
         // double time_delay_1 = std::abs(other_uavs_applied_references_["uav3"].stamp.toSec() - uav_state_.header.stamp.toSec());
         // double time_delay_2 = std::abs(other_uavs_positions_["uav3"].stamp.toSec() - uav_state_.header.stamp.toSec());
-        double time_delay_3 = std::abs(other_uav_tube_["uav3"].stamp.toSec() - uav_state_.header.stamp.toSec());
+        double time_delay_3 = ros::Time::now() - other_uav_tube_["uav3"].stamp.toSec();
         // ROS_INFO_STREAM("[DergbryanTracker]: time_delay_1 = " << time_delay_1);
         // ROS_INFO_STREAM("[DergbryanTracker]: time_delay_2 = " << time_delay_2);
 
         ROS_INFO_STREAM("[DergbryanTracker]: time_delay_3 = " << time_delay_3);
         ROS_INFO_STREAM("[DergbryanTracker]: other_uav_tube_ time = " << other_uav_tube_["uav3"].stamp.toSec());
-        ROS_INFO_STREAM("[DergbryanTracker]: _uav_state_ time = " << uav_state_.header.stamp.toSec());
         ROS_INFO_STREAM("[DergbryanTracker]: ROS time = " << ros::Time::now().toSec());
       }
       else if(_uav_name_=="uav3"){
         // double time_delay_1 = std::abs(other_uavs_applied_references_["uav2"].stamp.toSec() - uav_state_.header.stamp.toSec());
         // double time_delay_2 = std::abs(other_uavs_positions_["uav2"].stamp.toSec() - uav_state_.header.stamp.toSec());
-        double time_delay_3 = std::abs(other_uav_tube_["uav2"].stamp.toSec() - uav_state_.header.stamp.toSec());
+        double time_delay_3 = ros::Time::now() - other_uav_tube_["uav2"].stamp.toSec();
         // ROS_INFO_STREAM("[DergbryanTracker]: time_delay_1 = " << time_delay_1);
         // ROS_INFO_STREAM("[DergbryanTracker]: time_delay_2 = " << time_delay_2);
         ROS_INFO_STREAM("[DergbryanTracker]: time_delay_3 = " << time_delay_3);
         ROS_INFO_STREAM("[DergbryanTracker]: other_uav_tube_ time = " << other_uav_tube_["uav2"].stamp.toSec());
-        ROS_INFO_STREAM("[DergbryanTracker]: _uav_state_ time = " << uav_state_.header.stamp.toSec());
         ROS_INFO_STREAM("[DergbryanTracker]: ROS time = " << ros::Time::now().toSec());
       }
     }
@@ -5371,7 +5369,7 @@ void DergbryanTracker::computeERG(){
     }
     // we actually use this
     trackers_brubotics::FutureTrajectoryTube future_tube;
-    future_tube.stamp = uav_state_.header.stamp;//ros::Time::now();
+    // future_tube.stamp = uav_state_.header.stamp;//ros::Time::now();        Now it is when subscribing that the time is initialized
     future_tube.uav_name = _uav_name_;
     future_tube.priority = avoidance_this_uav_priority_;
     // future_tube.collision_avoidance = true;
@@ -5418,9 +5416,9 @@ void DergbryanTracker::computeERG(){
       try
       {
         temp_tube = other_uav_tube_[this_uav_id];
-        ROS_INFO_STREAM("[DergbryanTracker]: temp_tube time = " << temp_tube.stamp.toSec());
-        ROS_INFO_STREAM("[DergbryanTracker]: (temp) _uav_state_ time = " << uav_state_.header.stamp.toSec());
-        ROS_INFO_STREAM("[DergbryanTracker]: (temp) ROS time = " << ros::Time::now().toSec());
+        // ROS_INFO_STREAM("[DergbryanTracker]: temp_tube time = " << temp_tube.stamp.toSec());
+        // ROS_INFO_STREAM("[DergbryanTracker]: (temp) _uav_state_ time = " << uav_state_.header.stamp.toSec());
+        // ROS_INFO_STREAM("[DergbryanTracker]: (temp) ROS time = " << ros::Time::now().toSec());
       }
       catch(...)
       {
@@ -7408,6 +7406,7 @@ void DergbryanTracker::callbackOtherUavFutureTrajectoryTube(mrs_lib::SubscribeHa
   // ROS_INFO_STREAM("Received minimal radius: '" << sh_ptr.getMsg()->min_radius << "' from topic '" << sh_ptr.topicName() << "'");
   trackers_brubotics::FutureTrajectoryTube temp_tube = *sh_ptr.getMsg(); // use *!
   other_uav_tube_[sh_ptr.getMsg()->uav_name] = temp_tube;
+  othe_uav_tube_.stamp = ros::Time::now();
   // double temp_radius = sh_ptr.getMsg()->min_radius;
   // other_uav_tube_min_radius_[sh_ptr.getMsg()->uav_name] = temp_radius;
 
