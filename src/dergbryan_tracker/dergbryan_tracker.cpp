@@ -1393,22 +1393,13 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
 
     if(_type_of_system_=="1uav_no_payload" ){
       if(_uav_name_=="uav2"){
-        // double time_delay_1 = std::abs(other_uavs_applied_references_["uav3"].stamp.toSec() - uav_state_.header.stamp.toSec());
-        // double time_delay_2 = std::abs(other_uavs_positions_["uav3"].stamp.toSec() - uav_state_.header.stamp.toSec());
         double time_delay_3 = (ros::Time::now() - other_uav_tube_["uav3"].stamp).toSec();
-        // ROS_INFO_STREAM("[DergbryanTracker]: time_delay_1 = " << time_delay_1);
-        // ROS_INFO_STREAM("[DergbryanTracker]: time_delay_2 = " << time_delay_2);
-
         ROS_INFO_STREAM("[DergbryanTracker]: time_delay_3 = " << time_delay_3);
         ROS_INFO_STREAM("[DergbryanTracker]: other_uav_tube_ time = " << other_uav_tube_["uav3"].stamp.toSec());
         ROS_INFO_STREAM("[DergbryanTracker]: ROS time = " << ros::Time::now().toSec());
       }
       else if(_uav_name_=="uav3"){
-        // double time_delay_1 = std::abs(other_uavs_applied_references_["uav2"].stamp.toSec() - uav_state_.header.stamp.toSec());
-        // double time_delay_2 = std::abs(other_uavs_positions_["uav2"].stamp.toSec() - uav_state_.header.stamp.toSec());
         double time_delay_3 = (ros::Time::now() - other_uav_tube_["uav2"].stamp).toSec();
-        // ROS_INFO_STREAM("[DergbryanTracker]: time_delay_1 = " << time_delay_1);
-        // ROS_INFO_STREAM("[DergbryanTracker]: time_delay_2 = " << time_delay_2);
         ROS_INFO_STREAM("[DergbryanTracker]: time_delay_3 = " << time_delay_3);
         ROS_INFO_STREAM("[DergbryanTracker]: other_uav_tube_ time = " << other_uav_tube_["uav2"].stamp.toSec());
         ROS_INFO_STREAM("[DergbryanTracker]: ROS time = " << ros::Time::now().toSec());
@@ -1424,10 +1415,8 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
           // check the accompanying callbacks of the leader uav if the msgs of the follower are received from timestamps which are not delayed too much wrt the current timestamp of the uav_state_.
           double time_delay_1 = std::abs(uav_state_follower_for_leader_.header.stamp.toSec() - uav_state_.header.stamp.toSec());
           double time_delay_2 = std::abs(anchoring_point_follower_for_leader_.header.stamp.toSec() - uav_state_.header.stamp.toSec());
-          // double time_delay_3 = std::abs(position_cmd_follower_for_leader_.header.stamp.toSec() - uav_state_.header.stamp.toSec());
-          // double time_delay_4 = std::abs(goal_position_cmd_follower_for_leader_.header.stamp.toSec() - uav_state_.header.stamp.toSec());
-          double time_delay_3 = std::abs((position_cmd_follower_for_leader_.header.stamp - ros::Time::now()).toSec());
-          double time_delay_4 = std::abs((goal_position_cmd_follower_for_leader_.header.stamp - ros::Time::now()).toSec());
+          double time_delay_3 = std::abs(position_cmd_follower_for_leader_.header.stamp.toSec() - uav_state_.header.stamp.toSec());
+          double time_delay_4 = std::abs(goal_position_cmd_follower_for_leader_.header.stamp.toSec() - uav_state_.header.stamp.toSec());
           ROS_INFO_STREAM("[DergbryanTracker]: time_delay_1 = " << time_delay_1);
           ROS_INFO_STREAM("[DergbryanTracker]: time_delay_2 = " << time_delay_2);
           ROS_INFO_STREAM("[DergbryanTracker]: time_delay_3 = " << time_delay_3);
@@ -1730,7 +1719,7 @@ The publishing of the payload state is only allowed from when the payload has sp
 
     // 3) anchoring_point_follower_for_leader_pub_:
     if(payload_spawned_){ // only if the payload has spawned, start to publish its position and velocity  
-      anchoring_point_follower_for_leader_msg_.header.stamp = uav_state_.header.stamp;
+      // anchoring_point_follower_for_leader_msg_.header.stamp = uav_state_.header.stamp;    Time is now assigned by callback
       anchoring_point_follower_for_leader_msg_.header.frame_id = uav_state_.header.frame_id;
       
       anchoring_point_follower_for_leader_msg_.pose.position.x = anchoring_pt_pose_position_[0];
@@ -1750,7 +1739,7 @@ The publishing of the payload state is only allowed from when the payload has sp
     }
 
     // 4) goal_position_cmd_follower_for_leader_pub_:
-    goal_position_cmd_follower_for_leader_.header.stamp    = uav_state_.header.stamp;
+    // goal_position_cmd_follower_for_leader_.header.stamp    = uav_state_.header.stamp; Time is now assigned by callback
     goal_position_cmd_follower_for_leader_.header.frame_id = uav_state_.header.frame_id;
     goal_position_cmd_follower_for_leader_.position.x = goal_x_;
     goal_position_cmd_follower_for_leader_.position.y = goal_y_;
@@ -6149,10 +6138,10 @@ void DergbryanTracker::computeERG(){
     }
 
     // Update final v and r of leader and follower (to be published to follower):
-    position_cmd_follower_from_leader_.header.stamp    = uav_state_.header.stamp;
+    // position_cmd_follower_from_leader_.header.stamp    = uav_state_.header.stamp;          Time is now assigned by callback
     position_cmd_follower_from_leader_.header.frame_id = uav_state_.header.frame_id;
     position_cmd_follower_from_leader_.heading = position_cmd_follower_for_leader_.heading;
-    goal_position_cmd_follower_from_leader_.header.stamp    = uav_state_.header.stamp;
+    // goal_position_cmd_follower_from_leader_.header.stamp    = uav_state_.header.stamp;     Time is now assigned by callback
     goal_position_cmd_follower_from_leader_.header.frame_id = uav_state_.header.frame_id;
     goal_position_cmd_follower_from_leader_.heading = goal_position_cmd_follower_for_leader_.heading;
     if(erg_predictions_trusted_){
@@ -7327,6 +7316,7 @@ void DergbryanTracker::uav_state_follower_for_leader_callback(const mrs_msgs::Ua
 // TODO: update these callbacks which contain too hardcoded info as uav2
 void DergbryanTracker::anchoring_point_follower_for_leader_callback(const mrs_msgs::UavState::ConstPtr& msg){
   anchoring_point_follower_for_leader_ = *msg; //for the header stamp and other quantities that might be interesting
+  anchoring_point_follower_for_leader_.header.stamp = ros::Time::now(); // Time stamp given when last received
   anchoring_point_follower_position_[0]=msg->pose.position.x;
   anchoring_point_follower_position_[1]=msg->pose.position.y;
   anchoring_point_follower_position_[2]=msg->pose.position.z;
@@ -7339,11 +7329,13 @@ void DergbryanTracker::anchoring_point_follower_for_leader_callback(const mrs_ms
 
 void DergbryanTracker::position_cmd_follower_for_leader_callback(const mrs_msgs::PositionCommand::ConstPtr& msg){
   position_cmd_follower_for_leader_=*msg;
+  position_cmd_follower_for_leader_.header.stamp = ros::Time::now(); // Time stamp given when last received
   // ROS_INFO_STREAM("Received position cmd of follower for the leader: "<< position_cmd_follower_for_leader_);
 }
 
 void DergbryanTracker::goal_position_cmd_follower_for_leader_callback(const mrs_msgs::PositionCommand::ConstPtr& msg){
   goal_position_cmd_follower_for_leader_=*msg;
+  goal_position_cmd_follower_for_leader_.header.stamp = ros::Time::now(); // Time stamp given when last received
   // ROS_INFO_STREAM("Received goal position cmd of follower for the leader: "<< goal_position_cmd_follower_for_leader_);
 }
 
@@ -7355,11 +7347,13 @@ void DergbryanTracker::estimated_uav_mass_follower_for_leader_callback(const std
   
 void DergbryanTracker::position_cmd_follower_from_leader_callback(const mrs_msgs::PositionCommand::ConstPtr& msg){
   position_cmd_follower_from_leader_=*msg;
+  position_cmd_follower_from_leader_.header.stamp = ros::Time::now(); // Time stamp given when last received
   // ROS_INFO_STREAM("Received position cmd of follower from leader \n"<< position_cmd_follower_from_leader_);
 }
 
 void DergbryanTracker::goal_position_cmd_follower_from_leader_callback(const mrs_msgs::PositionCommand::ConstPtr& msg){
   goal_position_cmd_follower_from_leader_=*msg;
+  goal_position_cmd_follower_from_leader_.header.stamp = ros::Time::now(); // Time stamp given when last received
   // ROS_INFO_STREAM("Received position cmd of follower from leader \n"<< goal_position_cmd_follower_from_leader_);
 }
 
