@@ -1417,10 +1417,10 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
           double time_delay_2 = std::abs(anchoring_point_follower_for_leader_.header.stamp.toSec() - uav_state_.header.stamp.toSec());
           double time_delay_3 = std::abs(position_cmd_follower_for_leader_.header.stamp.toSec() - uav_state_.header.stamp.toSec());
           double time_delay_4 = std::abs(goal_position_cmd_follower_for_leader_.header.stamp.toSec() - uav_state_.header.stamp.toSec());
-          ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: time_delay_1 = %f", time_delay_1);
-          ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: time_delay_2 = %f", time_delay_2);
-          ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: time_delay_3 = %f", time_delay_3);
-          ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: time_delay_4 = %f", time_delay_4);
+          // ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: time_delay_1 = %f", time_delay_1);
+          // ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: time_delay_2 = %f", time_delay_2);
+          // ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: time_delay_3 = %f", time_delay_3);
+          // ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: time_delay_4 = %f", time_delay_4);
           double max_time_delay = std::max(time_delay_1, time_delay_2);
           max_time_delay = std::max(max_time_delay, time_delay_3);
           max_time_delay = std::max(max_time_delay, time_delay_4);
@@ -1525,9 +1525,19 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
       position_cmd.position.y     = applied_ref_y_;
       position_cmd.position.z     = applied_ref_z_;
       position_cmd.heading        = goal_heading_;
+
       // but still compute the predictions
       computePSCTrajectoryPredictions(position_cmd, uav_heading, last_attitude_cmd);
-    }                                                        
+    }   
+
+    // ROS_INFO_STREAM(" goal_x_ = " << goal_x_);
+    // ROS_INFO_STREAM(" goal_y_ = " << goal_y_);
+    // ROS_INFO_STREAM(" goal_z_ = " << goal_z_);
+    // ROS_INFO_STREAM(" goal_position_cmd_follower_for_leader_x = " << goal_position_cmd_follower_for_leader_.position.x);
+    // ROS_INFO_STREAM(" goal_position_cmd_follower_for_leader_y = " << goal_position_cmd_follower_for_leader_.position.y);
+    // ROS_INFO_STREAM(" goal_position_cmd_follower_for_leader_z = " << goal_position_cmd_follower_for_leader_.position.z);
+
+
   }
   // if(_uav_name_ == _leader_uav_name_){
   //   ROS_INFO_STREAM("\n LEADER UAV:");
@@ -6175,6 +6185,17 @@ void DergbryanTracker::computeERG(){
       goal_position_cmd_follower_from_leader_.position.x = goal_follower[0];
       goal_position_cmd_follower_from_leader_.position.y = goal_follower[1];
       goal_position_cmd_follower_from_leader_.position.z = goal_follower[2];
+
+
+      ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: goal_leader_x = %f",goal_x_);
+      ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: goal_leader_y = %f",goal_y_);
+      ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: goal_leader_z = %f",goal_z_);
+
+      ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: goal_follower_x = %f",goal_follower[0]);
+      ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: goal_follower_y = %f",goal_follower[1]);
+      ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: goal_follower_z = %f",goal_follower[2]);
+
+
     } 
     else{
       // leader: do not overwrite applied_ref_x_, applied_ref_y_, applied_ref_z_
@@ -7348,13 +7369,18 @@ void DergbryanTracker::anchoring_point_follower_for_leader_callback(const mrs_ms
 void DergbryanTracker::position_cmd_follower_for_leader_callback(const mrs_msgs::PositionCommand::ConstPtr& msg){
   position_cmd_follower_for_leader_=*msg;
   position_cmd_follower_for_leader_.header.stamp = ros::Time::now(); // Time stamp given when last received
-  // ROS_INFO_STREAM("Received position cmd of follower for the leader: "<< position_cmd_follower_for_leader_);
+  // ROS_INFO_STREAM(" goal_position_cmd_follower_for_leader_x = " << goal_position_cmd_follower_for_leader_.position.x);
+  // ROS_INFO_STREAM(" goal_position_cmd_follower_for_leader_y = " << goal_position_cmd_follower_for_leader_.position.y);
+  // ROS_INFO_STREAM(" goal_position_cmd_follower_for_leader_z = " << goal_position_cmd_follower_for_leader_.position.z);
+  // ROS_INFO_STREAM(" goal_x_ = " << goal_x_);
+  // ROS_INFO_STREAM(" goal_y_ = " << goal_y_);
+  // ROS_INFO_STREAM(" goal_z_ = " << goal_z_);
 }
 
 void DergbryanTracker::goal_position_cmd_follower_for_leader_callback(const mrs_msgs::PositionCommand::ConstPtr& msg){
   goal_position_cmd_follower_for_leader_=*msg;
   goal_position_cmd_follower_for_leader_.header.stamp = ros::Time::now(); // Time stamp given when last received
-  ROS_INFO_STREAM("Received goal position cmd of follower for the leader: "<< goal_position_cmd_follower_for_leader_);
+  // ROS_INFO_STREAM("Received goal position cmd of follower for the leader: "<< goal_position_cmd_follower_for_leader_);
 }
 
 void DergbryanTracker::estimated_uav_mass_follower_for_leader_callback(const std_msgs::Float64& msg){
@@ -7372,7 +7398,8 @@ void DergbryanTracker::position_cmd_follower_from_leader_callback(const mrs_msgs
 void DergbryanTracker::goal_position_cmd_follower_from_leader_callback(const mrs_msgs::PositionCommand::ConstPtr& msg){
   goal_position_cmd_follower_from_leader_=*msg;
   goal_position_cmd_follower_from_leader_.header.stamp = ros::Time::now(); // Time stamp given when last received
-  ROS_INFO_STREAM("Received position cmd of follower from leader \n"<< goal_position_cmd_follower_from_leader_);
+  // ROS_INFO_STREAM("Received position cmd of follower from leader \n"<< goal_position_cmd_follower_from_leader_);
+  
 }
 
 void DergbryanTracker::callbackOtherUavAppliedRef(const mrs_msgs::FutureTrajectoryConstPtr& msg) {
