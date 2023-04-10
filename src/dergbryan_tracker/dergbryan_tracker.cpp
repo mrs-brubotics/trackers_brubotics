@@ -1479,6 +1479,8 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
           applied_ref_x_ = position_cmd_follower_from_leader_.position.x;
           applied_ref_y_ = position_cmd_follower_from_leader_.position.y;
           applied_ref_z_ = position_cmd_follower_from_leader_.position.z;
+          ROS_INFO_STREAM("position_cmd_follower_from_leader_ =" << position_cmd_follower_from_leader_);
+
           // update the follower's target ref:
           /* We do not update the goal_ vars below as this would conflict with the follower uav being commanded other target 
             references via setGoal and timerTrajectoryTracking. So this topic can be interpreted as the actual target reference
@@ -6149,11 +6151,13 @@ void DergbryanTracker::computeERG(){
       applied_ref_x_ = applied_ref_leader[0];
       applied_ref_y_ = applied_ref_leader[1];
       applied_ref_z_ = applied_ref_leader[2];
+      ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"applied_ref_leader",applied_ref_leader);
       
       // follower:
       position_cmd_follower_from_leader_.position.x = applied_ref_follower[0];
       position_cmd_follower_from_leader_.position.y = applied_ref_follower[1];
       position_cmd_follower_from_leader_.position.z = applied_ref_follower[2];
+      ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"applied_ref_follower",applied_ref_follower);
       
       goal_position_cmd_follower_from_leader_.position.x = goal_follower[0];
       goal_position_cmd_follower_from_leader_.position.y = goal_follower[1];
