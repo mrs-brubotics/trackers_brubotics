@@ -8120,7 +8120,9 @@ void DergbryanTracker::timerTrajectoryTracking(const ros::TimerEvent& event) {
     }
     // INCREMENT THE TRACKING IDX
     trajectory_tracking_idx_++;
-    ROS_INFO_STREAM_THROTTLE(1.0, "[DergbryanTracker]: trajectory_tracking_idx_" << trajectory_tracking_idx_);
+    // ROS_INFO_STREAM_THROTTLE(1.0, "[DergbryanTracker]: trajectory_tracking_idx_" << trajectory_tracking_idx_);
+    ROS_INFO_STREAM("[DergbryanTracker]: trajectory_tracking_idx_" << trajectory_tracking_idx_);
+
     // !!!!! bryan, inspired by original timerMpc
     // looping  
     if (trajectory_tracking_loop_) {
