@@ -1481,9 +1481,9 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
           applied_ref_x_ = position_cmd_follower_from_leader_.position.x;
           applied_ref_y_ = position_cmd_follower_from_leader_.position.y;
           applied_ref_z_ = position_cmd_follower_from_leader_.position.z;
-          ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: position_cmd_follower_from_leader_x = %f",position_cmd_follower_from_leader_.position.x);
-          ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: position_cmd_follower_from_leader_y = %f",position_cmd_follower_from_leader_.position.y);
-          ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: position_cmd_follower_from_leader_z = %f",position_cmd_follower_from_leader_.position.z);
+          // ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: position_cmd_follower_from_leader_x = %f",position_cmd_follower_from_leader_.position.x);
+          // ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: position_cmd_follower_from_leader_y = %f",position_cmd_follower_from_leader_.position.y);
+          // ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: position_cmd_follower_from_leader_z = %f",position_cmd_follower_from_leader_.position.z);
 
 
           // update the follower's target ref:
@@ -6158,18 +6158,18 @@ void DergbryanTracker::computeERG(){
       applied_ref_x_ = applied_ref_leader[0];
       applied_ref_y_ = applied_ref_leader[1];
       applied_ref_z_ = applied_ref_leader[2];
-      ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: applied_ref_leader_x = %f",applied_ref_leader[0]);
-      ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: applied_ref_leader_y = %f",applied_ref_leader[1]);
-      ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: applied_ref_leader_z = %f",applied_ref_leader[2]);
+      // ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: applied_ref_leader_x = %f",applied_ref_leader[0]);
+      // ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: applied_ref_leader_y = %f",applied_ref_leader[1]);
+      // ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: applied_ref_leader_z = %f",applied_ref_leader[2]);
 
 
       // follower:
       position_cmd_follower_from_leader_.position.x = applied_ref_follower[0];
       position_cmd_follower_from_leader_.position.y = applied_ref_follower[1];
       position_cmd_follower_from_leader_.position.z = applied_ref_follower[2];
-      ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: applied_ref_follower_x = %f",applied_ref_follower[0]);
-      ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: applied_ref_follower_y = %f",applied_ref_follower[1]);
-      ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: applied_ref_follower_z = %f",applied_ref_follower[2]);
+      // ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: applied_ref_follower_x = %f",applied_ref_follower[0]);
+      // ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: applied_ref_follower_y = %f",applied_ref_follower[1]);
+      // ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: applied_ref_follower_z = %f",applied_ref_follower[2]);
 
       
       goal_position_cmd_follower_from_leader_.position.x = goal_follower[0];
@@ -7354,7 +7354,7 @@ void DergbryanTracker::position_cmd_follower_for_leader_callback(const mrs_msgs:
 void DergbryanTracker::goal_position_cmd_follower_for_leader_callback(const mrs_msgs::PositionCommand::ConstPtr& msg){
   goal_position_cmd_follower_for_leader_=*msg;
   goal_position_cmd_follower_for_leader_.header.stamp = ros::Time::now(); // Time stamp given when last received
-  // ROS_INFO_STREAM("Received goal position cmd of follower for the leader: "<< goal_position_cmd_follower_for_leader_);
+  ROS_INFO_STREAM("Received goal position cmd of follower for the leader: "<< goal_position_cmd_follower_for_leader_);
 }
 
 void DergbryanTracker::estimated_uav_mass_follower_for_leader_callback(const std_msgs::Float64& msg){
@@ -7372,7 +7372,7 @@ void DergbryanTracker::position_cmd_follower_from_leader_callback(const mrs_msgs
 void DergbryanTracker::goal_position_cmd_follower_from_leader_callback(const mrs_msgs::PositionCommand::ConstPtr& msg){
   goal_position_cmd_follower_from_leader_=*msg;
   goal_position_cmd_follower_from_leader_.header.stamp = ros::Time::now(); // Time stamp given when last received
-  // ROS_INFO_STREAM("Received position cmd of follower from leader \n"<< goal_position_cmd_follower_from_leader_);
+  ROS_INFO_STREAM("Received position cmd of follower from leader \n"<< goal_position_cmd_follower_from_leader_);
 }
 
 void DergbryanTracker::callbackOtherUavAppliedRef(const mrs_msgs::FutureTrajectoryConstPtr& msg) {
