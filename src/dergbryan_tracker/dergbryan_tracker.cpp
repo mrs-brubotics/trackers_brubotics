@@ -1391,20 +1391,20 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
       the follower UAV is published so that leader UAV can perform the predictions.
     */
 
-    if(_type_of_system_=="1uav_no_payload" ){
-      if(_uav_name_=="uav2"){
-        double time_delay_3 = (ros::Time::now() - other_uav_tube_["uav3"].stamp).toSec();
-        ROS_INFO_STREAM("[DergbryanTracker]: time_delay_3 = " << time_delay_3);
-        ROS_INFO_STREAM("[DergbryanTracker]: other_uav_tube_ time = " << other_uav_tube_["uav3"].stamp.toSec());
-        ROS_INFO_STREAM("[DergbryanTracker]: ROS time = " << ros::Time::now().toSec());
-      }
-      else if(_uav_name_=="uav3"){
-        double time_delay_3 = (ros::Time::now() - other_uav_tube_["uav2"].stamp).toSec();
-        ROS_INFO_STREAM("[DergbryanTracker]: time_delay_3 = " << time_delay_3);
-        ROS_INFO_STREAM("[DergbryanTracker]: other_uav_tube_ time = " << other_uav_tube_["uav2"].stamp.toSec());
-        ROS_INFO_STREAM("[DergbryanTracker]: ROS time = " << ros::Time::now().toSec());
-      }
-    }
+    // if(_type_of_system_=="1uav_no_payload" ){
+    //   if(_uav_name_=="uav2"){
+    //     double time_delay_3 = (ros::Time::now() - other_uav_tube_["uav3"].stamp).toSec();
+    //     ROS_INFO_STREAM("[DergbryanTracker]: time_delay_3 = " << time_delay_3);
+    //     ROS_INFO_STREAM("[DergbryanTracker]: other_uav_tube_ time = " << other_uav_tube_["uav3"].stamp.toSec());
+    //     ROS_INFO_STREAM("[DergbryanTracker]: ROS time = " << ros::Time::now().toSec());
+    //   }
+    //   else if(_uav_name_=="uav3"){
+    //     double time_delay_3 = (ros::Time::now() - other_uav_tube_["uav2"].stamp).toSec();
+    //     ROS_INFO_STREAM("[DergbryanTracker]: time_delay_3 = " << time_delay_3);
+    //     ROS_INFO_STREAM("[DergbryanTracker]: other_uav_tube_ time = " << other_uav_tube_["uav2"].stamp.toSec());
+    //     ROS_INFO_STREAM("[DergbryanTracker]: ROS time = " << ros::Time::now().toSec());
+    //   }
+    // }
 
 
 
@@ -1431,10 +1431,10 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
             callback_data_follower_no_delay_ = false;
           }
           if(!callback_data_follower_no_delay_ && payload_spawned_){
-            ROS_WARN("[DergbryanTracker]: follower data is delayed too much (%fs) while payload has spawned!", max_time_delay);
+            ROS_WARN_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: follower data is delayed too much (%fs) while payload has spawned!", max_time_delay);
             if(_run_type_ == "simulation" && !_baca_in_simulation_ ){ // Only to do when in simulation when the load is spawned. TO DO: If baca in simulation is tested with spawning the payload, this part might give a problem
-              ROS_INFO_STREAM("[DergbryanTracker]: time_first_time_payload_spawned_ = " << time_first_time_payload_spawned_);
               if(uav_state_.header.stamp.toSec() - time_first_time_payload_spawned_ > 5.0){ // Spawning the payload in Gazebo can take several seconds and result in the leader uav to have spawned more than _max_time_delay_on_callback_data_follower_ before the follower uav. 
+                ROS_INFO_STREAM("[DergbryanTracker]: time_first_time_payload_spawned_ = " << time_first_time_payload_spawned_);
                 deactivate(); 
               }
             }
@@ -1500,8 +1500,8 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
           // don't update the follower's applied_ref_x_, applied_ref_y_, applied_ref_z_
           ROS_WARN("[DergbryanTracker]: leader data is delayed too much (%fs) while payload has spawned!", max_time_delay);
           if(_run_type_ == "simulation" && !_baca_in_simulation_ ){ // Only to do when in simulation when the load is spawned. TO DO: If baca in simulation is tested with spawning the payload, this part might give a problem
-            ROS_INFO_STREAM("[DergbryanTracker]: time_first_time_payload_spawned_ = " << time_first_time_payload_spawned_);
             if(uav_state_.header.stamp.toSec() - time_first_time_payload_spawned_ > 5.0){ // Spawning the payload in Gazebo can take several seconds and result in the follower uav to have spawned more than _max_time_delay_on_callback_data_leader_ before the leader uav. 
+              ROS_INFO_STREAM("[DergbryanTracker]: time_first_time_payload_spawned_ = " << time_first_time_payload_spawned_);
               deactivate(); 
             }
           }
@@ -1536,7 +1536,7 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
     // ROS_INFO_STREAM(" goal_position_cmd_follower_for_leader_x = " << goal_position_cmd_follower_for_leader_.position.x);
     // ROS_INFO_STREAM(" goal_position_cmd_follower_for_leader_y = " << goal_position_cmd_follower_for_leader_.position.y);
     // ROS_INFO_STREAM(" goal_position_cmd_follower_for_leader_z = " << goal_position_cmd_follower_for_leader_.position.z);
-
+    // ROS_INFO_STREAM("Finished update routine. time = " << ros::Time::now());
 
   }
   // if(_uav_name_ == _leader_uav_name_){
@@ -6960,10 +6960,10 @@ Eigen::Vector3d DergbryanTracker::computeNF_oc_2uavspayload(void){
       }    
     }
   }
-  ROS_INFO_STREAM("[DergbryanTracker]: Cylinder-UAV: NF_o_co_amplitude_max_ = " << NF_o_co_amplitude_max_);
-  ROS_INFO_STREAM("[DergbryanTracker]: Cylinder-UAV: dist_at_NF_o_co_amplitude_max = " << dist_at_NF_o_co_amplitude_max);
-  ROS_INFO_STREAM("[DergbryanTracker]: Cylinder-UAV: NF_o_co_max = \n" << NF_o_co_max);
-  ROS_INFO_STREAM("[DergbryanTracker]: Cylinder-UAV: NF_o_nco_max = \n" << NF_o_nco_max);
+  ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: Cylinder-UAV: NF_o_co_amplitude_max_ = %f", NF_o_co_amplitude_max_);
+  ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: Cylinder-UAV: dist_at_NF_o_co_amplitude_max = %f",dist_at_NF_o_co_amplitude_max);
+  ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: Cylinder-UAV: NF_o_co_max = %f", NF_o_co_max);
+  ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: Cylinder-UAV: NF_o_nco_max = %f", NF_o_nco_max);
   return NF_o;
 }
 
@@ -7369,12 +7369,6 @@ void DergbryanTracker::anchoring_point_follower_for_leader_callback(const mrs_ms
 void DergbryanTracker::position_cmd_follower_for_leader_callback(const mrs_msgs::PositionCommand::ConstPtr& msg){
   position_cmd_follower_for_leader_=*msg;
   position_cmd_follower_for_leader_.header.stamp = ros::Time::now(); // Time stamp given when last received
-  // ROS_INFO_STREAM(" goal_position_cmd_follower_for_leader_x = " << goal_position_cmd_follower_for_leader_.position.x);
-  // ROS_INFO_STREAM(" goal_position_cmd_follower_for_leader_y = " << goal_position_cmd_follower_for_leader_.position.y);
-  // ROS_INFO_STREAM(" goal_position_cmd_follower_for_leader_z = " << goal_position_cmd_follower_for_leader_.position.z);
-  // ROS_INFO_STREAM(" goal_x_ = " << goal_x_);
-  // ROS_INFO_STREAM(" goal_y_ = " << goal_y_);
-  // ROS_INFO_STREAM(" goal_z_ = " << goal_z_);
 }
 
 void DergbryanTracker::goal_position_cmd_follower_for_leader_callback(const mrs_msgs::PositionCommand::ConstPtr& msg){
@@ -7385,7 +7379,7 @@ void DergbryanTracker::goal_position_cmd_follower_for_leader_callback(const mrs_
 
 void DergbryanTracker::estimated_uav_mass_follower_for_leader_callback(const std_msgs::Float64& msg){
   estimated_mass_follower_ = msg.data;
-  ROS_INFO_STREAM("Received estimated mass of follower for the leader: "<< estimated_mass_follower_);
+  // ROS_INFO_STREAM("Received estimated mass of follower for the leader: "<< estimated_mass_follower_);
 }
 
   
@@ -8113,7 +8107,7 @@ void DergbryanTracker::timerTrajectoryTracking(const ros::TimerEvent& event) {
     //trajectory_tracking_sub_idx_ = 0;
 
     if(trajectory_tracking_idx_ == 0){
-      //ROS_INFO_STREAM("[DergbryanTracker]: trajectory_tracking_idx_ = \n" << trajectory_tracking_idx_);
+      ROS_INFO_STREAM("[DergbryanTracker]: trajectory_tracking_idx_ = \n" << trajectory_tracking_idx_);
       // set the global variable to keep track of the time when the trajectory was started
       time_at_start_point_ = (ros::Time::now()).toSec();
       // publish it below (add to msg) 
