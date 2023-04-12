@@ -435,6 +435,7 @@ private:
   void GazeboLoadStatesCallback(const gazebo_msgs::LinkStatesConstPtr& loadmsg); // TODO: document
   bool payload_spawned_ = false;  // TODO: document
   double time_first_time_payload_spawned_ = 0.0; // TODO: document
+  bool both_uavs_ready = false;
   bool callback_data_follower_no_delay_ = false; // true if all the data that is published by the follower and subscribed on by leader is not too much delayed
   bool callback_data_leader_no_delay_ = false;   // true if all the data that is published by the leader and subscribed on by follower is not too much delayed
   double _max_time_delay_on_callback_data_follower_; //= 0.100;// = 10*_dt_0_;
@@ -1426,14 +1427,24 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
           max_time_delay = std::max(max_time_delay, time_delay_4);
           if (max_time_delay < _max_time_delay_on_callback_data_follower_ && payload_spawned_){
             callback_data_follower_no_delay_ = true;
+            both_uavs_ready = true;
           } 
           else {
             callback_data_follower_no_delay_ = false;
           }
           if(!callback_data_follower_no_delay_ && payload_spawned_){
             ROS_WARN_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: follower data is delayed too much (%fs) while payload has spawned!", max_time_delay);
-            if(_run_type_ == "simulation" && !_baca_in_simulation_ ){ // Only to do when in simulation when the load is spawned. TO DO: If baca in simulation is tested with spawning the payload, this part might give a problem
-              if(uav_state_.header.stamp.toSec() - time_first_time_payload_spawned_ > 5.0){ // Spawning the payload in Gazebo can take several seconds and result in the leader uav to have spawned more than _max_time_delay_on_callback_data_follower_ before the follower uav. 
+            
+            if(_run_type_ == "uav" || (_baca_in_simulation_ && _run_type_ == "simulation")){
+              if(both_uavs_ready){
+                if(max_time_delay > 1.0){ 
+                  ROS_INFO_STREAM("[DergbryanTracker]: follower data is delayed by more than 1 second => Deactivate tracker ");
+                  deactivate(); 
+                }
+              }
+            }
+            else if(_run_type_ == "simulation" && !_baca_in_simulation_){ // Only to do when in simulation when the load is spawned. TO DO: If baca in simulation is tested with spawning the payload, this part might give a problem
+              if(ros::Time::now().toSec() - time_first_time_payload_spawned_ > 5.0){ // Spawning the payload in Gazebo can take several seconds and result in the leader uav to have spawned more than _max_time_delay_on_callback_data_follower_ before the follower uav. 
                 ROS_INFO_STREAM("[DergbryanTracker]: time_first_time_payload_spawned_ = " << time_first_time_payload_spawned_);
                 deactivate(); 
               }
@@ -1477,6 +1488,8 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
         double max_time_delay = std::max(time_delay_1, time_delay_2);
         if (max_time_delay < _max_time_delay_on_callback_data_leader_){
           callback_data_leader_no_delay_ = true;
+          both_uavs_ready = true;
+
           // update the follower's applied ref:
           applied_ref_x_ = position_cmd_follower_from_leader_.position.x;
           applied_ref_y_ = position_cmd_follower_from_leader_.position.y;
@@ -1499,8 +1512,17 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
           callback_data_leader_no_delay_ = false;
           // don't update the follower's applied_ref_x_, applied_ref_y_, applied_ref_z_
           ROS_WARN_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: leader data is delayed too much (%fs) while payload has spawned!", max_time_delay);
-          if(_run_type_ == "simulation" && !_baca_in_simulation_ ){ // Only to do when in simulation when the load is spawned. TO DO: If baca in simulation is tested with spawning the payload, this part might give a problem
-            if(uav_state_.header.stamp.toSec() - time_first_time_payload_spawned_ > 5.0){ // Spawning the payload in Gazebo can take several seconds and result in the follower uav to have spawned more than _max_time_delay_on_callback_data_leader_ before the leader uav. 
+
+          if(_run_type_ == "uav" || (_baca_in_simulation_ && _run_type_ == "simulation")){
+            if(both_uavs_ready){
+              if(max_time_delay > 1.0){ 
+                ROS_INFO_STREAM("[DergbryanTracker]: leader data is delayed by more than 1 second => Deactivate tracker ");
+                deactivate(); 
+              }
+            }
+          }
+          else if(_run_type_ == "simulation" && !_baca_in_simulation_){ // Only to do when in simulation when the load is spawned. TO DO: If baca in simulation is tested with spawning the payload, this part might give a problem
+            if(ros::Time::now().toSec() - time_first_time_payload_spawned_ > 5.0){ // Spawning the payload in Gazebo can take several seconds and result in the leader uav to have spawned more than _max_time_delay_on_callback_data_follower_ before the follower uav. 
               ROS_INFO_STREAM("[DergbryanTracker]: time_first_time_payload_spawned_ = " << time_first_time_payload_spawned_);
               deactivate(); 
             }
