@@ -315,6 +315,13 @@ private:
   ros::Publisher goal_position_cmd_follower_for_leader_pub_;
   ros::Publisher position_cmd_follower_from_leader_pub_;
   ros::Publisher goal_position_cmd_follower_from_leader_pub_;
+  // Time delays of the communication:
+  ros::Publisher time_delay_uav_state_follower_for_leader_pub_;
+  ros::Publisher time_delay_anchoring_point_follower_for_leader_pub_;
+  ros::Publisher time_delay_position_cmd_follower_for_leader_pub_;
+  ros::Publisher time_delay_goal_position_cmd_follower_for_leader_pub_;
+  ros::Publisher time_delay_position_cmd_follower_from_leader_pub_;
+  ros::Publisher time_delay_goal_position_cmd_follower_from_leader_pub_;
   //  - ERG trajectory predictions: 
   ros::Publisher predicted_uav1_poses_publisher_;
   ros::Publisher predicted_uav2_poses_publisher_;
@@ -331,8 +338,7 @@ private:
   ros::Publisher predicted_uav1_swing_angle_publisher_; 
   ros::Publisher predicted_uav2_swing_angle_publisher_; 
   ros::Publisher predicted_uav1_tension_force_publisher_; 
-  ros::Publisher predicted_uav2_tension_force_publisher_; 
-
+  ros::Publisher predicted_uav2_tension_force_publisher_;
   //|-----------------------------D-ERG--------------------------------|//
   // TODO: bryan clean when improving ERG
   //    - Multi-uav collision avoidance:
@@ -389,6 +395,13 @@ private:
   //|-----------------------------2UAVsLOAD----------------------|//
   // transfer information of UAV2 to UAV1
   mrs_msgs::UavState anchoring_point_follower_for_leader_msg_;
+  // Time delay Communication between UAVs
+  std_msgs::Float64 time_delay_uav_state_follower_for_leader_out_;
+  std_msgs::Float64 time_delay_anchoring_point_follower_for_leader_out_;
+  std_msgs::Float64 time_delay_position_cmd_follower_for_leader_out_;
+  std_msgs::Float64 time_delay_goal_position_cmd_follower_for_leader_out_;
+  std_msgs::Float64 time_delay_position_cmd_follower_from_leader_out_;
+  std_msgs::Float64 time_delay_goal_position_cmd_follower_from_leader_out_;
   //Store and publish the predictions (over whole horizon).
   geometry_msgs::PoseArray predicted_uav1_poses_out_;
   geometry_msgs::PoseArray predicted_uav1_vel_out_;
@@ -1022,13 +1035,23 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
     // for communication between the leader and follower uavs: follower publishes state feedback to leader and leader commands the reference to the follower
     if (_uav_name_ == _leader_uav_name_){  // leader
       position_cmd_follower_from_leader_pub_ = nh2_.advertise<mrs_msgs::PositionCommand>("position_cmd_f_from_l", 1); 
-      goal_position_cmd_follower_from_leader_pub_ = nh2_.advertise<mrs_msgs::PositionCommand>("goal_pos_cmd_f_from_l", 1); 
+      goal_position_cmd_follower_from_leader_pub_ = nh2_.advertise<mrs_msgs::PositionCommand>("goal_pos_cmd_f_from_l", 1);
+
+      time_delay_uav_state_follower_for_leader_pub_ = nh2_.advertise<std_msgs::Float64>("time_delay_uav_state_follower_for_leader", 1);
+      time_delay_anchoring_point_follower_for_leader_pub_ = nh2_.advertise<std_msgs::Float64>("time_delay_anchoring_point_follower_for_leader", 1);
+      time_delay_position_cmd_follower_for_leader_pub_ = nh2_.advertise<std_msgs::Float64>("time_delay_position_cmd_follower_for_leader", 1);
+      time_delay_goal_position_cmd_follower_for_leader_pub_ = nh2_.advertise<std_msgs::Float64>("time_delay_goal_position_cmd_follower_for_leader", 1);
     }
     else if (_uav_name_ == _follower_uav_name_){ // follower
       uav_state_follower_for_leader_pub_ = nh2_.advertise<mrs_msgs::UavState>("uav_state_f_for_l", 1);
       anchoring_point_follower_for_leader_pub_ = nh2_.advertise<mrs_msgs::UavState>("anch_point_f_for_l", 1);
       position_cmd_follower_for_leader_pub_ = nh2_.advertise<mrs_msgs::PositionCommand>("position_cmd_f_for_l", 1); 
       goal_position_cmd_follower_for_leader_pub_ = nh2_.advertise<mrs_msgs::PositionCommand>("goal_pos_cmd_f_for_l", 1); 
+
+      if(_use_derg_){
+        time_delay_position_cmd_follower_from_leader_pub_ = nh2_.advertise<std_msgs::Float64>("time_delay_position_cmd_follower_from_leader", 1);
+        time_delay_goal_position_cmd_follower_from_leader_pub_ = nh2_.advertise<std_msgs::Float64>("time_delay_goal_position_cmd_follower_from_leader", 1);
+      }
     }
   }
 
@@ -1414,17 +1437,17 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
       
         if(_uav_name_ == _leader_uav_name_){
           // check the accompanying callbacks of the leader uav if the msgs of the follower are received from timestamps which are not delayed too much wrt the current timestamp of the uav_state_.
-          double time_delay_1 = std::abs(uav_state_follower_for_leader_.header.stamp.toSec() - uav_state_.header.stamp.toSec());
-          double time_delay_2 = std::abs(anchoring_point_follower_for_leader_.header.stamp.toSec() - uav_state_.header.stamp.toSec());
-          double time_delay_3 = std::abs(position_cmd_follower_for_leader_.header.stamp.toSec() - uav_state_.header.stamp.toSec());
-          double time_delay_4 = std::abs(goal_position_cmd_follower_for_leader_.header.stamp.toSec() - uav_state_.header.stamp.toSec());
-          // ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: time_delay_1 = %f", time_delay_1);
-          // ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: time_delay_2 = %f", time_delay_2);
-          // ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: time_delay_3 = %f", time_delay_3);
-          // ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: time_delay_4 = %f", time_delay_4);
-          double max_time_delay = std::max(time_delay_1, time_delay_2);
-          max_time_delay = std::max(max_time_delay, time_delay_3);
-          max_time_delay = std::max(max_time_delay, time_delay_4);
+          time_delay_uav_state_follower_for_leader_out_.data = (ros::Time::now() - uav_state_follower_for_leader_.header.stamp).toSec();
+          time_delay_anchoring_point_follower_for_leader_out_.data = (ros::Time::now() - anchoring_point_follower_for_leader_.header.stamp).toSec();
+          time_delay_position_cmd_follower_for_leader_out_.data = (ros::Time::now() - position_cmd_follower_for_leader_.header.stamp).toSec();
+          time_delay_goal_position_cmd_follower_for_leader_out_.data = (ros::Time::now() - goal_position_cmd_follower_for_leader_.header.stamp).toSec();
+          // ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: time_delay_1 = %f", time_delay_uav_state_follower_for_leader_out_.data);
+          // ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: time_delay_2 = %f", time_delay_anchoring_point_follower_for_leader_out_.data);
+          // ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: time_delay_3 = %f", time_delay_position_cmd_follower_for_leader_out_.data);
+          // ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: time_delay_4 = %f", time_delay_goal_position_cmd_follower_for_leader_out_.data);
+          double max_time_delay = std::max(time_delay_uav_state_follower_for_leader_out_.data, time_delay_anchoring_point_follower_for_leader_out_.data);
+          max_time_delay = std::max(max_time_delay, time_delay_position_cmd_follower_for_leader_out_.data);
+          max_time_delay = std::max(max_time_delay, time_delay_goal_position_cmd_follower_for_leader_out_.data);
           if (max_time_delay < _max_time_delay_on_callback_data_follower_ && payload_spawned_){
             callback_data_follower_no_delay_ = true;
             both_uavs_ready = true;
@@ -1481,11 +1504,11 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
       }
       else if (_type_of_system_=="2uavs_payload" && _uav_name_ == _follower_uav_name_ && payload_spawned_){
         // check the callback of the follower uav if the msgs of the leader is received from a timestamp which is not delayed too much wrt the current timestamp of the uav_state_.
-        double time_delay_1 = std::abs(position_cmd_follower_from_leader_.header.stamp.toSec() - uav_state_.header.stamp.toSec());
-        double time_delay_2 = std::abs(goal_position_cmd_follower_from_leader_.header.stamp.toSec() - uav_state_.header.stamp.toSec());
-        ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: follower from leader time_delay_1 = %f",time_delay_1);
-        ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: follower from leader time_delay_2 = %f",time_delay_2);
-        double max_time_delay = std::max(time_delay_1, time_delay_2);
+        time_delay_position_cmd_follower_from_leader_out_.data = (ros::Time::now() - position_cmd_follower_from_leader_.header.stamp).toSec();
+        time_delay_goal_position_cmd_follower_from_leader_out_.data = (ros::Time::now() - goal_position_cmd_follower_from_leader_.header.stamp).toSec();
+        // ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: follower from leader time_delay_1 = %f",time_delay_position_cmd_follower_from_leader_out_.data);
+        // ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: follower from leader time_delay_2 = %f",time_delay_goal_position_cmd_follower_from_leader_out_.data);
+        double max_time_delay = std::max(time_delay_position_cmd_follower_from_leader_out_.data, time_delay_goal_position_cmd_follower_from_leader_out_.data);
         if (max_time_delay < _max_time_delay_on_callback_data_leader_){
           callback_data_leader_no_delay_ = true;
           both_uavs_ready = true;
@@ -1654,6 +1677,56 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
   }
   catch (...) {
     ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", ComputationalTime_publisher_.getTopic().c_str());
+  }
+
+  // Time delays communication between 2UAVs with payload
+  if(_type_of_system_=="2uavs_payload"){
+    if(_uav_name_ == _leader_uav_name_){
+      try {
+        time_delay_uav_state_follower_for_leader_pub_.publish(time_delay_uav_state_follower_for_leader_out_);
+      }
+      catch (...) {
+        ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", time_delay_uav_state_follower_for_leader_pub_.getTopic().c_str());
+      }
+
+      try {
+        time_delay_anchoring_point_follower_for_leader_pub_.publish(time_delay_anchoring_point_follower_for_leader_out_);
+      }
+      catch (...) {
+        ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", time_delay_anchoring_point_follower_for_leader_pub_.getTopic().c_str());
+      }
+
+      try {
+        time_delay_position_cmd_follower_for_leader_pub_.publish(time_delay_position_cmd_follower_for_leader_out_);
+      }
+      catch (...) {
+        ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", time_delay_position_cmd_follower_for_leader_pub_.getTopic().c_str());
+      }
+
+      try {
+        time_delay_goal_position_cmd_follower_for_leader_pub_.publish(time_delay_goal_position_cmd_follower_for_leader_out_);
+      }
+      catch (...) {
+        ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", time_delay_goal_position_cmd_follower_for_leader_pub_.getTopic().c_str());
+      }
+    }
+    else if(_uav_name_ == _follower_uav_name_){
+      if(_use_derg_){
+        try {
+          time_delay_position_cmd_follower_from_leader_pub_.publish(time_delay_position_cmd_follower_from_leader_out_);
+        }
+        catch (...) {
+          ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", time_delay_position_cmd_follower_from_leader_pub_.getTopic().c_str());
+        }
+
+        try {
+          time_delay_goal_position_cmd_follower_from_leader_pub_.publish(time_delay_goal_position_cmd_follower_from_leader_out_);
+        }
+        catch (...) {
+          ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", time_delay_goal_position_cmd_follower_from_leader_pub_.getTopic().c_str());
+        }
+      }
+    }
   }
 
 
