@@ -6282,13 +6282,13 @@ void DergbryanTracker::computeERG(){
       goal_position_cmd_follower_from_leader_.position.z = goal_follower[2];
 
 
-      ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: goal_leader_x = %f",goal_x_);
-      ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: goal_leader_y = %f",goal_y_);
-      ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: goal_leader_z = %f",goal_z_);
+      // ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: goal_leader_x = %f",goal_x_);
+      // ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: goal_leader_y = %f",goal_y_);
+      // ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: goal_leader_z = %f",goal_z_);
 
-      ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: goal_follower_x = %f",goal_follower[0]);
-      ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: goal_follower_y = %f",goal_follower[1]);
-      ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: goal_follower_z = %f",goal_follower[2]);
+      // ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: goal_follower_x = %f",goal_follower[0]);
+      // ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: goal_follower_y = %f",goal_follower[1]);
+      // ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: goal_follower_z = %f",goal_follower[2]);
 
 
     } 
@@ -8210,7 +8210,7 @@ void DergbryanTracker::timerTrajectoryTracking(const ros::TimerEvent& event) {
     // INCREMENT THE TRACKING IDX
     trajectory_tracking_idx_++;
     // ROS_INFO_STREAM_THROTTLE(1.0, "[DergbryanTracker]: trajectory_tracking_idx_" << trajectory_tracking_idx_);
-    ROS_INFO_STREAM("[DergbryanTracker]: trajectory_tracking_idx_" << trajectory_tracking_idx_);
+    ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: trajectory_tracking_idx_ = %f",trajectory_tracking_idx_);
 
     // !!!!! bryan, inspired by original timerMpc
     // looping  
