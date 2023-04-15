@@ -943,7 +943,7 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   param_loader2.loadParam("enable_trajectory_pub", _enable_trajectory_pub_);
   // TODO: any other DergbryanTracker params to load?
 
-  if (!param_loader.loadedSuccessfully()) {
+  if (!param_loader2.loadedSuccessfully()) {
     ROS_ERROR("[DergbryanTracker]: could not load all DergbryanTracker parameters!");
     ros::requestShutdown();
   } 
@@ -1268,6 +1268,12 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
     return mrs_msgs::PositionCommand::Ptr();
   }
 
+  // ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"Ros time = %f",ros::Time::now().toSec());
+  // if(ros::Time::now().toSec() > 50){
+  //   // return mrs_msgs::PositionCommand::Ptr();
+  //   // return mrs_msgs::PositionCommand::ConstPtr();
+  // }
+
 
   /* TODO: currently we use the estimated mass of the leader uav for the predicitons of leader and 
   follower. There is already a subsciber on the mass_estimate of the follower. However, this is published 
@@ -1441,10 +1447,10 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
           time_delay_anchoring_point_follower_for_leader_out_.data = (ros::Time::now() - anchoring_point_follower_for_leader_.header.stamp).toSec();
           time_delay_position_cmd_follower_for_leader_out_.data = (ros::Time::now() - position_cmd_follower_for_leader_.header.stamp).toSec();
           time_delay_goal_position_cmd_follower_for_leader_out_.data = (ros::Time::now() - goal_position_cmd_follower_for_leader_.header.stamp).toSec();
-          // ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: time_delay_1 = %f", time_delay_uav_state_follower_for_leader_out_.data);
-          // ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: time_delay_2 = %f", time_delay_anchoring_point_follower_for_leader_out_.data);
-          // ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: time_delay_3 = %f", time_delay_position_cmd_follower_for_leader_out_.data);
-          // ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: time_delay_4 = %f", time_delay_goal_position_cmd_follower_for_leader_out_.data);
+          ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: time_delay_1 = %f", time_delay_uav_state_follower_for_leader_out_.data);
+          ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: time_delay_2 = %f", time_delay_anchoring_point_follower_for_leader_out_.data);
+          ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: time_delay_3 = %f", time_delay_position_cmd_follower_for_leader_out_.data);
+          ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: time_delay_4 = %f", time_delay_goal_position_cmd_follower_for_leader_out_.data);
           double max_time_delay = std::max(time_delay_uav_state_follower_for_leader_out_.data, time_delay_anchoring_point_follower_for_leader_out_.data);
           max_time_delay = std::max(max_time_delay, time_delay_position_cmd_follower_for_leader_out_.data);
           max_time_delay = std::max(max_time_delay, time_delay_goal_position_cmd_follower_for_leader_out_.data);
@@ -1469,7 +1475,7 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
             else if(_run_type_ == "simulation" && !_baca_in_simulation_){ // Only to do when in simulation when the load is spawned. TO DO: If baca in simulation is tested with spawning the payload, this part might give a problem
               if(ros::Time::now().toSec() - time_first_time_payload_spawned_ > 5.0){ // Spawning the payload in Gazebo can take several seconds and result in the leader uav to have spawned more than _max_time_delay_on_callback_data_follower_ before the follower uav. 
                 ROS_INFO_STREAM("[DergbryanTracker]: time_first_time_payload_spawned_ = " << time_first_time_payload_spawned_);
-                deactivate(); 
+                // deactivate(); 
               }
             }
           }
@@ -1506,8 +1512,8 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
         // check the callback of the follower uav if the msgs of the leader is received from a timestamp which is not delayed too much wrt the current timestamp of the uav_state_.
         time_delay_position_cmd_follower_from_leader_out_.data = (ros::Time::now() - position_cmd_follower_from_leader_.header.stamp).toSec();
         time_delay_goal_position_cmd_follower_from_leader_out_.data = (ros::Time::now() - goal_position_cmd_follower_from_leader_.header.stamp).toSec();
-        // ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: follower from leader time_delay_1 = %f",time_delay_position_cmd_follower_from_leader_out_.data);
-        // ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: follower from leader time_delay_2 = %f",time_delay_goal_position_cmd_follower_from_leader_out_.data);
+        ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: follower from leader time_delay_1 = %f",time_delay_position_cmd_follower_from_leader_out_.data);
+        ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: follower from leader time_delay_2 = %f",time_delay_goal_position_cmd_follower_from_leader_out_.data);
         double max_time_delay = std::max(time_delay_position_cmd_follower_from_leader_out_.data, time_delay_goal_position_cmd_follower_from_leader_out_.data);
         if (max_time_delay < _max_time_delay_on_callback_data_leader_){
           callback_data_leader_no_delay_ = true;
@@ -1547,7 +1553,7 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
           else if(_run_type_ == "simulation" && !_baca_in_simulation_){ // Only to do when in simulation when the load is spawned. TO DO: If baca in simulation is tested with spawning the payload, this part might give a problem
             if(ros::Time::now().toSec() - time_first_time_payload_spawned_ > 5.0){ // Spawning the payload in Gazebo can take several seconds and result in the leader uav to have spawned more than _max_time_delay_on_callback_data_follower_ before the follower uav. 
               ROS_INFO_STREAM("[DergbryanTracker]: time_first_time_payload_spawned_ = " << time_first_time_payload_spawned_);
-              deactivate(); 
+              // deactivate(); 
             }
           }
         }
