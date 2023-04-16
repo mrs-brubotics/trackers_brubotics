@@ -22,6 +22,7 @@
 #include <std_msgs/String.h>
 #include <std_msgs/Float32.h>
 #include <std_msgs/Float64.h>
+#include <std_msgs/Bool.h>
 #include <trackers_brubotics/FutureTrajectoryTube.h> // custom ROS message
 #include <trackers_brubotics/DistanceBetweenUavs.h> // custom ROS message
 #include <trackers_brubotics/TrajectoryTracking.h> // custom ROS message
@@ -78,6 +79,7 @@ public:
   void                          initialize(const ros::NodeHandle &parent_nh, const std::string uav_name, std::shared_ptr<mrs_uav_managers::CommonHandlers_t> common_handlers);
   std::tuple<bool, std::string> activate(const mrs_msgs::PositionCommand::ConstPtr &last_position_cmd);
   void                          deactivate(void);
+  void                          Eland_2UAVs(void);
   bool                          resetStatic(void);
   const mrs_msgs::PositionCommand::ConstPtr update(const mrs_msgs::UavState::ConstPtr &uav_state, const mrs_msgs::AttitudeCommand::ConstPtr &last_attitude_cmd);
   const mrs_msgs::TrackerStatus             getStatus();
@@ -322,6 +324,8 @@ private:
   ros::Publisher time_delay_goal_position_cmd_follower_for_leader_pub_;
   ros::Publisher time_delay_position_cmd_follower_from_leader_pub_;
   ros::Publisher time_delay_goal_position_cmd_follower_from_leader_pub_;
+  // communicatiion for Eland of all UAVs 
+  ros::Publisher Eland_all_uavs_pub_;
   //  - ERG trajectory predictions: 
   ros::Publisher predicted_uav1_poses_publisher_;
   ros::Publisher predicted_uav2_poses_publisher_;
@@ -402,6 +406,8 @@ private:
   std_msgs::Float64 time_delay_goal_position_cmd_follower_for_leader_out_;
   std_msgs::Float64 time_delay_position_cmd_follower_from_leader_out_;
   std_msgs::Float64 time_delay_goal_position_cmd_follower_from_leader_out_;
+  // communicatiion for Eland of all UAVs 
+  std_msgs::Bool Eland_all_uavs_;
   //Store and publish the predictions (over whole horizon).
   geometry_msgs::PoseArray predicted_uav1_poses_out_;
   geometry_msgs::PoseArray predicted_uav1_vel_out_;
@@ -769,10 +775,7 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   if(_uav_type_=="t650"){
     _Ra_ = 1.05/2.0; // TODO should be taken from urdf, how to do so?? is there  way to subscribe to uav type and then ahrdcode in if cases here?
   } 
-  else if((_uav_type_=="f450")){
-    _Ra_ = 0.70/2.0; // TODO should be taken from urdf, how to do so?? is there  way to subscribe to uav type and then ahrdcode in if cases here?
-  }
-  else{
+  else if((_uav_type_=="f450")){Eland_all_uavs_pub_ = nh2_.advertise<std_msgs::Bool>("Eland_all_uavs", 1);
     ROS_ERROR("[DergbryanTracker]: UAV collision radius _Ra_ is undefined for this _uav_type_!");
     ros::requestShutdown();
   }
@@ -1028,6 +1031,7 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
     predicted_uav2_swing_angle_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav2_swing_angle", 1);
     predicted_uav1_tension_force_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav1_tension_force", 1);
     predicted_uav2_tension_force_publisher_= nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav2_tension_force", 1);
+    Eland_all_uavs_pub_ = nh2_.advertise<std_msgs::Bool>("Eland_all_uavs", 1);
     if (_uav_name_ == _leader_uav_name_){  // leader
       DSM_uav1_publisher_ = nh2_.advertise<trackers_brubotics::DSM>("DSM_leader", 1);
       DSM_uav2_publisher_ = nh2_.advertise<trackers_brubotics::DSM>("DSM_follower", 1);
@@ -1102,7 +1106,7 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
         anchoring_point_follower_for_leader_sub_ = nh2_.subscribe("/"+_follower_uav_name_+"/control_manager/dergbryan_tracker/anch_point_f_for_l", 1, &DergbryanTracker::anchoring_point_follower_for_leader_callback, this, ros::TransportHints().tcpNoDelay());
         position_cmd_follower_for_leader_sub_ = nh2_.subscribe("/"+_follower_uav_name_+"/control_manager/dergbryan_tracker/position_cmd_f_for_l", 1, &DergbryanTracker::position_cmd_follower_for_leader_callback, this, ros::TransportHints().tcpNoDelay());
         goal_position_cmd_follower_for_leader_sub_ = nh2_.subscribe("/"+_follower_uav_name_+"/control_manager/dergbryan_tracker/goal_pos_cmd_f_for_l", 1, &DergbryanTracker::goal_position_cmd_follower_for_leader_callback, this, ros::TransportHints().tcpNoDelay());
-        estimated_uav_mass_follower_for_leader_sub_ = nh2_.subscribe("/"+_follower_uav_name_+"/control_manager/mass_estimate", 1, &DergbryanTracker::estimated_uav_mass_follower_for_leader_callback, this, ros::TransportHints().tcpNoDelay());
+        estimated_uav_mass_follower_for_leader_sub_ = nh2_.subscribe("/"+_follower_uav_name_+"/control_manager/mass_estimate", 1, &DergbryanTracker::estimated_uav_mass_follower_for_leader_callback, this, ros::TransportHints().tcpNoDelay());      
       }
       else if (_uav_name_ == _follower_uav_name_){ // follower
         position_cmd_follower_from_leader_sub_ = nh2_.subscribe("/"+_leader_uav_name_+"/control_manager/dergbryan_tracker/position_cmd_f_from_l", 1, &DergbryanTracker::position_cmd_follower_from_leader_callback, this, ros::TransportHints().tcpNoDelay());
@@ -1235,6 +1239,38 @@ void DergbryanTracker::deactivate(void) {
 }
 //}
 
+/*Eland_2UAVs()//{*/
+void DergbryanTracker::Eland_2UAVs(void) {
+
+  toggleHover(false);
+
+  is_active_ = false;
+  trajectory_tracking_in_progress_ = false;
+
+  timer_trajectory_tracking_.stop();
+  {
+    std::scoped_lock lock(mutex_trajectory_tracking_states_);
+
+    trajectory_tracking_idx_     = 0;
+    //trajectory_tracking_sub_idx_ = 0;
+  }
+
+  ROS_INFO("[DergbryanTracker]: Sending Eland communication");
+
+  Eland_all_uavs_.data = true;
+  try {
+    Eland_all_uavs_pub_.publish(Eland_all_uavs_);
+  }
+  catch (...) {
+    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", Eland_all_uavs_pub_.getTopic().c_str());
+  }
+
+
+  //publishDiagnostics();
+}
+//}
+
+
 /*resetStatic()//{*/
 bool DergbryanTracker::resetStatic(void) {
   ROS_INFO("[DergbryanTracker]: no states to reset");
@@ -1268,12 +1304,13 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
     return mrs_msgs::PositionCommand::Ptr();
   }
 
-  // ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"Ros time = %f",ros::Time::now().toSec());
-  // if(ros::Time::now().toSec() > 50){
-  //   // return mrs_msgs::PositionCommand::Ptr();
-  //   // return mrs_msgs::PositionCommand::ConstPtr();
+  // // To test Eland type 3
+  // if(_uav_name_==_leader_uav_name_){
+  //   ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"Ros time = %f",ros::Time::now().toSec());
+  //   if(ros::Time::now().toSec() > 60){
+  //     Eland_2UAVs();
+  //   }
   // }
-
 
   /* TODO: currently we use the estimated mass of the leader uav for the predicitons of leader and 
   follower. There is already a subsciber on the mass_estimate of the follower. However, this is published 
@@ -1447,10 +1484,10 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
           time_delay_anchoring_point_follower_for_leader_out_.data = (ros::Time::now() - anchoring_point_follower_for_leader_.header.stamp).toSec();
           time_delay_position_cmd_follower_for_leader_out_.data = (ros::Time::now() - position_cmd_follower_for_leader_.header.stamp).toSec();
           time_delay_goal_position_cmd_follower_for_leader_out_.data = (ros::Time::now() - goal_position_cmd_follower_for_leader_.header.stamp).toSec();
-          ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: time_delay_1 = %f", time_delay_uav_state_follower_for_leader_out_.data);
-          ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: time_delay_2 = %f", time_delay_anchoring_point_follower_for_leader_out_.data);
-          ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: time_delay_3 = %f", time_delay_position_cmd_follower_for_leader_out_.data);
-          ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: time_delay_4 = %f", time_delay_goal_position_cmd_follower_for_leader_out_.data);
+          // ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: time_delay_1 = %f", time_delay_uav_state_follower_for_leader_out_.data);
+          // ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: time_delay_2 = %f", time_delay_anchoring_point_follower_for_leader_out_.data);
+          // ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: time_delay_3 = %f", time_delay_position_cmd_follower_for_leader_out_.data);
+          // ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: time_delay_4 = %f", time_delay_goal_position_cmd_follower_for_leader_out_.data);
           double max_time_delay = std::max(time_delay_uav_state_follower_for_leader_out_.data, time_delay_anchoring_point_follower_for_leader_out_.data);
           max_time_delay = std::max(max_time_delay, time_delay_position_cmd_follower_for_leader_out_.data);
           max_time_delay = std::max(max_time_delay, time_delay_goal_position_cmd_follower_for_leader_out_.data);
@@ -1466,17 +1503,26 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
             
             if(_run_type_ == "uav" || (_baca_in_simulation_ && _run_type_ == "simulation")){
               if(both_uavs_ready){
-                if(max_time_delay > 1.0){ 
-                  ROS_INFO_STREAM("[DergbryanTracker]: follower data is delayed by more than 1 second => Deactivate tracker ");
-                  deactivate(); 
+                if(max_time_delay > 2*_max_time_delay_on_callback_data_follower_){ 
+                  ROS_INFO_STREAM("[DergbryanTracker]: follower data is delayed by more than 2 times the max delay => Eland ");
+                  // deactivate(); 
+                  Eland_2UAVs();
                 }
               }
             }
             else if(_run_type_ == "simulation" && !_baca_in_simulation_){ // Only to do when in simulation when the load is spawned. TO DO: If baca in simulation is tested with spawning the payload, this part might give a problem
-              if(ros::Time::now().toSec() - time_first_time_payload_spawned_ > 5.0){ // Spawning the payload in Gazebo can take several seconds and result in the leader uav to have spawned more than _max_time_delay_on_callback_data_follower_ before the follower uav. 
-                ROS_INFO_STREAM("[DergbryanTracker]: time_first_time_payload_spawned_ = " << time_first_time_payload_spawned_);
-                // deactivate(); 
-              }
+              // if(ros::Time::now().toSec() - time_first_time_payload_spawned_ > 5.0){ // Spawning the payload in Gazebo can take several seconds and result in the leader uav to have spawned more than _max_time_delay_on_callback_data_follower_ before the follower uav. 
+              //   ROS_INFO_STREAM("[DergbryanTracker]: time_first_time_payload_spawned_ = " << time_first_time_payload_spawned_);
+              //   // deactivate();
+              //   // Eland_2UAVs();
+              // }
+              // if(both_uavs_ready){
+              //   if(max_time_delay > 2*_max_time_delay_on_callback_data_follower_){ 
+              //     ROS_INFO_STREAM("[DergbryanTracker]: follower data is delayed by more than 2 times the max delay => Eland ");
+              //     // deactivate(); 
+              //     Eland_2UAVs();
+              //   }
+              // }
             }
           }
           else if(!payload_spawned_){
@@ -1512,8 +1558,8 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
         // check the callback of the follower uav if the msgs of the leader is received from a timestamp which is not delayed too much wrt the current timestamp of the uav_state_.
         time_delay_position_cmd_follower_from_leader_out_.data = (ros::Time::now() - position_cmd_follower_from_leader_.header.stamp).toSec();
         time_delay_goal_position_cmd_follower_from_leader_out_.data = (ros::Time::now() - goal_position_cmd_follower_from_leader_.header.stamp).toSec();
-        ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: follower from leader time_delay_1 = %f",time_delay_position_cmd_follower_from_leader_out_.data);
-        ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: follower from leader time_delay_2 = %f",time_delay_goal_position_cmd_follower_from_leader_out_.data);
+        // ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: follower from leader time_delay_1 = %f",time_delay_position_cmd_follower_from_leader_out_.data);
+        // ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: follower from leader time_delay_2 = %f",time_delay_goal_position_cmd_follower_from_leader_out_.data);
         double max_time_delay = std::max(time_delay_position_cmd_follower_from_leader_out_.data, time_delay_goal_position_cmd_follower_from_leader_out_.data);
         if (max_time_delay < _max_time_delay_on_callback_data_leader_){
           callback_data_leader_no_delay_ = true;
@@ -1544,17 +1590,26 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
 
           if(_run_type_ == "uav" || (_baca_in_simulation_ && _run_type_ == "simulation")){
             if(both_uavs_ready){
-              if(max_time_delay > 1.0){ 
-                ROS_INFO_STREAM("[DergbryanTracker]: leader data is delayed by more than 1 second => Deactivate tracker ");
-                deactivate(); 
+              if(max_time_delay > 2*_max_time_delay_on_callback_data_leader_){ 
+                ROS_INFO_STREAM("[DergbryanTracker]: leader data is delayed by more than 2 times the max delay => Eland ");
+                // deactivate(); 
+                Eland_2UAVs();
               }
             }
           }
           else if(_run_type_ == "simulation" && !_baca_in_simulation_){ // Only to do when in simulation when the load is spawned. TO DO: If baca in simulation is tested with spawning the payload, this part might give a problem
-            if(ros::Time::now().toSec() - time_first_time_payload_spawned_ > 5.0){ // Spawning the payload in Gazebo can take several seconds and result in the leader uav to have spawned more than _max_time_delay_on_callback_data_follower_ before the follower uav. 
-              ROS_INFO_STREAM("[DergbryanTracker]: time_first_time_payload_spawned_ = " << time_first_time_payload_spawned_);
-              // deactivate(); 
-            }
+            // if(ros::Time::now().toSec() - time_first_time_payload_spawned_ > 5.0){ // Spawning the payload in Gazebo can take several seconds and result in the leader uav to have spawned more than _max_time_delay_on_callback_data_follower_ before the follower uav. 
+            //   // ROS_INFO_STREAM("[DergbryanTracker]: time_first_time_payload_spawned_ = " << time_first_time_payload_spawned_);
+            //   // deactivate(); 
+            //   // Eland_2UAVs();
+            // }
+            // if(both_uavs_ready){
+            //   if(max_time_delay > 2*_max_time_delay_on_callback_data_leader_){ 
+            //     ROS_INFO_STREAM("[DergbryanTracker]: leader data is delayed by more than 2 times the max delay => Eland ");
+            //     // deactivate(); 
+            //     Eland_2UAVs();
+            //   }
+            // }
           }
         }
       } else{
@@ -6459,6 +6514,7 @@ void DergbryanTracker::computeERG(){
       DistanceBetweenUavs_msg_.other_uav_names.push_back(other_uav_name);
       if (distance_this_uav2other_uav <= 0.0){ // a collision is detected
         // trigger elanding
+        ROS_INFO_STREAM("[DergbryanTracker]: Collision detected");
         deactivate();
       }
       if (distance_this_uav2other_uav < min_distance_this_uav2other_uav){
@@ -8208,7 +8264,7 @@ void DergbryanTracker::timerTrajectoryTracking(const ros::TimerEvent& event) {
     //trajectory_tracking_sub_idx_ = 0;
 
     if(trajectory_tracking_idx_ == 0){
-      ROS_INFO_STREAM("[DergbryanTracker]: trajectory_tracking_idx_ = \n" << trajectory_tracking_idx_);
+      ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: (start) trajectory_tracking_idx_ = %f",trajectory_tracking_idx_);
       // set the global variable to keep track of the time when the trajectory was started
       time_at_start_point_ = (ros::Time::now()).toSec();
       // publish it below (add to msg) 
@@ -8222,10 +8278,12 @@ void DergbryanTracker::timerTrajectoryTracking(const ros::TimerEvent& event) {
     // looping  
     if (trajectory_tracking_loop_) {
       if (trajectory_tracking_idx_ >= trajectory_size) {
+        ROS_INFO_STREAM("debug 1: trajectory size = " << trajectory_size);
         trajectory_tracking_idx_ -= trajectory_size;
       }
     } else {
       if (trajectory_tracking_idx_ >= trajectory_size) {
+        ROS_INFO_STREAM("debug 2: trajectory size = " << trajectory_size);
         trajectory_tracking_idx_ = trajectory_tracking_idx_ - 1;
       }
     }
@@ -8289,8 +8347,10 @@ void DergbryanTracker::timerTrajectoryTracking(const ros::TimerEvent& event) {
 
     // if the tracking idx hits the end of the trajectory
     if (trajectory_tracking_idx_ == trajectory_size) {
+      ROS_INFO_STREAM("debug 3: trajectory size = " << trajectory_size);
 
       if (trajectory_tracking_loop_) {
+        ROS_INFO_STREAM("debug 4: trajectory size = " << trajectory_size);
 
         // reset the idx
         trajectory_tracking_idx_ = 0;
@@ -8299,6 +8359,7 @@ void DergbryanTracker::timerTrajectoryTracking(const ros::TimerEvent& event) {
 
       } else {
 
+        ROS_INFO_STREAM("debug 5: trajectory size = " << trajectory_size);
         trajectory_tracking_in_progress_ = false;
 
         // set the idx to the last idx of the trajectory
