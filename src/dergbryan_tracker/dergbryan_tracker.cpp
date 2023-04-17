@@ -867,6 +867,8 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   param_loader.loadParam("payload/Epl_min", _Epl_min_);
   param_loader.loadParam("payload/Epl_max/failsafe_enabled", _Epl_max_failsafe_enabled_);
   param_loader.loadParam("payload/Epl_max/scaling", _Epl_max_scaling_);
+  param_loader.loadParam("two_uavs_payload/callback_data_max_time_delay/follower", _max_time_delay_on_callback_data_follower_);
+  param_loader.loadParam("two_uavs_payload/callback_data_max_time_delay/leader", _max_time_delay_on_callback_data_leader_);
   // TODO: any other Se3CopyController params to load?
   if (!param_loader.loadedSuccessfully()) {
     ROS_ERROR("[DergbryanTracker]: could not load all Se3CopyController parameters!");
@@ -937,8 +939,6 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   param_loader2.loadParam("navigation_field/repulsion/self_collision/enabled", _enable_repulsion_sc_);
   param_loader2.loadParam("navigation_field/repulsion/self_collision/influence_margin", _zeta_sc_);
   param_loader2.loadParam("navigation_field/repulsion/self_collision/static_safety_margin", _delta_sc_);
-  param_loader2.loadParam("two_uavs_payload/callback_data_max_time_delay/follower", _max_time_delay_on_callback_data_follower_);
-  param_loader2.loadParam("two_uavs_payload/callback_data_max_time_delay/leader", _max_time_delay_on_callback_data_leader_);
   param_loader2.loadParam("two_uavs_payload/rotation_scaling", _rotation_scaling_);
   // Visualization (rviz):
   param_loader2.loadParam("enable_visualization", _enable_visualization_);
