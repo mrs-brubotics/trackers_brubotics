@@ -1484,10 +1484,10 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
           time_delay_anchoring_point_follower_for_leader_out_.data = (ros::Time::now() - anchoring_point_follower_for_leader_.header.stamp).toSec();
           time_delay_position_cmd_follower_for_leader_out_.data = (ros::Time::now() - position_cmd_follower_for_leader_.header.stamp).toSec();
           time_delay_goal_position_cmd_follower_for_leader_out_.data = (ros::Time::now() - goal_position_cmd_follower_for_leader_.header.stamp).toSec();
-          // ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: time_delay_1 = %f", time_delay_uav_state_follower_for_leader_out_.data);
-          // ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: time_delay_2 = %f", time_delay_anchoring_point_follower_for_leader_out_.data);
-          // ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: time_delay_3 = %f", time_delay_position_cmd_follower_for_leader_out_.data);
-          // ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: time_delay_4 = %f", time_delay_goal_position_cmd_follower_for_leader_out_.data);
+          ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: time_delay_1 = %f", time_delay_uav_state_follower_for_leader_out_.data);
+          ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: time_delay_2 = %f", time_delay_anchoring_point_follower_for_leader_out_.data);
+          ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: time_delay_3 = %f", time_delay_position_cmd_follower_for_leader_out_.data);
+          ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: time_delay_4 = %f", time_delay_goal_position_cmd_follower_for_leader_out_.data);
           double max_time_delay = std::max(time_delay_uav_state_follower_for_leader_out_.data, time_delay_anchoring_point_follower_for_leader_out_.data);
           max_time_delay = std::max(max_time_delay, time_delay_position_cmd_follower_for_leader_out_.data);
           max_time_delay = std::max(max_time_delay, time_delay_goal_position_cmd_follower_for_leader_out_.data);
@@ -1505,7 +1505,7 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
               if(both_uavs_ready){
                 if(max_time_delay > 2*_max_time_delay_on_callback_data_follower_){ 
                   ROS_INFO_STREAM("[DergbryanTracker]: follower data is delayed by more than 2 times the max delay => Eland ");
-                  // deactivate(); 
+                  // deactivate();
                   Eland_2UAVs();
                 }
               }
@@ -1558,8 +1558,8 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
         // check the callback of the follower uav if the msgs of the leader is received from a timestamp which is not delayed too much wrt the current timestamp of the uav_state_.
         time_delay_position_cmd_follower_from_leader_out_.data = (ros::Time::now() - position_cmd_follower_from_leader_.header.stamp).toSec();
         time_delay_goal_position_cmd_follower_from_leader_out_.data = (ros::Time::now() - goal_position_cmd_follower_from_leader_.header.stamp).toSec();
-        // ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: follower from leader time_delay_1 = %f",time_delay_position_cmd_follower_from_leader_out_.data);
-        // ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: follower from leader time_delay_2 = %f",time_delay_goal_position_cmd_follower_from_leader_out_.data);
+        ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: follower from leader time_delay_1 = %f",time_delay_position_cmd_follower_from_leader_out_.data);
+        ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: follower from leader time_delay_2 = %f",time_delay_goal_position_cmd_follower_from_leader_out_.data);
         double max_time_delay = std::max(time_delay_position_cmd_follower_from_leader_out_.data, time_delay_goal_position_cmd_follower_from_leader_out_.data);
         if (max_time_delay < _max_time_delay_on_callback_data_leader_){
           callback_data_leader_no_delay_ = true;
