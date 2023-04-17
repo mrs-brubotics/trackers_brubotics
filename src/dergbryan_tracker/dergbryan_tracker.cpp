@@ -8264,15 +8264,15 @@ void DergbryanTracker::timerTrajectoryTracking(const ros::TimerEvent& event) {
     //trajectory_tracking_sub_idx_ = 0;
 
     if(trajectory_tracking_idx_ == 0){
-      ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: (start) trajectory_tracking_idx_ = %f",trajectory_tracking_idx_);
+      ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: (start) trajectory_tracking_idx_ = %d",trajectory_tracking_idx_);
       // set the global variable to keep track of the time when the trajectory was started
       time_at_start_point_ = (ros::Time::now()).toSec();
       // publish it below (add to msg) 
     }
     // INCREMENT THE TRACKING IDX
     trajectory_tracking_idx_++;
-    ROS_INFO_STREAM("[DergbryanTracker]: trajectory_tracking_idx_" << trajectory_tracking_idx_);
-    // ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: trajectory_tracking_idx_ = %f",trajectory_tracking_idx_);
+    // ROS_INFO_STREAM("[DergbryanTracker]: trajectory_tracking_idx_" << trajectory_tracking_idx_);
+    ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: trajectory_tracking_idx_ = %d",trajectory_tracking_idx_);
 
     // !!!!! bryan, inspired by original timerMpc
     // looping  
