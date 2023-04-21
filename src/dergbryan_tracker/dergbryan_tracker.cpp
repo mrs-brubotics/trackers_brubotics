@@ -79,7 +79,7 @@ public:
   void                          initialize(const ros::NodeHandle &parent_nh, const std::string uav_name, std::shared_ptr<mrs_uav_managers::CommonHandlers_t> common_handlers);
   std::tuple<bool, std::string> activate(const mrs_msgs::PositionCommand::ConstPtr &last_position_cmd);
   void                          deactivate(void);
-  void                          Eland_2UAVs(void);
+  void                          Eland_tracker_to_controller(void);
   bool                          resetStatic(void);
   const mrs_msgs::PositionCommand::ConstPtr update(const mrs_msgs::UavState::ConstPtr &uav_state, const mrs_msgs::AttitudeCommand::ConstPtr &last_attitude_cmd);
   const mrs_msgs::TrackerStatus             getStatus();
@@ -325,7 +325,7 @@ private:
   ros::Publisher time_delay_position_cmd_follower_from_leader_pub_;
   ros::Publisher time_delay_goal_position_cmd_follower_from_leader_pub_;
   // communicatiion for Eland of all UAVs 
-  ros::Publisher Eland_all_uavs_pub_;
+  ros::Publisher Eland_tracker_to_controller_pub_;
   //  - ERG trajectory predictions: 
   ros::Publisher predicted_uav1_poses_publisher_;
   ros::Publisher predicted_uav2_poses_publisher_;
@@ -407,7 +407,7 @@ private:
   std_msgs::Float64 time_delay_position_cmd_follower_from_leader_out_;
   std_msgs::Float64 time_delay_goal_position_cmd_follower_from_leader_out_;
   // communicatiion for Eland of all UAVs 
-  std_msgs::Bool Eland_all_uavs_;
+  std_msgs::Bool Eland_tracker_to_controller_;
   //Store and publish the predictions (over whole horizon).
   geometry_msgs::PoseArray predicted_uav1_poses_out_;
   geometry_msgs::PoseArray predicted_uav1_vel_out_;
@@ -775,7 +775,9 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   if(_uav_type_=="t650"){
     _Ra_ = 1.05/2.0; // TODO should be taken from urdf, how to do so?? is there  way to subscribe to uav type and then ahrdcode in if cases here?
   } 
-  else if((_uav_type_=="f450")){Eland_all_uavs_pub_ = nh2_.advertise<std_msgs::Bool>("Eland_all_uavs", 1);
+  else if(_uav_type_=="f450")
+    _Ra_ = 0.70/2.0; // TODO should be taken from urdf, how to do so?? is there  way to subscribe to uav type and then ahrdcode in if cases here?
+  else{
     ROS_ERROR("[DergbryanTracker]: UAV collision radius _Ra_ is undefined for this _uav_type_!");
     ros::requestShutdown();
   }
@@ -1031,7 +1033,7 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
     predicted_uav2_swing_angle_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav2_swing_angle", 1);
     predicted_uav1_tension_force_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav1_tension_force", 1);
     predicted_uav2_tension_force_publisher_= nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav2_tension_force", 1);
-    Eland_all_uavs_pub_ = nh2_.advertise<std_msgs::Bool>("Eland_all_uavs", 1);
+    Eland_tracker_to_controller_pub_ = nh2_.advertise<std_msgs::Bool>("Eland_tracker_to_controller", 1);
     if (_uav_name_ == _leader_uav_name_){  // leader
       DSM_uav1_publisher_ = nh2_.advertise<trackers_brubotics::DSM>("DSM_leader", 1);
       DSM_uav2_publisher_ = nh2_.advertise<trackers_brubotics::DSM>("DSM_follower", 1);
@@ -1240,36 +1242,21 @@ void DergbryanTracker::deactivate(void) {
 //}
 
 /*Eland_2UAVs()//{*/
-void DergbryanTracker::Eland_2UAVs(void) {
+void DergbryanTracker::Eland_tracker_to_controller(void) {
 
-  toggleHover(false);
-
-  is_active_ = false;
-  trajectory_tracking_in_progress_ = false;
-
-  timer_trajectory_tracking_.stop();
-  {
-    std::scoped_lock lock(mutex_trajectory_tracking_states_);
-
-    trajectory_tracking_idx_     = 0;
-    //trajectory_tracking_sub_idx_ = 0;
-  }
+  deactivate();
 
   ROS_INFO("[DergbryanTracker]: Sending Eland communication");
 
-  Eland_all_uavs_.data = true;
+  Eland_tracker_to_controller_.data = true;
   try {
-    Eland_all_uavs_pub_.publish(Eland_all_uavs_);
+    Eland_tracker_to_controller_pub_.publish(Eland_tracker_to_controller_);
   }
   catch (...) {
-    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", Eland_all_uavs_pub_.getTopic().c_str());
+    ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", Eland_tracker_to_controller_pub_.getTopic().c_str());
   }
-
-
-  //publishDiagnostics();
 }
 //}
-
 
 /*resetStatic()//{*/
 bool DergbryanTracker::resetStatic(void) {
@@ -1288,7 +1275,8 @@ bool DergbryanTracker::resetStatic(void) {
 /*update()//{*/
 const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msgs::UavState::ConstPtr &                        uav_state,
                                                               [[maybe_unused]] const mrs_msgs::AttitudeCommand::ConstPtr &last_attitude_cmd) {
-  // ROS_INFO("[DergbryanTracker]: updating the DergbryanTracker");
+                                                                  
+  // ROS_INFO_THROTTLE(0.1,"[DergbryanTracker]: Start of update()");
   mrs_lib::Routine profiler_routine = profiler.createRoutine("update");
   {
     std::scoped_lock lock(mutex_uav_state_);
@@ -1299,18 +1287,16 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
   /* TODO: make it compatible with DRS */
   //auto drs_params = mrs_lib::get_mutexed(mutex_drs_params_, drs_params_);
 
+  if(payload_spawned_ && _uav_name_==_leader_uav_name_){
+    if(ros::Time::now().toSec()>60){
+       Eland_tracker_to_controller();
+    }
+  }
+
   // up to this part the update() method is evaluated even when the tracker is not active
   if (!is_active_) {
     return mrs_msgs::PositionCommand::Ptr();
   }
-
-  // // To test Eland type 3
-  // if(_uav_name_==_leader_uav_name_){
-  //   ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"Ros time = %f",ros::Time::now().toSec());
-  //   if(ros::Time::now().toSec() > 60){
-  //     Eland_2UAVs();
-  //   }
-  // }
 
   /* TODO: currently we use the estimated mass of the leader uav for the predicitons of leader and 
   follower. There is already a subsciber on the mass_estimate of the follower. However, this is published 
@@ -1479,7 +1465,7 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
         publishFollowerDataForLeaderIn2uavs_payload(position_cmd); // published by follower uav
       
         if(_uav_name_ == _leader_uav_name_){
-          // check the accompanying callbacks of the leader uav if the msgs of the follower are received from timestamps which are not delayed too much wrt the current timestamp of the uav_state_.
+          // check the time delay since the last message received. If no message was received yet the delay will be equal to ros time
           time_delay_uav_state_follower_for_leader_out_.data = (ros::Time::now() - uav_state_follower_for_leader_.header.stamp).toSec();
           time_delay_anchoring_point_follower_for_leader_out_.data = (ros::Time::now() - anchoring_point_follower_for_leader_.header.stamp).toSec();
           time_delay_position_cmd_follower_for_leader_out_.data = (ros::Time::now() - position_cmd_follower_for_leader_.header.stamp).toSec();
@@ -1505,22 +1491,19 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
               if(both_uavs_ready){
                 if(max_time_delay > 2*_max_time_delay_on_callback_data_follower_){ 
                   ROS_INFO_STREAM("[DergbryanTracker]: follower data is delayed by more than 2 times the max delay => Eland ");
-                  // deactivate();
-                  Eland_2UAVs();
+                  Eland_tracker_to_controller();
                 }
               }
             }
-            else if(_run_type_ == "simulation" && !_baca_in_simulation_){ // Only to do when in simulation when the load is spawned. TO DO: If baca in simulation is tested with spawning the payload, this part might give a problem
+            else if(_run_type_ == "simulation" && !_baca_in_simulation_){ // Only to do when in simulation when the load is spawned.
               // if(ros::Time::now().toSec() - time_first_time_payload_spawned_ > 5.0){ // Spawning the payload in Gazebo can take several seconds and result in the leader uav to have spawned more than _max_time_delay_on_callback_data_follower_ before the follower uav. 
               //   ROS_INFO_STREAM("[DergbryanTracker]: time_first_time_payload_spawned_ = " << time_first_time_payload_spawned_);
               //   // deactivate();
-              //   // Eland_2UAVs();
               // }
               // if(both_uavs_ready){
               //   if(max_time_delay > 2*_max_time_delay_on_callback_data_follower_){ 
               //     ROS_INFO_STREAM("[DergbryanTracker]: follower data is delayed by more than 2 times the max delay => Eland ");
-              //     // deactivate(); 
-              //     Eland_2UAVs();
+              //     // deactivate();
               //   }
               // }
             }
@@ -1592,8 +1575,7 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
             if(both_uavs_ready){
               if(max_time_delay > 2*_max_time_delay_on_callback_data_leader_){ 
                 ROS_INFO_STREAM("[DergbryanTracker]: leader data is delayed by more than 2 times the max delay => Eland ");
-                // deactivate(); 
-                Eland_2UAVs();
+                Eland_tracker_to_controller();
               }
             }
           }
@@ -1601,13 +1583,11 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
             // if(ros::Time::now().toSec() - time_first_time_payload_spawned_ > 5.0){ // Spawning the payload in Gazebo can take several seconds and result in the leader uav to have spawned more than _max_time_delay_on_callback_data_follower_ before the follower uav. 
             //   // ROS_INFO_STREAM("[DergbryanTracker]: time_first_time_payload_spawned_ = " << time_first_time_payload_spawned_);
             //   // deactivate(); 
-            //   // Eland_2UAVs();
             // }
             // if(both_uavs_ready){
             //   if(max_time_delay > 2*_max_time_delay_on_callback_data_leader_){ 
             //     ROS_INFO_STREAM("[DergbryanTracker]: leader data is delayed by more than 2 times the max delay => Eland ");
             //     // deactivate(); 
-            //     Eland_2UAVs();
             //   }
             // }
           }
