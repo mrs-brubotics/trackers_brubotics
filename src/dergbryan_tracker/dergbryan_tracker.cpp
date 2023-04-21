@@ -1244,8 +1244,6 @@ void DergbryanTracker::deactivate(void) {
 /*Eland_2UAVs()//{*/
 void DergbryanTracker::Eland_tracker_to_controller(void) {
 
-  deactivate();
-
   ROS_INFO("[DergbryanTracker]: Sending Eland communication");
 
   Eland_tracker_to_controller_.data = true;
