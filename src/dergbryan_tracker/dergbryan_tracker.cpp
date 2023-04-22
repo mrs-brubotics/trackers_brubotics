@@ -1235,8 +1235,12 @@ void DergbryanTracker::deactivate(void) {
     //trajectory_tracking_sub_idx_ = 0;
   }
 
-
   ROS_INFO("[DergbryanTracker]: deactivated");
+
+  // if(_type_of_system_=="2uavs_payload"){
+  //   // If tracker gets deactivated for any reason, the controller should Eland and notify other UAV to eland too.
+  //   Eland_tracker_to_controller();
+  // }
   //publishDiagnostics();
 }
 //}
@@ -1287,7 +1291,7 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
 
   // if(payload_spawned_ && _uav_name_==_leader_uav_name_){
   //   if(ros::Time::now().toSec()>60){
-  //      Eland_tracker_to_controller();
+  //      deactivate();
   //   }
   // }
 
