@@ -171,7 +171,7 @@ private:
   int    output_mode_; // attitude_rate / quaternion
   double _Epl_min_;    // [m], below this payload error norm, the payload error is disabled
   bool _Epl_max_failsafe_enabled_;
-  double _Epl_max_scaling_; // [m]
+  double _Epl_max_scaling_tracker_; // [m]
   // DergBryanTracker:
   // TODO: bryan clean ERG paramters and code
   bool _use_derg_;
@@ -868,7 +868,7 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   // payload:
   param_loader.loadParam("payload/Epl_min", _Epl_min_);
   param_loader.loadParam("payload/Epl_max/failsafe_enabled", _Epl_max_failsafe_enabled_);
-  param_loader.loadParam("payload/Epl_max/scaling", _Epl_max_scaling_);
+  param_loader.loadParam("payload/Epl_max/scaling_tracker", _Epl_max_scaling_tracker_);
   param_loader.loadParam("two_uavs_payload/callback_data_max_time_delay/follower", _max_time_delay_on_callback_data_follower_);
   param_loader.loadParam("two_uavs_payload/callback_data_max_time_delay/leader", _max_time_delay_on_callback_data_leader_);
   // TODO: any other Se3CopyController params to load?
@@ -1285,11 +1285,11 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
   /* TODO: make it compatible with DRS */
   //auto drs_params = mrs_lib::get_mutexed(mutex_drs_params_, drs_params_);
 
-  if(payload_spawned_ && _uav_name_==_leader_uav_name_){
-    if(ros::Time::now().toSec()>60){
-       Eland_tracker_to_controller();
-    }
-  }
+  // if(payload_spawned_ && _uav_name_==_leader_uav_name_){
+  //   if(ros::Time::now().toSec()>60){
+  //      Eland_tracker_to_controller();
+  //   }
+  // }
 
   // up to this part the update() method is evaluated even when the tracker is not active
   if (!is_active_) {
@@ -3865,8 +3865,8 @@ std::tuple< double, Eigen::Vector3d,double> DergbryanTracker::ComputeSe3CopyCont
     }
     
     // Sanity + safety checks: 
-    if (Epl.norm()> _Epl_max_scaling_*_cable_length_*sqrt(2)){ // Largest possible error when cable is oriented 90°.
-      ROS_ERROR("[DergbryanTracker]: Control error of the anchoring point Epl was larger than expected (%.02fm> _cable_length_*sqrt(2)= %.02fm).", Epl.norm(), _Epl_max_scaling_*_cable_length_*sqrt(2));
+    if (Epl.norm()> _Epl_max_scaling_tracker_*_cable_length_*sqrt(2)){ // Largest possible error when cable is oriented 90°.
+      ROS_ERROR("[DergbryanTracker]: Control error of the anchoring point Epl was larger than expected (%.02fm> _cable_length_*sqrt(2)= %.02fm).", Epl.norm(), _Epl_max_scaling_tracker_*_cable_length_*sqrt(2));
       //Epl = Eigen::Vector3d::Zero(3);
       // TODO: check if this actually needs erg_predictions_trusted_
       // erg_predictions_trusted_ = false;
