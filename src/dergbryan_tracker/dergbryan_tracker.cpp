@@ -454,7 +454,7 @@ private:
   void GazeboLoadStatesCallback(const gazebo_msgs::LinkStatesConstPtr& loadmsg); // TODO: document
   bool payload_spawned_ = false;  // TODO: document
   double time_first_time_payload_spawned_ = 0.0; // TODO: document
-  bool both_uavs_ready = false;
+  bool both_uavs_ready_ = false;
   bool callback_data_follower_no_delay_ = false; // true if all the data that is published by the follower and subscribed on by leader is not too much delayed
   bool callback_data_leader_no_delay_ = false;   // true if all the data that is published by the leader and subscribed on by follower is not too much delayed
   double _max_time_delay_on_callback_data_follower_; //= 0.100;// = 10*_dt_0_;
@@ -1237,8 +1237,8 @@ void DergbryanTracker::deactivate(void) {
 
   ROS_INFO("[DergbryanTracker]: deactivated");
 
-  // if(_type_of_system_=="2uavs_payload"){
-  //   // If tracker gets deactivated for any reason, the controller should Eland and notify other UAV to eland too.
+  // if(_type_of_system_=="2uavs_payload" && both_uavs_ready_){
+  //   // If tracker gets deactivated for any reason after that the controller got activated, the controller should Eland and notify other UAV to eland too.
   //   Eland_tracker_to_controller();
   // }
   //publishDiagnostics();
@@ -1287,13 +1287,7 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
   }
 
   /* TODO: make it compatible with DRS */
-  //auto drs_params = mrs_lib::get_mutexed(mutex_drs_params_, drs_params_);
-
-  // if(payload_spawned_ && _uav_name_==_leader_uav_name_){
-  //   if(ros::Time::now().toSec()>60){
-  //      deactivate();
-  //   }
-  // }
+  //auto drs_params = mrs_lib::get_mutexed(mutex_drs_params_, drs_params_);  
 
   // up to this part the update() method is evaluated even when the tracker is not active
   if (!is_active_) {
@@ -1481,7 +1475,7 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
           max_time_delay = std::max(max_time_delay, time_delay_goal_position_cmd_follower_for_leader_out_.data);
           if (max_time_delay < _max_time_delay_on_callback_data_follower_ && payload_spawned_){
             callback_data_follower_no_delay_ = true;
-            both_uavs_ready = true;
+            both_uavs_ready_ = true;
           } 
           else {
             callback_data_follower_no_delay_ = false;
@@ -1490,7 +1484,7 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
             ROS_WARN_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: follower data is delayed too much (%fs) while payload has spawned!", max_time_delay);
             
             if(_run_type_ == "uav" || (_baca_in_simulation_ && _run_type_ == "simulation")){
-              if(both_uavs_ready){
+              if(both_uavs_ready_){
                 if(max_time_delay > 2*_max_time_delay_on_callback_data_follower_){ 
                   ROS_INFO_STREAM("[DergbryanTracker]: follower data is delayed by more than 2 times the max delay => Eland ");
                   Eland_tracker_to_controller();
@@ -1502,7 +1496,7 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
               //   ROS_INFO_STREAM("[DergbryanTracker]: time_first_time_payload_spawned_ = " << time_first_time_payload_spawned_);
               //   // deactivate();
               // }
-              // if(both_uavs_ready){
+              // if(both_uavs_ready_){
               //   if(max_time_delay > 2*_max_time_delay_on_callback_data_follower_){ 
               //     ROS_INFO_STREAM("[DergbryanTracker]: follower data is delayed by more than 2 times the max delay => Eland ");
               //     // deactivate();
@@ -1548,7 +1542,7 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
         double max_time_delay = std::max(time_delay_position_cmd_follower_from_leader_out_.data, time_delay_goal_position_cmd_follower_from_leader_out_.data);
         if (max_time_delay < _max_time_delay_on_callback_data_leader_){
           callback_data_leader_no_delay_ = true;
-          both_uavs_ready = true;
+          both_uavs_ready_ = true;
 
           // update the follower's applied ref:
           applied_ref_x_ = position_cmd_follower_from_leader_.position.x;
@@ -1574,7 +1568,7 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
           ROS_WARN_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: leader data is delayed too much (%fs) while payload has spawned!", max_time_delay);
 
           if(_run_type_ == "uav" || (_baca_in_simulation_ && _run_type_ == "simulation")){
-            if(both_uavs_ready){
+            if(both_uavs_ready_){
               if(max_time_delay > 2*_max_time_delay_on_callback_data_leader_){ 
                 ROS_INFO_STREAM("[DergbryanTracker]: leader data is delayed by more than 2 times the max delay => Eland ");
                 Eland_tracker_to_controller();
@@ -1586,7 +1580,7 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
             //   // ROS_INFO_STREAM("[DergbryanTracker]: time_first_time_payload_spawned_ = " << time_first_time_payload_spawned_);
             //   // deactivate(); 
             // }
-            // if(both_uavs_ready){
+            // if(both_uavs_ready_){
             //   if(max_time_delay > 2*_max_time_delay_on_callback_data_leader_){ 
             //     ROS_INFO_STREAM("[DergbryanTracker]: leader data is delayed by more than 2 times the max delay => Eland ");
             //     // deactivate(); 
