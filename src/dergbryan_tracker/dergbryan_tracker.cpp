@@ -142,6 +142,10 @@ private:
   double _load_length_;         // length of bar load transported by 2uavs
   double _load_radius_ = 0.04;  // radius of the bar load // TODO add via session
   bool _baca_in_simulation_=false;// Used to validate the encoder angles, and the FK without having to make the UAV fly. Gains related to payload must be set on 0 to perform this. Set on false by default.
+  //emulate nimbro
+  bool emulate_nimbro_ = false;
+  double emulate_nimbro_delay_;
+  double emulate_nimbro_time_ = 0;
 
   // | ------------------- declaring .yaml parameters ------------------- |
   // Se3CopyController:
@@ -171,7 +175,7 @@ private:
   int    output_mode_; // attitude_rate / quaternion
   double _Epl_min_;    // [m], below this payload error norm, the payload error is disabled
   bool _Epl_max_failsafe_enabled_;
-  double _Epl_max_scaling_tracker_; // [m]
+  double _Epl_max_scaling_; // [m]
   // DergBryanTracker:
   // TODO: bryan clean ERG paramters and code
   bool _use_derg_;
@@ -868,9 +872,11 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   // payload:
   param_loader.loadParam("payload/Epl_min", _Epl_min_);
   param_loader.loadParam("payload/Epl_max/failsafe_enabled", _Epl_max_failsafe_enabled_);
-  param_loader.loadParam("payload/Epl_max/scaling_tracker", _Epl_max_scaling_tracker_);
+  param_loader.loadParam("payload/Epl_max/scaling", _Epl_max_scaling_);
   param_loader.loadParam("two_uavs_payload/callback_data_max_time_delay/follower", _max_time_delay_on_callback_data_follower_);
   param_loader.loadParam("two_uavs_payload/callback_data_max_time_delay/leader", _max_time_delay_on_callback_data_leader_);
+  param_loader.loadParam("two_uavs_payload/nimbro/emulate_nimbro", emulate_nimbro_);
+  param_loader.loadParam("two_uavs_payload/nimbro/emulate_nimbro_delay", emulate_nimbro_delay_);
   // TODO: any other Se3CopyController params to load?
   if (!param_loader.loadedSuccessfully()) {
     ROS_ERROR("[DergbryanTracker]: could not load all Se3CopyController parameters!");
@@ -1296,9 +1302,10 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
     return mrs_msgs::PositionCommand::Ptr();
   }
 
-  if(_type_of_system_=="2uavs_payload" && _uav_name_ == _leader_uav_name_){
-    if(ros::Time::now().toSec()>60){
-        deactivate();
+  if(emulate_nimbro_){
+    emulate_nimbro_time_ = emulate_nimbro_time_ + _dt_;
+    if(emulate_nimbro_time_>emulate_nimbro_delay_){
+      emulate_nimbro_time_ = 0;
     }
   }
 
@@ -1859,58 +1866,60 @@ void DergbryanTracker::publishFollowerDataForLeaderIn2uavs_payload(mrs_msgs::Pos
 This function ensures that the data of the follower UAV (i.e., state of the uav, its anchoring point, and the position cmd) are published.
 The publishing of the payload state is only allowed from when the payload has spawned as to pevent NaN from being used in the trajectory predictions on the leader uav. 
 */
-  if (_uav_name_ == _follower_uav_name_){  // only publish info of the follower UAV, not of the leader
-    //ROS_INFO("publishFollowerDataForLeaderIn2uavs_payload");
-    // 1) uav_state_follower_for_leader_pub_:
-    try {
-      uav_state_follower_for_leader_pub_.publish(uav_state_);
-    }
-    catch (...) {
-      ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", uav_state_follower_for_leader_pub_.getTopic().c_str());
-    }
-
-    // 2) position_cmd_follower_for_leader_pub_:
-    position_cmd_follower_for_leader_ = position_cmd;
-    try {
-      position_cmd_follower_for_leader_pub_.publish(position_cmd_follower_for_leader_);
-    }
-    catch (...) {
-      ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", position_cmd_follower_for_leader_pub_.getTopic().c_str());
-    }
-
-    // 3) anchoring_point_follower_for_leader_pub_:
-    if(payload_spawned_){ // only if the payload has spawned, start to publish its position and velocity  
-      // anchoring_point_follower_for_leader_msg_.header.stamp = uav_state_.header.stamp;    Time is now assigned by callback
-      anchoring_point_follower_for_leader_msg_.header.frame_id = uav_state_.header.frame_id;
-      
-      anchoring_point_follower_for_leader_msg_.pose.position.x = anchoring_pt_pose_position_[0];
-      anchoring_point_follower_for_leader_msg_.pose.position.y = anchoring_pt_pose_position_[1];
-      anchoring_point_follower_for_leader_msg_.pose.position.z = anchoring_pt_pose_position_[2];
-
-      anchoring_point_follower_for_leader_msg_.velocity.linear.x = anchoring_pt_lin_vel_[0];
-      anchoring_point_follower_for_leader_msg_.velocity.linear.y = anchoring_pt_lin_vel_[1];
-      anchoring_point_follower_for_leader_msg_.velocity.linear.z = anchoring_pt_lin_vel_[2];
-
+  if(!emulate_nimbro_ || (emulate_nimbro_time_ == 0)){
+    if (_uav_name_ == _follower_uav_name_){  // only publish info of the follower UAV, not of the leader
+      //ROS_INFO("publishFollowerDataForLeaderIn2uavs_payload");
+      // 1) uav_state_follower_for_leader_pub_:
       try {
-        anchoring_point_follower_for_leader_pub_.publish(anchoring_point_follower_for_leader_msg_);
+        uav_state_follower_for_leader_pub_.publish(uav_state_);
       }
       catch (...) {
-        ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", anchoring_point_follower_for_leader_pub_.getTopic().c_str());
+        ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", uav_state_follower_for_leader_pub_.getTopic().c_str());
       }
-    }
 
-    // 4) goal_position_cmd_follower_for_leader_pub_:
-    // goal_position_cmd_follower_for_leader_.header.stamp    = uav_state_.header.stamp; Time is now assigned by callback
-    goal_position_cmd_follower_for_leader_.header.frame_id = uav_state_.header.frame_id;
-    goal_position_cmd_follower_for_leader_.position.x = goal_x_;
-    goal_position_cmd_follower_for_leader_.position.y = goal_y_;
-    goal_position_cmd_follower_for_leader_.position.z = goal_z_;
-    goal_position_cmd_follower_for_leader_.heading = goal_heading_;
-    try {
-      goal_position_cmd_follower_for_leader_pub_.publish(goal_position_cmd_follower_for_leader_);
-    }
-    catch (...) {
-      ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", goal_position_cmd_follower_for_leader_pub_.getTopic().c_str());
+      // 2) position_cmd_follower_for_leader_pub_:
+      position_cmd_follower_for_leader_ = position_cmd;
+      try {
+        position_cmd_follower_for_leader_pub_.publish(position_cmd_follower_for_leader_);
+      }
+      catch (...) {
+        ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", position_cmd_follower_for_leader_pub_.getTopic().c_str());
+      }
+
+      // 3) anchoring_point_follower_for_leader_pub_:
+      if(payload_spawned_){ // only if the payload has spawned, start to publish its position and velocity  
+        // anchoring_point_follower_for_leader_msg_.header.stamp = uav_state_.header.stamp;    Time is now assigned by callback
+        anchoring_point_follower_for_leader_msg_.header.frame_id = uav_state_.header.frame_id;
+        
+        anchoring_point_follower_for_leader_msg_.pose.position.x = anchoring_pt_pose_position_[0];
+        anchoring_point_follower_for_leader_msg_.pose.position.y = anchoring_pt_pose_position_[1];
+        anchoring_point_follower_for_leader_msg_.pose.position.z = anchoring_pt_pose_position_[2];
+
+        anchoring_point_follower_for_leader_msg_.velocity.linear.x = anchoring_pt_lin_vel_[0];
+        anchoring_point_follower_for_leader_msg_.velocity.linear.y = anchoring_pt_lin_vel_[1];
+        anchoring_point_follower_for_leader_msg_.velocity.linear.z = anchoring_pt_lin_vel_[2];
+
+        try {
+          anchoring_point_follower_for_leader_pub_.publish(anchoring_point_follower_for_leader_msg_);
+        }
+        catch (...) {
+          ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", anchoring_point_follower_for_leader_pub_.getTopic().c_str());
+        }
+      }
+
+      // 4) goal_position_cmd_follower_for_leader_pub_:
+      // goal_position_cmd_follower_for_leader_.header.stamp    = uav_state_.header.stamp; Time is now assigned by callback
+      goal_position_cmd_follower_for_leader_.header.frame_id = uav_state_.header.frame_id;
+      goal_position_cmd_follower_for_leader_.position.x = goal_x_;
+      goal_position_cmd_follower_for_leader_.position.y = goal_y_;
+      goal_position_cmd_follower_for_leader_.position.z = goal_z_;
+      goal_position_cmd_follower_for_leader_.heading = goal_heading_;
+      try {
+        goal_position_cmd_follower_for_leader_pub_.publish(goal_position_cmd_follower_for_leader_);
+      }
+      catch (...) {
+        ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", goal_position_cmd_follower_for_leader_pub_.getTopic().c_str());
+      }
     }
   }
 }
@@ -3873,8 +3882,8 @@ std::tuple< double, Eigen::Vector3d,double> DergbryanTracker::ComputeSe3CopyCont
     }
     
     // Sanity + safety checks: 
-    if (Epl.norm()> _Epl_max_scaling_tracker_*_cable_length_*sqrt(2)){ // Largest possible error when cable is oriented 90°.
-      ROS_ERROR("[DergbryanTracker]: Control error of the anchoring point Epl was larger than expected (%.02fm> _cable_length_*sqrt(2)= %.02fm).", Epl.norm(), _Epl_max_scaling_tracker_*_cable_length_*sqrt(2));
+    if (Epl.norm()> _Epl_max_scaling_*_cable_length_*sqrt(2)){ // Largest possible error when cable is oriented 90°.
+      ROS_ERROR("[DergbryanTracker]: Control error of the anchoring point Epl was larger than expected (%.02fm> _cable_length_*sqrt(2)= %.02fm).", Epl.norm(), _Epl_max_scaling_*_cable_length_*sqrt(2));
       //Epl = Eigen::Vector3d::Zero(3);
       // TODO: check if this actually needs erg_predictions_trusted_
       // erg_predictions_trusted_ = false;
@@ -6352,18 +6361,20 @@ void DergbryanTracker::computeERG(){
       goal_position_cmd_follower_from_leader_.position.z = goal_position_cmd_follower_for_leader_.position.z;
     }
 
-    // Publish:
-    try {
-      position_cmd_follower_from_leader_pub_.publish(position_cmd_follower_from_leader_);
-    }
-    catch (...) {
-      ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", position_cmd_follower_from_leader_pub_.getTopic().c_str());
-    }
-    try {
-      goal_position_cmd_follower_from_leader_pub_.publish(goal_position_cmd_follower_from_leader_);
-    }
-    catch (...) {
-      ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", goal_position_cmd_follower_from_leader_pub_.getTopic().c_str());
+    if(!emulate_nimbro_ || (emulate_nimbro_time_ == 0)){
+      // Publish:
+      try {
+        position_cmd_follower_from_leader_pub_.publish(position_cmd_follower_from_leader_);
+      }
+      catch (...) {
+        ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", position_cmd_follower_from_leader_pub_.getTopic().c_str());
+      }
+      try {
+        goal_position_cmd_follower_from_leader_pub_.publish(goal_position_cmd_follower_from_leader_);
+      }
+      catch (...) {
+        ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", goal_position_cmd_follower_from_leader_pub_.getTopic().c_str());
+      }
     }
   }
 
