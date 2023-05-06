@@ -752,7 +752,7 @@ private:
 
 
   // debug:
-  double ROS_INFO_THROTTLE_PERIOD = 10.0*_dt_;
+  double ROS_INFO_THROTTLE_PERIOD; // = 10.0*_dt_;
   double ROS_WARN_THROTTLE_PERIOD = 10.0*_dt_;//1.0*_dt_;
 };
 //}
@@ -877,6 +877,7 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   param_loader.loadParam("two_uavs_payload/callback_data_max_time_delay/leader", _max_time_delay_on_callback_data_leader_);
   param_loader.loadParam("two_uavs_payload/nimbro/emulate_nimbro", emulate_nimbro_);
   param_loader.loadParam("two_uavs_payload/nimbro/emulate_nimbro_delay", emulate_nimbro_delay_);
+  param_loader.loadParam("ros_info_throttle_period", ROS_INFO_THROTTLE_PERIOD);
   // TODO: any other Se3CopyController params to load?
   if (!param_loader.loadedSuccessfully()) {
     ROS_ERROR("[DergbryanTracker]: could not load all Se3CopyController parameters!");
