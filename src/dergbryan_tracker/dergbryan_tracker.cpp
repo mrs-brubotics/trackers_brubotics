@@ -753,7 +753,7 @@ private:
 
   // debug:
   double ROS_INFO_THROTTLE_PERIOD; // = 10.0*_dt_;
-  double ROS_WARN_THROTTLE_PERIOD = 10.0*_dt_;//1.0*_dt_;
+  // double ROS_WARN_THROTTLE_PERIOD; // = 10.0*_dt_;//1.0*_dt_;
 };
 //}
 
@@ -878,6 +878,7 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   param_loader.loadParam("two_uavs_payload/nimbro/emulate_nimbro", emulate_nimbro_);
   param_loader.loadParam("two_uavs_payload/nimbro/emulate_nimbro_delay", emulate_nimbro_delay_);
   param_loader.loadParam("ros_info_throttle_period", ROS_INFO_THROTTLE_PERIOD);
+  // param_loader.loadParam("ros_warn_throttle_period", ROS_WARN_THROTTLE_PERIOD);
   // TODO: any other Se3CopyController params to load?
   if (!param_loader.loadedSuccessfully()) {
     ROS_ERROR("[DergbryanTracker]: could not load all Se3CopyController parameters!");
@@ -5934,7 +5935,9 @@ void DergbryanTracker::computeERG(){
       DSM_total_ = DSM_sT_;
     }
     if(DSM_sT_ < 0){
-      ROS_WARN_THROTTLE(ROS_WARN_THROTTLE_PERIOD,"[DergbryanTracker]: DSM_sT_ = %.03f < 0!", DSM_sT_);
+      // ROS_WARN_THROTTLE(ROS_WARN_THROTTLE_PERIOD,"[DergbryanTracker]: DSM_sT_ = %.03f < 0!", DSM_sT_);
+      ROS_WARN_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: DSM_sT_ = %.03f < 0!", DSM_sT_);
+
     }
   }
 
@@ -5944,7 +5947,8 @@ void DergbryanTracker::computeERG(){
       DSM_total_ = DSM_sw_;
     }
     if(DSM_sw_ < 0){
-      ROS_WARN_THROTTLE(ROS_WARN_THROTTLE_PERIOD,"[DergbryanTracker]: DSM_sw_ = %.03f < 0!", DSM_sw_);
+      // ROS_WARN_THROTTLE(ROS_WARN_THROTTLE_PERIOD,"[DergbryanTracker]: DSM_sw_ = %.03f < 0!", DSM_sw_);
+      ROS_WARN_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: DSM_sw_ = %.03f < 0!", DSM_sw_);
     }
   }
 
@@ -5954,7 +5958,8 @@ void DergbryanTracker::computeERG(){
       DSM_total_ = DSM_a_;
     }
     if(DSM_a_ < 0){
-      ROS_WARN_THROTTLE(ROS_WARN_THROTTLE_PERIOD,"[DergbryanTracker]: DSM_a_ = %.03f < 0!", DSM_a_);
+      // ROS_WARN_THROTTLE(ROS_WARN_THROTTLE_PERIOD,"[DergbryanTracker]: DSM_a_ = %.03f < 0!", DSM_a_);
+      ROS_WARN_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: DSM_a_ = %.03f < 0!", DSM_a_);
     }
   }
 
@@ -5969,7 +5974,8 @@ void DergbryanTracker::computeERG(){
       DSM_total_ = DSM_sc_;
     }
     if(DSM_sc_ < 0){
-      ROS_WARN_THROTTLE(ROS_WARN_THROTTLE_PERIOD,"[DergbryanTracker]: DSM_sc_ = %.03f < 0!", DSM_sc_);
+      // ROS_WARN_THROTTLE(ROS_WARN_THROTTLE_PERIOD,"[DergbryanTracker]: DSM_sc_ = %.03f < 0!", DSM_sc_);
+      ROS_WARN_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: DSM_sc_ = %.03f < 0!", DSM_sc_);
     }
   }
 
@@ -5979,7 +5985,8 @@ void DergbryanTracker::computeERG(){
       DSM_total_ = DSM_o_;
     }
     if(DSM_o_ < 0){
-      ROS_WARN_THROTTLE(ROS_WARN_THROTTLE_PERIOD,"[DergbryanTracker]: DSM_o_ = %.03f < 0!", DSM_o_);
+      // ROS_WARN_THROTTLE(ROS_WARN_THROTTLE_PERIOD,"[DergbryanTracker]: DSM_o_ = %.03f < 0!", DSM_o_);
+      ROS_WARN_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: DSM_o_ = %.03f < 0!", DSM_o_);
     }
   }
 
@@ -5989,7 +5996,8 @@ void DergbryanTracker::computeERG(){
       DSM_total_ = DSM_swing_c_;
     }
     if(DSM_swing_c_ < 0){
-      ROS_WARN_THROTTLE(ROS_WARN_THROTTLE_PERIOD,"[DergbryanTracker]: DSM_swing_c_ = %.03f < 0!", DSM_swing_c_);
+      // ROS_WARN_THROTTLE(ROS_WARN_THROTTLE_PERIOD,"[DergbryanTracker]: DSM_swing_c_ = %.03f < 0!", DSM_swing_c_);
+      ROS_WARN_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: DSM_swing_c_ = %.03f < 0!", DSM_swing_c_);
     }
   }
 
@@ -5999,15 +6007,18 @@ void DergbryanTracker::computeERG(){
       DSM_total_ = DSM_Tc_;
     }
     if(DSM_Tc_ < 0){
-      ROS_WARN_THROTTLE(ROS_WARN_THROTTLE_PERIOD,"[DergbryanTracker]: DSM_Tc_ = %.03f < 0!", DSM_Tc_);
+      // ROS_WARN_THROTTLE(ROS_WARN_THROTTLE_PERIOD,"[DergbryanTracker]: DSM_Tc_ = %.03f < 0!", DSM_Tc_);
+      ROS_WARN_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: DSM_Tc_ = %.03f < 0!", DSM_Tc_);
     }
   }
 
   if(!_enable_dsm_sT_ && !_enable_dsm_sw_ && !_enable_dsm_a_){
-    ROS_WARN_THROTTLE(ROS_WARN_THROTTLE_PERIOD, "[DergbryanTracker]: all default UAV DSMs (thrust, body rate, agents) are disabled! \n");
+    // ROS_WARN_THROTTLE(ROS_WARN_THROTTLE_PERIOD, "[DergbryanTracker]: all default UAV DSMs (thrust, body rate, agents) are disabled! \n");
+    ROS_WARN_THROTTLE(ROS_INFO_THROTTLE_PERIOD, "[DergbryanTracker]: all default UAV DSMs (thrust, body rate, agents) are disabled! \n");
   }
   if(!_enable_dsm_swing_c_ && !_enable_dsm_Tc_ && payload_spawned_){
-    ROS_WARN_THROTTLE(ROS_WARN_THROTTLE_PERIOD, "[DergbryanTracker]: all payload specific DSMs (swing, cable tension) are disabled although payload is spawned! \n");
+    // ROS_WARN_THROTTLE(ROS_WARN_THROTTLE_PERIOD, "[DergbryanTracker]: all payload specific DSMs (swing, cable tension) are disabled although payload is spawned! \n");
+    ROS_WARN_THROTTLE(ROS_INFO_THROTTLE_PERIOD, "[DergbryanTracker]: all payload specific DSMs (swing, cable tension) are disabled although payload is spawned! \n");
   }
 
   if(_constant_dsm_ >= 0.0){ // if all of the DSMs are disabled or a positive constant DSM is added, TODO add other DSMs here
@@ -7960,7 +7971,7 @@ std::tuple<bool, std::string, bool> DergbryanTracker::loadTrajectory(const mrs_m
     timer_trajectory_tracking_.start();
   }
 
-  ROS_INFO_THROTTLE(1, "[DergbryanTracker]: received trajectory with length %d", trajectory_size);
+  ROS_INFO_THROTTLE(1.0, "[DergbryanTracker]: received trajectory with length %d", trajectory_size);
 
 //   /* publish the debugging topics of the post-processed trajectory //{ */
 
@@ -8262,7 +8273,7 @@ void DergbryanTracker::timerTrajectoryTracking(const ros::TimerEvent& event) {
     //trajectory_tracking_sub_idx_ = 0;
 
     if(trajectory_tracking_idx_ == 0){
-      ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: (start) trajectory_tracking_idx_ = %d",trajectory_tracking_idx_);
+      // ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: (start) trajectory_tracking_idx_ = %d",trajectory_tracking_idx_);
       // set the global variable to keep track of the time when the trajectory was started
       time_at_start_point_ = (ros::Time::now()).toSec();
       // publish it below (add to msg) 
@@ -8276,12 +8287,12 @@ void DergbryanTracker::timerTrajectoryTracking(const ros::TimerEvent& event) {
     // looping  
     if (trajectory_tracking_loop_) {
       if (trajectory_tracking_idx_ >= trajectory_size) {
-        ROS_INFO_STREAM("debug 1: trajectory size = " << trajectory_size);
+        // ROS_INFO_STREAM("debug 1: trajectory size = " << trajectory_size);
         trajectory_tracking_idx_ -= trajectory_size;
       }
     } else {
       if (trajectory_tracking_idx_ >= trajectory_size) {
-        ROS_INFO_STREAM("debug 2: trajectory size = " << trajectory_size);
+        // ROS_INFO_STREAM("debug 2: trajectory size = " << trajectory_size);
         trajectory_tracking_idx_ = trajectory_tracking_idx_ - 1;
       }
     }
@@ -8345,10 +8356,10 @@ void DergbryanTracker::timerTrajectoryTracking(const ros::TimerEvent& event) {
 
     // if the tracking idx hits the end of the trajectory
     if (trajectory_tracking_idx_ == trajectory_size) {
-      ROS_INFO_STREAM("debug 3: trajectory size = " << trajectory_size);
+      // ROS_INFO_STREAM("debug 3: trajectory size = " << trajectory_size);
 
       if (trajectory_tracking_loop_) {
-        ROS_INFO_STREAM("debug 4: trajectory size = " << trajectory_size);
+        // ROS_INFO_STREAM("debug 4: trajectory size = " << trajectory_size);
 
         // reset the idx
         trajectory_tracking_idx_ = 0;
@@ -8357,7 +8368,7 @@ void DergbryanTracker::timerTrajectoryTracking(const ros::TimerEvent& event) {
 
       } else {
 
-        ROS_INFO_STREAM("debug 5: trajectory size = " << trajectory_size);
+        // ROS_INFO_STREAM("debug 5: trajectory size = " << trajectory_size);
         trajectory_tracking_in_progress_ = false;
 
         // set the idx to the last idx of the trajectory
