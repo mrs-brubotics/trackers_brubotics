@@ -1207,7 +1207,7 @@ std::tuple<bool, std::string> DergbryanTracker::activate(const mrs_msgs::Positio
 
   if (!got_constraints_) {
     ss << "can not activate, missing constraints";
-    ROS_ERROR_STREAM_THROTTLE(1.0, "[DergbryanTracker]: " << ss.str());
+    ROS_ERROR_STREAM_THROTTLE(ROS_INFO_THROTTLE_PERIOD, "[DergbryanTracker]: " << ss.str());
     return std::tuple(false, ss.str());
   }
 
@@ -1231,7 +1231,7 @@ std::tuple<bool, std::string> DergbryanTracker::activate(const mrs_msgs::Positio
 void DergbryanTracker::deactivate(void) {
 
   if(_type_of_system_=="2uavs_payload" && is_active_){
-    ROS_WARN("[DergbryanTracker]: Eland (tracker)");
+    ROS_WARN_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: Eland (tracker)");
   }
 
   toggleHover(false);
@@ -1288,7 +1288,7 @@ bool DergbryanTracker::resetStatic(void) {
 const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msgs::UavState::ConstPtr &                        uav_state,
                                                               [[maybe_unused]] const mrs_msgs::AttitudeCommand::ConstPtr &last_attitude_cmd) {
                                                                   
-  // ROS_INFO_THROTTLE(0.1,"[DergbryanTracker]: Start of update()");
+  // ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: Start of update()");
   mrs_lib::Routine profiler_routine = profiler.createRoutine("update");
   {
     std::scoped_lock lock(mutex_uav_state_);
@@ -1339,7 +1339,7 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
     }
     catch (...) {
       position_cmd.use_heading = 0;
-      ROS_ERROR_THROTTLE(1.0, "[DergbryanTracker]: could not calculate the current UAV heading");
+      ROS_ERROR_THROTTLE(ROS_INFO_THROTTLE_PERIOD, "[DergbryanTracker]: could not calculate the current UAV heading");
     }
 
     position_cmd.position.x     = goal_x_;
@@ -1423,7 +1423,7 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
     uav_heading = mrs_lib::AttitudeConverter(uav_state_.pose.orientation).getHeading();
   }
   catch (...) {
-    ROS_ERROR_THROTTLE(1.0, "[DergbryanTracker]: could not calculate the UAV heading");
+    ROS_ERROR_THROTTLE(ROS_INFO_THROTTLE_PERIOD, "[DergbryanTracker]: could not calculate the UAV heading");
   }
 
   uav_heading_ = uav_heading;
@@ -1503,7 +1503,7 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
             if(_run_type_ == "uav" || (_baca_in_simulation_ && _run_type_ == "simulation")){
               if(both_uavs_ready_){
                 if(max_time_delay > 2*_max_time_delay_on_callback_data_follower_){ 
-                  ROS_INFO_STREAM("[DergbryanTracker]: follower data is delayed by more than 2 times the max delay => Eland ");
+                  ROS_ERROR_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: follower data is delayed by more than 2 times the max delay => Eland ");
                   // Eland_tracker_to_controller();
                   deactivate();
                 }
@@ -1588,7 +1588,7 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
           if(_run_type_ == "uav" || (_baca_in_simulation_ && _run_type_ == "simulation")){
             if(both_uavs_ready_){
               if(max_time_delay > 2*_max_time_delay_on_callback_data_leader_){ 
-                ROS_INFO_STREAM("[DergbryanTracker]: leader data is delayed by more than 2 times the max delay => Eland ");
+                ROS_ERROR_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: leader data is delayed by more than 2 times the max delay => Eland ");
                 // Eland_tracker_to_controller();
                 deactivate();
               }
@@ -1608,7 +1608,12 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
           }
         }
       } else{
-        ROS_ERROR("[DergbryanTracker]: the case variables for the update() routine are not well configured. Please check code!!!");
+        if(_run_type_!="uav"){
+          ROS_ERROR("[DergbryanTracker]: the case variables for the update() routine are not well configured. Please check code!!!");
+        }
+        else{
+          ROS_ERROR_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: the case variables for the update() routine are not well configured. Please check code!!!");
+        }
       }
       // prepare function output:
       position_cmd.position.x     = applied_ref_x_; 
@@ -1858,7 +1863,12 @@ void DergbryanTracker::computePSCTrajectoryPredictions(mrs_msgs::PositionCommand
     trajectory_prediction_general(position_cmd, uav_heading, last_attitude_cmd);  
   }  
   else{
-    ROS_WARN_THROTTLE(1.0, "[DergbryanTracker]: the case variables for the computePSCTrajectoryPredictions() routine did not allow to compute the trajectory predictions for this uav");
+    if(_run_type_!="uav"){
+      ROS_WARN_THROTTLE(1.0, "[DergbryanTracker]: the case variables for the computePSCTrajectoryPredictions() routine did not allow to compute the trajectory predictions for this uav");
+    } 
+    else{
+      ROS_WARN_THROTTLE(ROS_INFO_THROTTLE_PERIOD, "[DergbryanTracker]: the case variables for the computePSCTrajectoryPredictions() routine did not allow to compute the trajectory predictions for this uav");
+    }
   }
 }
 
@@ -2339,7 +2349,12 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
   // ----------------------------------------------------
   for (int i = 0; i < _num_pred_samples_; i++) {
     if(!erg_predictions_trusted_){
-      ROS_INFO_STREAM("[DergbryanTracker] we break since the trajectory prediciton loop since erg_predictions_trusted_ = false!");
+      if(_run_type_!="uav"){
+        ROS_INFO_STREAM("[DergbryanTracker] we break since the trajectory prediciton loop since erg_predictions_trusted_ = false!");
+      }
+      else{
+        ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker] we break since the trajectory prediciton loop since erg_predictions_trusted_ = false!");
+      }
       break;
     }
     if(i == 0){  // first iteration
@@ -2497,7 +2512,12 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
       double normR2 = temp(0)*temp(0) + temp(1)*temp(1) + temp(2)*temp(2);
       if ((normR2 >=1.02) || (normR2 <=0.98))
       {
-        ROS_INFO_STREAM("something is wrong: normR2 too far from 1= " << normR2);
+        if(_run_type_!="uav"){
+          ROS_INFO_STREAM("[DergbryanTracker]: something is wrong: normR2 too far from 1= " << normR2);
+        }
+        else{
+          ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: something is wrong: normR2 too far from 1= %f", normR2);
+        }
       }
       // to ensure numerical stability of R: each column must be a unit vector
       for(int l = 0; l<3; l++){
@@ -2505,7 +2525,12 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
         double tol_norm_col_R = 0.005;
         if(norm_col_R < 1-tol_norm_col_R && norm_col_R > 1+tol_norm_col_R){
           R.col(l) =  (R.col(l)).normalized();
-          ROS_WARN_STREAM("[DergbryanTracker]: column in predicted UAV rotation matrix not a unit vector: norm_col_R = " << norm_col_R << "--> normalized the column!");
+          if(_run_type_!="uav"){
+            ROS_WARN_STREAM("[DergbryanTracker]: column in predicted UAV rotation matrix not a unit vector: norm_col_R = " << norm_col_R << "--> normalized the column!");
+          }
+          else{
+            ROS_WARN_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: column in predicted UAV rotation matrix not a unit vector: norm_col_R = %f --> normalized the column!",norm_col_R);
+          }
         }
       } // TODO: we don't check if columns are still orthogonal
       
@@ -3220,7 +3245,12 @@ void DergbryanTracker::trajectory_prediction_general_load_2UAV(mrs_msgs::Positio
     // Prediction loop
     for (int i = 0; i < _num_pred_samples_; i++) {
       if(!erg_predictions_trusted_){
-        ROS_INFO_STREAM("[DergbryanTracker] we break since the trajectory prediction loop since erg_predictions_trusted_ = false!");
+        if(_run_type_!="uav"){
+          ROS_INFO_STREAM("[DergbryanTracker] we break since the trajectory prediction loop since erg_predictions_trusted_ = false!");
+        }
+        else{
+          ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker] we break since the trajectory prediction loop since erg_predictions_trusted_ = false!");
+        }
         break;
       }
       if(i==0){ // Initial conditions for first iteration + Fill in custom poses
@@ -3411,13 +3441,23 @@ void DergbryanTracker::trajectory_prediction_general_load_2UAV(mrs_msgs::Positio
           double norm_col_R = (uav1_R.col(l)).norm();
           if(norm_col_R < 1-tol_norm_col_R && norm_col_R > 1+tol_norm_col_R){
             uav1_R.col(l) =  (uav1_R.col(l)).normalized();
-            ROS_WARN_STREAM("[DergbryanTracker]: column in predicted UAV leader rotation matrix not a unit vector: norm_col_R = " << norm_col_R << "--> normalized the column!");
+            if(_run_type_!="uav"){
+              ROS_WARN_STREAM("[DergbryanTracker]: column in predicted UAV leader rotation matrix not a unit vector: norm_col_R = " << norm_col_R << "--> normalized the column!");
+            }
+            else{
+              ROS_WARN_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: column in predicted UAV leader rotation matrix not a unit vector: norm_col_R = %f --> normalized the column!",norm_col_R);
+            }
           }
           // UAV 2:
           norm_col_R = (uav2_R.col(l)).norm();
           if(norm_col_R < 1-tol_norm_col_R && norm_col_R > 1+tol_norm_col_R){
             uav2_R.col(l) =  (uav2_R.col(l)).normalized();
-            ROS_WARN_STREAM("[DergbryanTracker]: column in predicted UAV follower rotation matrix not a unit vector: norm_col_R = " << norm_col_R << "--> normalized the column!");
+            if(_run_type_!="uav"){
+              ROS_WARN_STREAM("[DergbryanTracker]: column in predicted UAV follower rotation matrix not a unit vector: norm_col_R = " << norm_col_R << "--> normalized the column!");
+            }
+            else{
+              ROS_WARN_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: column in predicted UAV follower rotation matrix not a unit vector: norm_col_R = %f --> normalized the column!",norm_col_R);
+            }
           }
         } // TODO: we don't check if columns are still orthogonal
 
@@ -3885,7 +3925,12 @@ std::tuple< double, Eigen::Vector3d,double> DergbryanTracker::ComputeSe3CopyCont
     
     // Sanity + safety checks: 
     if (Epl.norm()> _Epl_max_scaling_*_cable_length_*sqrt(2)){ // Largest possible error when cable is oriented 90°.
-      ROS_ERROR("[DergbryanTracker]: Control error of the anchoring point Epl was larger than expected (%.02fm> _cable_length_*sqrt(2)= %.02fm).", Epl.norm(), _Epl_max_scaling_*_cable_length_*sqrt(2));
+      if(_run_type_!="uav"){
+        ROS_ERROR("[DergbryanTracker]: Control error of the anchoring point Epl was larger than expected (%.02fm> _cable_length_*sqrt(2)= %.02fm).", Epl.norm(), _Epl_max_scaling_*_cable_length_*sqrt(2));
+      }
+      else{
+        ROS_ERROR_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: Control error of the anchoring point Epl was larger than expected (%.02fm> _cable_length_*sqrt(2)= %.02fm).", Epl.norm(), _Epl_max_scaling_*_cable_length_*sqrt(2));
+      }
       //Epl = Eigen::Vector3d::Zero(3);
       // TODO: check if this actually needs erg_predictions_trusted_
       // erg_predictions_trusted_ = false;
@@ -3897,7 +3942,7 @@ std::tuple< double, Eigen::Vector3d,double> DergbryanTracker::ComputeSe3CopyCont
     }
     // Ignore small load position errors to deal with small, but non-zero load offsets in steady-state and prevent aggressive actions on small errors 
     if(Epl.norm() < _Epl_min_){ // When the payload is very close to equilibrium vertical position, the error is desactivated so the UAV doesn't try to compensate and let it damp naturally.
-      ROS_INFO_THROTTLE(1.0,"[DergbryanTracker]: Control error of the anchoring point Epl = %.02fm < _Epl_min_ = %.02fm, hence it has been set to zero", Epl.norm(), _Epl_min_);
+      ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: Control error of the anchoring point Epl = %.02fm < _Epl_min_ = %.02fm, hence it has been set to zero", Epl.norm(), _Epl_min_);
       Epl = Eigen::Vector3d::Zero(3);
     }
 
@@ -4033,31 +4078,33 @@ std::tuple< double, Eigen::Vector3d,double> DergbryanTracker::ComputeSe3CopyCont
   Kdl = Kdl *total_mass;
 
   // gains after being mutiplied with total_mass
-  ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kp_x*m = %f", Kp(0));
-  ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kp_y*m = %f", Kp(1));
-  ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kp_z*m = %f", Kp(2));
-  ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kv_x*m = %f", Kv(0));
-  ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kv_y*m = %f", Kv(1));
-  ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kv_z*m = %f", Kv(2));
-  ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kpl_x*m = %f", Kpl(0));
-  ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kpl_y*m= %f", Kpl(1));
-  ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kpl_z*m = %f", Kpl(2));
-  ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kvl_x*m = %f", Kdl(0));
-  ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kvl_y*m = %f", Kdl(1));
-  ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kvl_z*m = %f", Kdl(2));
-  ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kq_x = %f", Kq(0));
-  ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kq_y = %f", Kq(1));
-  ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kq_z = %f", Kq(2));
-  
-  ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: uav_mass_ (estimated) = %f", uav_mass_);
-  if(_type_of_system_ == "1uav_payload" || _type_of_system_ == "2uavs_payload" ){
-    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: _load_mass_ = %f", _load_mass_);
+  if(_run_type_!="uav"){ // Only printed in simulation
+    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kp_x*m = %f", Kp(0));
+    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kp_y*m = %f", Kp(1));
+    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kp_z*m = %f", Kp(2));
+    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kv_x*m = %f", Kv(0));
+    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kv_y*m = %f", Kv(1));
+    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kv_z*m = %f", Kv(2));
+    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kpl_x*m = %f", Kpl(0));
+    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kpl_y*m= %f", Kpl(1));
+    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kpl_z*m = %f", Kpl(2));
+    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kvl_x*m = %f", Kdl(0));
+    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kvl_y*m = %f", Kdl(1));
+    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kvl_z*m = %f", Kdl(2));
+    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kq_x = %f", Kq(0));
+    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kq_y = %f", Kq(1));
+    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Kq_z = %f", Kq(2));
+    
+    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: uav_mass_ (estimated) = %f", uav_mass_);
+    if(_type_of_system_ == "1uav_payload" || _type_of_system_ == "2uavs_payload" ){
+      ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: _load_mass_ = %f", _load_mass_);
+    }
+    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: total_mass (estimated)= %f", total_mass);
+    
+    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: n_motors = %d", common_handlers_->motor_params.n_motors);
+    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: motor_params.A = %f", common_handlers_->motor_params.A);
+    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: motor_params.B = %f", common_handlers_->motor_params.B);
   }
-  ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: total_mass (estimated)= %f", total_mass);
-  
-  ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: n_motors = %d", common_handlers_->motor_params.n_motors);
-  ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: motor_params.A = %f", common_handlers_->motor_params.A);
-  ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: motor_params.B = %f", common_handlers_->motor_params.B);
 
   // | --------------- desired orientation matrix --------------- |
 
@@ -4083,7 +4130,7 @@ std::tuple< double, Eigen::Vector3d,double> DergbryanTracker::ComputeSe3CopyCont
   // | ----------- limiting the desired downwards acceleration and maximum tilt angle ---------- |
   // TODO: check with MPC guidage code if this actually makes sense as i remember to have improved it
   if (f[2] < 0) {
-    ROS_WARN_THROTTLE(1.0, "[DergbryanTracker]: the calculated downwards desired force is negative (%.2f) -> mitigating flip", f[2]);
+    ROS_WARN_THROTTLE(ROS_INFO_THROTTLE_PERIOD, "[DergbryanTracker]: the calculated downwards desired force is negative (%.2f) -> mitigating flip", f[2]);
     f << 0, 0, 1; // ctu original
     // f << f[0], f[1], 0.0; // saturate the z-component on zero such that the desired tilt angle stays in the upper hemisphere
   }
@@ -4101,7 +4148,12 @@ std::tuple< double, Eigen::Vector3d,double> DergbryanTracker::ComputeSe3CopyCont
 
   // check for the failsafe limit
   if (!std::isfinite(theta)) {
-    ROS_ERROR("[DergbryanTracker]: NaN detected in variable 'theta', predictions can't be trusted!!!!");
+    if(_run_type_!="uav"){
+      ROS_ERROR("[DergbryanTracker]: NaN detected in variable 'theta', predictions can't be trusted!!!!");
+    }
+    else{
+      ROS_ERROR_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: NaN detected in variable 'theta', predictions can't be trusted!!!!");
+    }
     erg_predictions_trusted_ = false; //TODO
   } else{
     erg_predictions_trusted_ = true; // TODO
@@ -4130,7 +4182,7 @@ std::tuple< double, Eigen::Vector3d,double> DergbryanTracker::ComputeSe3CopyCont
   auto constraints = mrs_lib::get_mutexed(mutex_constraints_, constraints_);
 
   if (fabs(constraints.tilt) > 1e-3 && theta > constraints.tilt) {
-    ROS_WARN_THROTTLE(1.0, "[DergbryanTracker]: tilt is being saturated, desired: %.2f deg, saturated %.2f deg", (theta / M_PI) * 180.0,
+    ROS_WARN_THROTTLE(ROS_INFO_THROTTLE_PERIOD, "[DergbryanTracker]: tilt is being saturated, desired: %.2f deg, saturated %.2f deg", (theta / M_PI) * 180.0,
                       (constraints.tilt / M_PI) * 180.0);
     theta = constraints.tilt;
   }
@@ -4156,7 +4208,12 @@ std::tuple< double, Eigen::Vector3d,double> DergbryanTracker::ComputeSe3CopyCont
       try {
         Rd = mrs_lib::AttitudeConverter(Rd).setHeading(position_cmd.heading);
       } catch (...) {
-        ROS_ERROR("[DergbryanTracker]: could not set the desired heading");
+        if(_run_type_!="uav"){
+          ROS_ERROR("[DergbryanTracker]: could not set the desired heading");
+        }
+        else{
+          ROS_ERROR_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: could not set the desired heading");
+        }
       }
     }
 
@@ -4168,7 +4225,7 @@ std::tuple< double, Eigen::Vector3d,double> DergbryanTracker::ComputeSe3CopyCont
       bxd << cos(position_cmd.heading), sin(position_cmd.heading), 0;
       // ROS_INFO_STREAM("bxd = \n" << bxd);
     } else {
-      ROS_ERROR_THROTTLE(1.0, "[DergbryanTracker]: desired heading was not specified, using current heading instead!");
+      ROS_ERROR_THROTTLE(ROS_INFO_THROTTLE_PERIOD, "[DergbryanTracker]: desired heading was not specified, using current heading instead!");
       double uav_heading = uav_heading_;
       bxd << cos(uav_heading), sin(uav_heading), 0;
     }
@@ -4252,30 +4309,38 @@ std::tuple< double, Eigen::Vector3d,double> DergbryanTracker::ComputeSe3CopyCont
     if (thrust_force >= 0) {
       thrust = mrs_lib::quadratic_thrust_model::forceToThrust(common_handlers_->motor_params, thrust_force);
     } else {
-      ROS_WARN_THROTTLE(1.0, "[DergbryanTracker]: just so you know, the desired thrust force is negative (%.2f)", thrust_force);
+      ROS_WARN_THROTTLE(ROS_INFO_THROTTLE_PERIOD, "[DergbryanTracker]: just so you know, the desired thrust force is negative (%.2f)", thrust_force);
     }
   }
   else {
     // the thrust is overriden from the tracker command
     thrust = position_cmd.thrust;
-    ROS_INFO_STREAM("position_cmd.use_thrust = \n" << position_cmd.use_thrust);
+    if(_run_type_!="uav"){
+      ROS_INFO_STREAM("[DergbryanTracker]: position_cmd.use_thrust = \n" << position_cmd.use_thrust);
+    }
+    else{
+      ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: position_cmd.use_thrust = %d",position_cmd.use_thrust);
+    }
   }
 
   // saturate the thrust
   if (!std::isfinite(thrust)) {
-
     thrust = 0;
-    ROS_ERROR("[DergbryanTracker]: NaN detected in variable 'thrust', setting it to 0 and returning!!!");
-
+    if(_run_type_!="uav"){
+      ROS_ERROR("[DergbryanTracker]: NaN detected in variable 'thrust', setting it to 0 and returning!!!");
+    }
+    else{
+      ROS_ERROR_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: NaN detected in variable 'thrust', setting it to 0 and returning!!!");
+    }
   } else if (thrust > _thrust_saturation_) {
 
     thrust = _thrust_saturation_;
-    ROS_WARN_THROTTLE(1.0, "[DergbryanTracker]: saturating thrust to %.2f", _thrust_saturation_);
+    ROS_WARN_THROTTLE(ROS_INFO_THROTTLE_PERIOD, "[DergbryanTracker]: saturating thrust to %.2f", _thrust_saturation_);
 
   } else if (thrust < 0.0) {
 
     thrust = 0.0;
-    ROS_WARN_THROTTLE(1.0, "[DergbryanTracker]: saturating thrust to 0");
+    ROS_WARN_THROTTLE(ROS_INFO_THROTTLE_PERIOD, "[DergbryanTracker]: saturating thrust to 0");
   }
 
   thrust_force = mrs_lib::quadratic_thrust_model::thrustToForce(common_handlers_->motor_params, thrust);
@@ -4294,7 +4359,12 @@ std::tuple< double, Eigen::Vector3d,double> DergbryanTracker::ComputeSe3CopyCont
       desired_yaw_rate = mrs_lib::AttitudeConverter(Rd).getYawRateIntrinsic(position_cmd.heading_rate);
     }
     catch (...) {
-      ROS_ERROR("[DergbryanTracker]: exception caught while calculating the desired_yaw_rate feedforward");
+      if(_run_type_!="uav"){
+        ROS_ERROR("[DergbryanTracker]: exception caught while calculating the desired_yaw_rate feedforward");
+      }
+      else{
+        ROS_ERROR_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: exception caught while calculating the desired_yaw_rate feedforward");
+      }
     }
 
     Rw << 0, 0, desired_yaw_rate;
@@ -4333,7 +4403,12 @@ std::tuple< double, Eigen::Vector3d,double> DergbryanTracker::ComputeSe3CopyCont
       parasitic_heading_rate = mrs_lib::AttitudeConverter(uav_state.pose.orientation).getHeadingRate(q_feedback_yawless);
     }
     catch (...) {
-      ROS_ERROR("[DergbryanTracker]: exception caught while calculating the parasitic heading rate!");
+      if(_run_type_!="uav"){
+        ROS_ERROR("[DergbryanTracker]: exception caught while calculating the parasitic heading rate!");
+      }
+      else{
+        ROS_ERROR_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: exception caught while calculating the parasitic heading rate!");
+      }
     }
 
     try {
@@ -4341,7 +4416,12 @@ std::tuple< double, Eigen::Vector3d,double> DergbryanTracker::ComputeSe3CopyCont
       rp_heading_rate_compensation(2) = mrs_lib::AttitudeConverter(uav_state.pose.orientation).getYawRateIntrinsic(-parasitic_heading_rate);
     }
     catch (...) {
-      ROS_ERROR("[DergbryanTracker]: exception caught while calculating the parasitic heading rate compensation!");
+      if(_run_type_!="uav"){
+        ROS_ERROR("[DergbryanTracker]: exception caught while calculating the parasitic heading rate compensation!");
+      }
+      else{
+        ROS_ERROR_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: exception caught while calculating the parasitic heading rate compensation!");
+      }
     }
   }
 
@@ -4385,7 +4465,7 @@ std::tuple< double, Eigen::Vector3d,double> DergbryanTracker::ComputeSe3CopyCont
       t[2] = -constraints.yaw_rate;
     }
   } else {
-    ROS_WARN_THROTTLE(1.0, "[DergbryanTracker]: missing dynamics constraints");
+    ROS_WARN_THROTTLE(ROS_INFO_THROTTLE_PERIOD, "[DergbryanTracker]: missing dynamics constraints");
   }
   
   // | --------------- fill the resulting command --------------- |
@@ -4560,7 +4640,12 @@ void DergbryanTracker::computeERG(){
       if (_predicitons_use_body_inertia_) { // TODO: implement this case
         DSM_sw_uav1_ = computeDSM_sw_trajpred(predicted_uav1_attitude_rate_out_);
         DSM_sw_uav2_ = computeDSM_sw_trajpred(predicted_uav2_attitude_rate_out_);
-        ROS_ERROR_STREAM("[DergbryanTracker]: _predicitons_use_body_inertia_ ignored as this case is not implemented yet for 2uavs_payload!");
+        if(_run_type_!="uav"){
+          ROS_ERROR_STREAM("[DergbryanTracker]: _predicitons_use_body_inertia_ ignored as this case is not implemented yet for 2uavs_payload!");
+        }
+        else{
+          ROS_ERROR_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: _predicitons_use_body_inertia_ ignored as this case is not implemented yet for 2uavs_payload!");
+        }
         // DSM_sw_uav1_ = computeDSM_sw_trajpred(predicted_uav1_des_attituderate_out_);
         // DSM_sw_uav2_ = computeDSM_sw_trajpred(predicted_uav2_des_attituderate_out_);
       }
@@ -4589,7 +4674,7 @@ void DergbryanTracker::computeERG(){
       DSM_uav2_msg_.DSM_sw = DSM_sw_uav2_;
       DSM_msg_.DSM_sw = DSM_sw_;
     }
-    ROS_WARN_THROTTLE(1.0, "[DergbryanTracker]: missing dynamics constraints");
+    ROS_WARN_THROTTLE(ROS_INFO_THROTTLE_PERIOD, "[DergbryanTracker]: missing dynamics constraints");
   }
 
   //ROS_INFO_STREAM("before swing angle constraints \n");
@@ -4951,7 +5036,7 @@ void DergbryanTracker::computeERG(){
       catch(...)
       {
         // other_uavs_positions_[this_uav_id] does not exist. Skip this iteration directly.
-        ROS_WARN_THROTTLE(1.0, "[DergbryanTracker]: Lost communicated position corresponding to the applied reference of %s \n", this_uav_id.c_str());
+        ROS_WARN_THROTTLE(ROS_INFO_THROTTLE_PERIOD, "[DergbryanTracker]: Lost communicated position corresponding to the applied reference of %s \n", this_uav_id.c_str());
         it1++;
         continue;
       }
@@ -5118,7 +5203,7 @@ void DergbryanTracker::computeERG(){
       catch(...)
       {
         // other_uavs_positions_[this_uav_id] does not exist. Skip this iteration directly.
-        ROS_WARN_THROTTLE(1.0, "[DergbryanTracker]: Lost communicated position corresponding to the applied reference of %s \n", this_uav_id.c_str());
+        ROS_WARN_THROTTLE(ROS_INFO_THROTTLE_PERIOD, "[DergbryanTracker]: Lost communicated position corresponding to the applied reference of %s \n", this_uav_id.c_str());
         it1++;
         continue;
       }
@@ -5323,7 +5408,7 @@ void DergbryanTracker::computeERG(){
       catch(...)
       {
         // other_uavs_positions_[this_uav_id] does not exist. Skip this iteration directly.
-        ROS_WARN_THROTTLE(1.0, "[DergbryanTracker]: Lost communicated position corresponding to the applied reference of %s \n", this_uav_id.c_str());
+        ROS_WARN_THROTTLE(ROS_INFO_THROTTLE_PERIOD, "[DergbryanTracker]: Lost communicated position corresponding to the applied reference of %s \n", this_uav_id.c_str());
         it1++;
         continue;
       }
@@ -5335,7 +5420,7 @@ void DergbryanTracker::computeERG(){
       catch(...)
       {
         // other_uav_tube_[this_uav_id] does not exist. Skip this iteration directly.
-        ROS_WARN_THROTTLE(1.0, "[DergbryanTracker]: Lost communicated tube information corresponding to the applied reference of %s \n", this_uav_id.c_str());
+        ROS_WARN_THROTTLE(ROS_INFO_THROTTLE_PERIOD, "[DergbryanTracker]: Lost communicated tube information corresponding to the applied reference of %s \n", this_uav_id.c_str());
         it1++;
         continue;
       }
@@ -5569,7 +5654,7 @@ void DergbryanTracker::computeERG(){
       catch(...)
       {
         // other_uavs_positions_[this_uav_id] does not exist. Skip this iteration directly.
-        ROS_WARN_THROTTLE(1.0, "[DergbryanTracker]: Lost communicated position corresponding to the applied reference of %s \n", this_uav_id.c_str());
+        ROS_WARN_THROTTLE(ROS_INFO_THROTTLE_PERIOD, "[DergbryanTracker]: Lost communicated position corresponding to the applied reference of %s \n", this_uav_id.c_str());
         it1++;
         continue;
       }
@@ -5584,7 +5669,7 @@ void DergbryanTracker::computeERG(){
       catch(...)
       {
         // other_uav_tube_[this_uav_id] does not exist. Skip this iteration directly.
-        ROS_WARN_THROTTLE(1.0, "[DergbryanTracker]: Lost communicated tube information corresponding to the applied reference of %s \n", this_uav_id.c_str());
+        ROS_WARN_THROTTLE(ROS_INFO_THROTTLE_PERIOD, "[DergbryanTracker]: Lost communicated tube information corresponding to the applied reference of %s \n", this_uav_id.c_str());
         it1++;
         continue;
       }
@@ -5839,7 +5924,7 @@ void DergbryanTracker::computeERG(){
       catch(...)
       {
         // other_uav_avoidance_trajectories_[this_uav_id] does not exist. Skip this iteration directly.
-        ROS_WARN_THROTTLE(1.0, "[DergbryanTracker]: Lost communicated trajectory prediction corresponding to the applied reference of %s \n", this_uav_id.c_str());
+        ROS_WARN_THROTTLE(ROS_INFO_THROTTLE_PERIOD, "[DergbryanTracker]: Lost communicated trajectory prediction corresponding to the applied reference of %s \n", this_uav_id.c_str());
         it1++;
         continue;
       }
@@ -5851,7 +5936,7 @@ void DergbryanTracker::computeERG(){
       catch(...)
       {
         // other_uav_tube_[this_uav_id] does not exist. Skip this iteration directly.
-        ROS_WARN_THROTTLE(1.0, "[DergbryanTracker]: Lost communicated tube information corresponding to the applied reference of %s \n", this_uav_id.c_str());
+        ROS_WARN_THROTTLE(ROS_INFO_THROTTLE_PERIOD, "[DergbryanTracker]: Lost communicated tube information corresponding to the applied reference of %s \n", this_uav_id.c_str());
         it1++;
         continue;
       }
@@ -5935,7 +6020,6 @@ void DergbryanTracker::computeERG(){
       DSM_total_ = DSM_sT_;
     }
     if(DSM_sT_ < 0){
-      // ROS_WARN_THROTTLE(ROS_WARN_THROTTLE_PERIOD,"[DergbryanTracker]: DSM_sT_ = %.03f < 0!", DSM_sT_);
       ROS_WARN_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: DSM_sT_ = %.03f < 0!", DSM_sT_);
 
     }
@@ -5947,7 +6031,6 @@ void DergbryanTracker::computeERG(){
       DSM_total_ = DSM_sw_;
     }
     if(DSM_sw_ < 0){
-      // ROS_WARN_THROTTLE(ROS_WARN_THROTTLE_PERIOD,"[DergbryanTracker]: DSM_sw_ = %.03f < 0!", DSM_sw_);
       ROS_WARN_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: DSM_sw_ = %.03f < 0!", DSM_sw_);
     }
   }
@@ -5958,7 +6041,6 @@ void DergbryanTracker::computeERG(){
       DSM_total_ = DSM_a_;
     }
     if(DSM_a_ < 0){
-      // ROS_WARN_THROTTLE(ROS_WARN_THROTTLE_PERIOD,"[DergbryanTracker]: DSM_a_ = %.03f < 0!", DSM_a_);
       ROS_WARN_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: DSM_a_ = %.03f < 0!", DSM_a_);
     }
   }
@@ -5974,7 +6056,6 @@ void DergbryanTracker::computeERG(){
       DSM_total_ = DSM_sc_;
     }
     if(DSM_sc_ < 0){
-      // ROS_WARN_THROTTLE(ROS_WARN_THROTTLE_PERIOD,"[DergbryanTracker]: DSM_sc_ = %.03f < 0!", DSM_sc_);
       ROS_WARN_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: DSM_sc_ = %.03f < 0!", DSM_sc_);
     }
   }
@@ -5985,7 +6066,6 @@ void DergbryanTracker::computeERG(){
       DSM_total_ = DSM_o_;
     }
     if(DSM_o_ < 0){
-      // ROS_WARN_THROTTLE(ROS_WARN_THROTTLE_PERIOD,"[DergbryanTracker]: DSM_o_ = %.03f < 0!", DSM_o_);
       ROS_WARN_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: DSM_o_ = %.03f < 0!", DSM_o_);
     }
   }
@@ -5996,7 +6076,6 @@ void DergbryanTracker::computeERG(){
       DSM_total_ = DSM_swing_c_;
     }
     if(DSM_swing_c_ < 0){
-      // ROS_WARN_THROTTLE(ROS_WARN_THROTTLE_PERIOD,"[DergbryanTracker]: DSM_swing_c_ = %.03f < 0!", DSM_swing_c_);
       ROS_WARN_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: DSM_swing_c_ = %.03f < 0!", DSM_swing_c_);
     }
   }
@@ -6007,17 +6086,14 @@ void DergbryanTracker::computeERG(){
       DSM_total_ = DSM_Tc_;
     }
     if(DSM_Tc_ < 0){
-      // ROS_WARN_THROTTLE(ROS_WARN_THROTTLE_PERIOD,"[DergbryanTracker]: DSM_Tc_ = %.03f < 0!", DSM_Tc_);
       ROS_WARN_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: DSM_Tc_ = %.03f < 0!", DSM_Tc_);
     }
   }
 
   if(!_enable_dsm_sT_ && !_enable_dsm_sw_ && !_enable_dsm_a_){
-    // ROS_WARN_THROTTLE(ROS_WARN_THROTTLE_PERIOD, "[DergbryanTracker]: all default UAV DSMs (thrust, body rate, agents) are disabled! \n");
     ROS_WARN_THROTTLE(ROS_INFO_THROTTLE_PERIOD, "[DergbryanTracker]: all default UAV DSMs (thrust, body rate, agents) are disabled! \n");
   }
   if(!_enable_dsm_swing_c_ && !_enable_dsm_Tc_ && payload_spawned_){
-    // ROS_WARN_THROTTLE(ROS_WARN_THROTTLE_PERIOD, "[DergbryanTracker]: all payload specific DSMs (swing, cable tension) are disabled although payload is spawned! \n");
     ROS_WARN_THROTTLE(ROS_INFO_THROTTLE_PERIOD, "[DergbryanTracker]: all payload specific DSMs (swing, cable tension) are disabled although payload is spawned! \n");
   }
 
@@ -6027,12 +6103,22 @@ void DergbryanTracker::computeERG(){
   }
 
   if(DSM_total_ < 0.0){ // make sure it is >= 0
-    ROS_WARN_STREAM("[DergbryanTracker]: DSM_total_ saturated to 0.0 since DSM_total_ was negative: " << DSM_total_);
+    if(_run_type_!="uav"){
+      ROS_WARN_STREAM("[DergbryanTracker]: DSM_total_ saturated to 0.0 since DSM_total_ was negative: " << DSM_total_);
+    }
+    else{
+      ROS_WARN_THROTTLE(ROS_INFO_THROTTLE_PERIOD, "[DergbryanTracker]: DSM_total_ saturated to 0.0 since DSM_total_ was negative: %f",DSM_total_);
+    }
     DSM_total_ = 0.0;
   }
   if(!erg_predictions_trusted_){
     DSM_total_ = 0.0;
-    ROS_WARN_STREAM("[DergbryanTracker]: DSM_total_ = 0.0 since erg_predictions_trusted_=false");
+    if(_run_type_!="uav"){
+      ROS_WARN_STREAM("[DergbryanTracker]: DSM_total_ = 0.0 since erg_predictions_trusted_=false");
+    }
+    else{
+      ROS_WARN_THROTTLE(ROS_INFO_THROTTLE_PERIOD, "[DergbryanTracker]: DSM_total_ = 0.0 since erg_predictions_trusted_=false");
+    }
   }
   ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: DSM_total_ = %.03f", DSM_total_);
 
@@ -6509,7 +6595,7 @@ void DergbryanTracker::computeERG(){
       catch(...)
       {
         // other_uavs_positions_[other_uav_name] does not exist. Skip this iteration directly.
-        ROS_WARN_THROTTLE(1.0, "[DergbryanTracker]: Lost communicated position corresponding to the position of %s \n", other_uav_name.c_str());
+        ROS_WARN_THROTTLE(ROS_INFO_THROTTLE_PERIOD, "[DergbryanTracker]: Lost communicated position corresponding to the position of %s \n", other_uav_name.c_str());
         it++;
         continue;
       }     
@@ -6821,7 +6907,9 @@ double DergbryanTracker::computeDSM_oc_2uavspayload_trajpred(geometry_msgs::Pose
       }
     }
     if(i == 0){
-      ROS_INFO_STREAM("[DergbryanTracker]: Cylinder-UAV: current (i=0) min_dist = " << min_dist);
+      if(_run_type_!="uav"){
+        ROS_INFO_STREAM("[DergbryanTracker]: Cylinder-UAV: current (i=0) min_dist = " << min_dist);
+      }
     }
   }
   // ROS_INFO_STREAM("[DergbryanTracker]: Cylinder-UAV: predicted min_dist = " << min_dist);
@@ -7442,23 +7530,43 @@ void DergbryanTracker::BacaLoadStatesCallback(const mrs_msgs::BacaProtocolConstP
   double msg_time_delay = std::abs(msg->stamp.toSec() - uav_state_.header.stamp.toSec());
   int bound_num_samples_delay = 2;
   if (!std::isfinite(encoder_angle_1_)||!std::isfinite(encoder_angle_2_)) {
-    ROS_ERROR("[DergbryanTracker]: NaN detected in encoder angles");
+    if(_run_type_!="uav"){
+      ROS_ERROR("[DergbryanTracker]: NaN detected in encoder angles");
+    }
+    else{
+      ROS_ERROR_THROTTLE(ROS_INFO_THROTTLE_PERIOD*10,"[DergbryanTracker]: NaN detected in encoder angles");
+    }
     payload_spawned_ = false; //Put payload_spawned back to false in case the encoder stops giving finite values during a flight. Epl stays equal to zero when this flag is false, avoiding strange behaviors or non finite Epl. 
   }
   else if (!std::isfinite(encoder_velocity_1_)||!std::isfinite(encoder_velocity_2_)) {
-    ROS_ERROR("[DergbryanTracker]: NaN detected in encoder angular velocities");
+    if(_run_type_!="uav"){
+      ROS_ERROR("[DergbryanTracker]: NaN detected in encoder angular velocities");
+    }
+    else{
+      ROS_ERROR_THROTTLE(ROS_INFO_THROTTLE_PERIOD*10,"[DergbryanTracker]: NaN detected in encoder angular velocities");
+    }
     payload_spawned_ = false;  
   }
   else if ((encoder_angle_1_>encoder_angle_1_max && encoder_angle_1_< encoder_angle_1_min) || (encoder_angle_2_>encoder_angle_2_max && encoder_angle_2_< encoder_angle_2_min)) {
-    ROS_ERROR("[DergbryanTracker]: Out of expected range [-pi/2, pi/2] detected in encoder angles");
+    if(_run_type_!="uav"){
+      ROS_ERROR("[DergbryanTracker]: Out of expected range [-pi/2, pi/2] detected in encoder angles");
+    }
+    else{
+      ROS_ERROR_THROTTLE(ROS_INFO_THROTTLE_PERIOD*10,"[DergbryanTracker]: Out of expected range [-pi/2, pi/2] detected in encoder angles");
+    }
     payload_spawned_ = false; 
   }
   else if (msg_time_delay > _dt_0_*bound_num_samples_delay) {
-    ROS_ERROR("[DergbryanTracker]: Encoder msg is delayed by at least %d samples of %fs and is = %fs", bound_num_samples_delay, _dt_0_, msg_time_delay);
+    if(_run_type_!="uav"){
+      ROS_ERROR("[DergbryanTracker]: Encoder msg is delayed by at least %d samples and is = %f", bound_num_samples_delay, msg_time_delay);
+    }
+    else{
+      ROS_ERROR_THROTTLE(ROS_INFO_THROTTLE_PERIOD*10,"[DergbryanTracker]: Encoder msg is delayed by at least %d samples and is = %f", bound_num_samples_delay, msg_time_delay);
+    }
     payload_spawned_ = false; 
   }
   else{
-    ROS_INFO_THROTTLE(1.0,"[DergbryanTracker]: Encoder angles and angular velocities returned are finite values and the angles are within the expected range");
+    ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD*5,"[DergbryanTracker]: Encoder angles and angular velocities returned are finite values and the angles are within the expected range");
     payload_spawned_ = true; // Values are finite and withing the expect range and thus can be used in the computations
   }
 
@@ -7500,7 +7608,13 @@ void DergbryanTracker::BacaLoadStatesCallback(const mrs_msgs::BacaProtocolConstP
     anchoring_pt_lin_vel_ = Ov + Rdot*anchoring_pt_pose_position_rel + R*anchoring_pt_lin_vel_rel;
   }
   else{
-    ROS_ERROR("[DergbryanTracker]: Something is wrong with the encoder msg as payload_spawned_ = false and therefor the encoder and the anchoring point data are NOT globally updated.");
+    if(_run_type_!="uav"){
+      ROS_ERROR("[DergbryanTracker]: Something is wrong with the encoder msg as payload_spawned_ = false and therefor the encoder and the anchoring point data are NOT globally updated.");
+    }
+    else{
+      ROS_ERROR_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: Something is wrong with the encoder msg as payload_spawned_ = false and therefor the encoder and the anchoring point data are NOT globally updated.");
+    }
+    
   }
 }
 
@@ -7704,7 +7818,7 @@ std::tuple<bool, std::string, bool> DergbryanTracker::loadTrajectory(const mrs_m
   } else if (msg.dt < _dt1_) {
     trajectory_dt = 0.2;
     ss << std::setprecision(3) << "the trajectory dt (" << msg.dt << " s) is too small (smaller than the tracker's internal step size: " << _dt1_ << " s)";
-    ROS_ERROR_STREAM_THROTTLE(1.0, "[DergbryanTracker]: " << ss.str());
+    ROS_ERROR_STREAM_THROTTLE(ROS_INFO_THROTTLE_PERIOD, "[DergbryanTracker]: " << ss.str());
     return std::tuple(false, ss.str(), false);
   } else {
     trajectory_dt = msg.dt;
@@ -7740,7 +7854,7 @@ std::tuple<bool, std::string, bool> DergbryanTracker::loadTrajectory(const mrs_m
       // just say it, but use it like its from the current time
       if (trajectory_time_offset < 0.0) {
 
-        ROS_WARN_THROTTLE(1.0, "[DergbryanTracker]: received trajectory with timestamp in the future by %.2f s", -trajectory_time_offset);
+        ROS_WARN_THROTTLE(ROS_INFO_THROTTLE_PERIOD, "[DergbryanTracker]: received trajectory with timestamp in the future by %.2f s", -trajectory_time_offset);
 
         trajectory_time_offset = 0.0;
       }
@@ -7762,7 +7876,7 @@ std::tuple<bool, std::string, bool> DergbryanTracker::loadTrajectory(const mrs_m
       if (trajectory_sample_offset >= trajectory_size) {
 
         ss << "trajectory timestamp is too old (time difference = " << trajectory_time_offset << ")";
-        ROS_ERROR_STREAM_THROTTLE(1.0, "[DergbryanTracker]: " << ss.str());
+        ROS_ERROR_STREAM_THROTTLE(ROS_INFO_THROTTLE_PERIOD, "[DergbryanTracker]: " << ss.str());
         return std::tuple(false, ss.str(), false);
 
       } else {
@@ -7774,7 +7888,7 @@ std::tuple<bool, std::string, bool> DergbryanTracker::loadTrajectory(const mrs_m
           // decrease the trajectory size
           trajectory_size -= trajectory_sample_offset;
 
-          ROS_WARN_STREAM_THROTTLE(1.0, "[DergbryanTracker]: got trajectory with timestamp '" << trajectory_time_offset << " s' in the past");
+          ROS_WARN_STREAM_THROTTLE(ROS_INFO_THROTTLE_PERIOD, "[DergbryanTracker]: got trajectory with timestamp '" << trajectory_time_offset << " s' in the past");
 
         } else {
 
@@ -7786,7 +7900,7 @@ std::tuple<bool, std::string, bool> DergbryanTracker::loadTrajectory(const mrs_m
 
   //}
 
-  ROS_DEBUG_THROTTLE(1.0, "[DergbryanTracker]: trajectory sample offset: %d", trajectory_sample_offset);
+  ROS_DEBUG_THROTTLE(ROS_INFO_THROTTLE_PERIOD*10, "[DergbryanTracker]: trajectory sample offset: %d", trajectory_sample_offset);
 //   ROS_DEBUG_THROTTLE(1.0, "[DergbryanTracker]: trajectory subsample offset: %d", trajectory_subsample_offset); !!!!
 
 //   // after this, we should have the correct value of
@@ -7832,13 +7946,13 @@ std::tuple<bool, std::string, bool> DergbryanTracker::loadTrajectory(const mrs_m
     // TODO should check heading aswell
     if (mrs_lib::geometry::dist(vec3_t(first_x, first_y, first_z), vec3_t(last_x, last_y, last_z)) < 3.141592653) {
 
-      ROS_INFO_THROTTLE(1.0, "[DergbryanTracker]: looping enabled");
+      ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD, "[DergbryanTracker]: looping enabled");
       loop = true;
 
     } else {
 
       ss << "can not loop trajectory, the first and last points are too far apart";
-      ROS_WARN_STREAM_THROTTLE(1.0, "[DergbryanTracker]: " << ss.str());
+      ROS_WARN_STREAM_THROTTLE(ROS_INFO_THROTTLE_PERIOD, "[DergbryanTracker]: " << ss.str());
       return std::tuple(false, ss.str(), false);
     }
 
@@ -7971,7 +8085,7 @@ std::tuple<bool, std::string, bool> DergbryanTracker::loadTrajectory(const mrs_m
     timer_trajectory_tracking_.start();
   }
 
-  ROS_INFO_THROTTLE(1.0, "[DergbryanTracker]: received trajectory with length %d", trajectory_size);
+  ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD, "[DergbryanTracker]: received trajectory with length %d", trajectory_size);
 
 //   /* publish the debugging topics of the post-processed trajectory //{ */
 
@@ -8082,14 +8196,14 @@ std::tuple<bool, std::string> DergbryanTracker::gotoTrajectoryStartImpl(void) {
     //publishDiagnostics();
 
     ss << "flying to the start of the trajectory";
-    ROS_INFO_STREAM_THROTTLE(1.0, "[DergbryanTracker]: " << ss.str());
+    ROS_INFO_STREAM_THROTTLE(ROS_INFO_THROTTLE_PERIOD, "[DergbryanTracker]: " << ss.str());
 
     return std::tuple(true, ss.str());
 
   } else {
 
     ss << "can not fly to the start of the trajectory, the trajectory is not set";
-    ROS_WARN_STREAM_THROTTLE(1.0, "[DergbryanTracker]: " << ss.str());
+    ROS_WARN_STREAM_THROTTLE(ROS_INFO_THROTTLE_PERIOD, "[DergbryanTracker]: " << ss.str());
 
     return std::tuple(false, ss.str());
   }
