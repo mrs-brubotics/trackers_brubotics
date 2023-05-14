@@ -1867,7 +1867,9 @@ void DergbryanTracker::computePSCTrajectoryPredictions(mrs_msgs::PositionCommand
       ROS_WARN_THROTTLE(1.0, "[DergbryanTracker]: the case variables for the computePSCTrajectoryPredictions() routine did not allow to compute the trajectory predictions for this uav");
     } 
     else{
-      ROS_WARN_THROTTLE(ROS_INFO_THROTTLE_PERIOD, "[DergbryanTracker]: the case variables for the computePSCTrajectoryPredictions() routine did not allow to compute the trajectory predictions for this uav");
+      if(_uav_name_==_leader_uav_name_){ // No need to print in hardware tests that follower does not comput predictions
+        ROS_WARN_THROTTLE(ROS_INFO_THROTTLE_PERIOD, "[DergbryanTracker]: the case variables for the computePSCTrajectoryPredictions() routine did not allow to compute the trajectory predictions for this uav");
+      }
     }
   }
 }
