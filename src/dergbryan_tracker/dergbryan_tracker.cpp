@@ -1499,6 +1499,10 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
           }
           if(!callback_data_follower_no_delay_ && payload_spawned_){
             ROS_WARN_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: follower data is delayed too much (%fs) while payload has spawned!", max_time_delay);
+            ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: time_delay_1 = %f", time_delay_uav_state_follower_for_leader_out_.data);
+            ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: time_delay_2 = %f", time_delay_anchoring_point_follower_for_leader_out_.data);
+            ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: time_delay_3 = %f", time_delay_position_cmd_follower_for_leader_out_.data);
+            ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: time_delay_4 = %f", time_delay_goal_position_cmd_follower_for_leader_out_.data);
             
             if(_run_type_ == "uav" || (_baca_in_simulation_ && _run_type_ == "simulation")){
               if(both_uavs_ready_){
