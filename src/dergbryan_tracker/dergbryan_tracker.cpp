@@ -1230,7 +1230,7 @@ std::tuple<bool, std::string> DergbryanTracker::activate(const mrs_msgs::Positio
 /*deactivate()//{*/
 void DergbryanTracker::deactivate(void) {
 
-  if(_type_of_system_=="2uavs_payload" && is_active_){
+  if(_type_of_system_=="2uavs_payload" && is_active_ && both_uavs_ready_){
     ROS_WARN_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: Eland (tracker)");
   }
 
