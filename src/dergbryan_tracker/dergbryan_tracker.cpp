@@ -461,8 +461,9 @@ private:
   bool both_uavs_ready_ = false;
   bool callback_data_follower_no_delay_ = false; // true if all the data that is published by the follower and subscribed on by leader is not too much delayed
   bool callback_data_leader_no_delay_ = false;   // true if all the data that is published by the leader and subscribed on by follower is not too much delayed
-  double _max_time_delay_on_callback_data_follower_; //= 0.100;// = 10*_dt_0_;
-  double _max_time_delay_on_callback_data_leader_;// = 0.200;// = 20*_dt_0_;
+  double _max_time_delay_communication_tracker_;
+  // double _max_time_delay_on_callback_data_follower_; //= 0.100;// = 10*_dt_0_;
+  // double _max_time_delay_on_callback_data_leader_;// = 0.200;// = 20*_dt_0_;
   double _rotation_scaling_;
   Eigen::Vector3d anchoring_pt_pose_position_ = Eigen::Vector3d::Zero(3); // TODO why must it be inititliazed to zero here?
   Eigen::Vector3d anchoring_pt_lin_vel_ = Eigen::Vector3d::Zero(3); // TODO why must it be inititliazed to zero here?
@@ -873,8 +874,8 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   param_loader.loadParam("payload/Epl_min", _Epl_min_);
   param_loader.loadParam("payload/Epl_max/failsafe_enabled", _Epl_max_failsafe_enabled_);
   param_loader.loadParam("payload/Epl_max/scaling", _Epl_max_scaling_);
-  param_loader.loadParam("two_uavs_payload/callback_data_max_time_delay/follower", _max_time_delay_on_callback_data_follower_);
-  param_loader.loadParam("two_uavs_payload/callback_data_max_time_delay/leader", _max_time_delay_on_callback_data_leader_);
+  // param_loader.loadParam("two_uavs_payload/callback_data_max_time_delay/follower", _max_time_delay_on_callback_data_follower_);
+  // param_loader.loadParam("two_uavs_payload/callback_data_max_time_delay/leader", _max_time_delay_on_callback_data_leader_);
   param_loader.loadParam("two_uavs_payload/nimbro/emulate_nimbro", emulate_nimbro_);
   param_loader.loadParam("two_uavs_payload/nimbro/emulate_nimbro_delay", emulate_nimbro_delay_);
   param_loader.loadParam("ros_info_throttle_period", ROS_INFO_THROTTLE_PERIOD);
@@ -950,6 +951,7 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   param_loader2.loadParam("navigation_field/repulsion/self_collision/influence_margin", _zeta_sc_);
   param_loader2.loadParam("navigation_field/repulsion/self_collision/static_safety_margin", _delta_sc_);
   param_loader2.loadParam("two_uavs_payload/rotation_scaling", _rotation_scaling_);
+  param_loader2.loadParam("two_uavs_payload/max_time_delay_communication_tracker", _max_time_delay_communication_tracker_);
   // Visualization (rviz):
   param_loader2.loadParam("enable_visualization", _enable_visualization_);
   param_loader2.loadParam("enable_diagnostics_pub", _enable_diagnostics_pub_);
@@ -1490,7 +1492,7 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
           double max_time_delay = std::max(time_delay_uav_state_follower_for_leader_out_.data, time_delay_anchoring_point_follower_for_leader_out_.data);
           max_time_delay = std::max(max_time_delay, time_delay_position_cmd_follower_for_leader_out_.data);
           max_time_delay = std::max(max_time_delay, time_delay_goal_position_cmd_follower_for_leader_out_.data);
-          if (max_time_delay < _max_time_delay_on_callback_data_follower_ && payload_spawned_){
+          if (max_time_delay < _max_time_delay_communication_tracker_ && payload_spawned_){
             callback_data_follower_no_delay_ = true;
             both_uavs_ready_ = true;
           } 
@@ -1506,7 +1508,7 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
             
             if(_run_type_ == "uav" || (_baca_in_simulation_ && _run_type_ == "simulation")){
               if(both_uavs_ready_){
-                if(max_time_delay > 2*_max_time_delay_on_callback_data_follower_){ 
+                if(max_time_delay > 2*_max_time_delay_communication_tracker_){ 
                   ROS_ERROR_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: follower data is delayed by more than 2 times the max delay => Eland ");
                   // Eland_tracker_to_controller();
                   deactivate();
@@ -1514,12 +1516,12 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
               }
             }
             else if(_run_type_ == "simulation" && !_baca_in_simulation_){ // Only to do when in simulation when the load is spawned.
-              // if(ros::Time::now().toSec() - time_first_time_payload_spawned_ > 5.0){ // Spawning the payload in Gazebo can take several seconds and result in the leader uav to have spawned more than _max_time_delay_on_callback_data_follower_ before the follower uav. 
+              // if(ros::Time::now().toSec() - time_first_time_payload_spawned_ > 5.0){ // Spawning the payload in Gazebo can take several seconds and result in the leader uav to have spawned more than _max_time_delay_communication_tracker_ before the follower uav. 
               //   ROS_INFO_STREAM("[DergbryanTracker]: time_first_time_payload_spawned_ = " << time_first_time_payload_spawned_);
               //   // deactivate();
               // }
               // if(both_uavs_ready_){
-              //   if(max_time_delay > 2*_max_time_delay_on_callback_data_follower_){ 
+              //   if(max_time_delay > 2*_max_time_delay_communication_tracker_){ 
               //     ROS_INFO_STREAM("[DergbryanTracker]: follower data is delayed by more than 2 times the max delay => Eland ");
               //     // deactivate();
               //   }
@@ -1562,7 +1564,7 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
         ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: follower from leader time_delay_1 = %f",time_delay_position_cmd_follower_from_leader_out_.data);
         ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: follower from leader time_delay_2 = %f",time_delay_goal_position_cmd_follower_from_leader_out_.data);
         double max_time_delay = std::max(time_delay_position_cmd_follower_from_leader_out_.data, time_delay_goal_position_cmd_follower_from_leader_out_.data);
-        if (max_time_delay < _max_time_delay_on_callback_data_leader_){
+        if (max_time_delay < _max_time_delay_communication_tracker_){
           callback_data_leader_no_delay_ = true;
           both_uavs_ready_ = true;
 
@@ -1591,7 +1593,7 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
 
           if(_run_type_ == "uav" || (_baca_in_simulation_ && _run_type_ == "simulation")){
             if(both_uavs_ready_){
-              if(max_time_delay > 2*_max_time_delay_on_callback_data_leader_){ 
+              if(max_time_delay > 2*_max_time_delay_communication_tracker_){ 
                 ROS_ERROR_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: leader data is delayed by more than 2 times the max delay => Eland ");
                 // Eland_tracker_to_controller();
                 deactivate();
@@ -1599,12 +1601,12 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
             }
           }
           else if(_run_type_ == "simulation" && !_baca_in_simulation_){ // Only to do when in simulation when the load is spawned. TO DO: If baca in simulation is tested with spawning the payload, this part might give a problem
-            // if(ros::Time::now().toSec() - time_first_time_payload_spawned_ > 5.0){ // Spawning the payload in Gazebo can take several seconds and result in the leader uav to have spawned more than _max_time_delay_on_callback_data_follower_ before the follower uav. 
+            // if(ros::Time::now().toSec() - time_first_time_payload_spawned_ > 5.0){ // Spawning the payload in Gazebo can take several seconds and result in the leader uav to have spawned more than _max_time_delay_communication_tracker_ before the follower uav. 
             //   // ROS_INFO_STREAM("[DergbryanTracker]: time_first_time_payload_spawned_ = " << time_first_time_payload_spawned_);
             //   // deactivate(); 
             // }
             // if(both_uavs_ready_){
-            //   if(max_time_delay > 2*_max_time_delay_on_callback_data_leader_){ 
+            //   if(max_time_delay > 2*_max_time_delay_communication_tracker_){ 
             //     ROS_INFO_STREAM("[DergbryanTracker]: leader data is delayed by more than 2 times the max delay => Eland ");
             //     // deactivate(); 
             //   }
