@@ -79,7 +79,6 @@ public:
   void                          initialize(const ros::NodeHandle &parent_nh, const std::string uav_name, std::shared_ptr<mrs_uav_managers::CommonHandlers_t> common_handlers);
   std::tuple<bool, std::string> activate(const mrs_msgs::PositionCommand::ConstPtr &last_position_cmd);
   void                          deactivate(void);
-  // void                          Eland_tracker_to_controller(void);
   bool                          resetStatic(void);
   const mrs_msgs::PositionCommand::ConstPtr update(const mrs_msgs::UavState::ConstPtr &uav_state, const mrs_msgs::AttitudeCommand::ConstPtr &last_attitude_cmd);
   const mrs_msgs::TrackerStatus             getStatus();
@@ -328,8 +327,8 @@ private:
   ros::Publisher time_delay_goal_position_cmd_follower_for_leader_pub_;
   ros::Publisher time_delay_position_cmd_follower_from_leader_pub_;
   ros::Publisher time_delay_goal_position_cmd_follower_from_leader_pub_;
-  // communicatiion for Eland of all UAVs 
-  // ros::Publisher Eland_tracker_to_controller_pub_;
+  // Distance between the two UAVs
+  ros::Publisher distance_uavs_pub_;
   //  - ERG trajectory predictions: 
   ros::Publisher predicted_uav1_poses_publisher_;
   ros::Publisher predicted_uav2_poses_publisher_;
@@ -410,8 +409,10 @@ private:
   std_msgs::Float64 time_delay_goal_position_cmd_follower_for_leader_out_;
   std_msgs::Float64 time_delay_position_cmd_follower_from_leader_out_;
   std_msgs::Float64 time_delay_goal_position_cmd_follower_from_leader_out_;
-  // communicatiion for Eland of all UAVs 
-  // std_msgs::Bool Eland_tracker_to_controller_;
+  // Distance between the two UAVs
+  // std_msgs::Float64 distance_UAVs_out_;
+  std_msgs::Float64 distance_UAVs_out_;
+
   //Store and publish the predictions (over whole horizon).
   geometry_msgs::PoseArray predicted_uav1_poses_out_;
   geometry_msgs::PoseArray predicted_uav1_vel_out_;
@@ -457,14 +458,6 @@ private:
   ros::Subscriber load_state_sub_;
   void GazeboLoadStatesCallback(const gazebo_msgs::LinkStatesConstPtr& loadmsg); // TODO: document
   bool payload_spawned_ = false;  // TODO: document
-  double time_first_time_payload_spawned_ = 0.0; // TODO: document
-  bool both_uavs_ready_ = false;
-  bool callback_data_follower_no_delay_ = false; // true if all the data that is published by the follower and subscribed on by leader is not too much delayed
-  bool callback_data_leader_no_delay_ = false;   // true if all the data that is published by the leader and subscribed on by follower is not too much delayed
-  double _max_time_delay_communication_tracker_;
-  // double _max_time_delay_on_callback_data_follower_; //= 0.100;// = 10*_dt_0_;
-  // double _max_time_delay_on_callback_data_leader_;// = 0.200;// = 20*_dt_0_;
-  double _rotation_scaling_;
   Eigen::Vector3d anchoring_pt_pose_position_ = Eigen::Vector3d::Zero(3); // TODO why must it be inititliazed to zero here?
   Eigen::Vector3d anchoring_pt_lin_vel_ = Eigen::Vector3d::Zero(3); // TODO why must it be inititliazed to zero here?
   ros::Subscriber data_payload_sub_;
@@ -508,6 +501,14 @@ private:
   ros::Subscriber goal_position_cmd_follower_from_leader_sub_;
   void goal_position_cmd_follower_from_leader_callback(const mrs_msgs::PositionCommand::ConstPtr& msg);
   mrs_msgs::PositionCommand goal_position_cmd_follower_from_leader_;
+
+  double time_first_time_payload_spawned_ = 0.0; // TODO: document
+  bool both_uavs_ready_ = false;
+  bool callback_data_follower_no_delay_ = false; // true if all the data that is published by the follower and subscribed on by leader is not too much delayed
+  bool callback_data_leader_no_delay_ = false;   // true if all the data that is published by the leader and subscribed on by follower is not too much delayed
+  double _max_time_delay_communication_tracker_;
+  double _rotation_scaling_;
+  double max_distance_uavs_error_;
 
   //|-----------------------------D-ERG--------------------------------|//
   //    - Multi-uav collision avoidance:
@@ -952,6 +953,8 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   param_loader2.loadParam("navigation_field/repulsion/self_collision/static_safety_margin", _delta_sc_);
   param_loader2.loadParam("two_uavs_payload/rotation_scaling", _rotation_scaling_);
   param_loader2.loadParam("two_uavs_payload/max_time_delay_communication_tracker", _max_time_delay_communication_tracker_);
+  param_loader2.loadParam("two_uavs_payload/max_distance_uavs_error", max_distance_uavs_error_);
+  
   // Visualization (rviz):
   param_loader2.loadParam("enable_visualization", _enable_visualization_);
   param_loader2.loadParam("enable_diagnostics_pub", _enable_diagnostics_pub_);
@@ -1043,7 +1046,6 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
     predicted_uav2_swing_angle_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav2_swing_angle", 1);
     predicted_uav1_tension_force_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav1_tension_force", 1);
     predicted_uav2_tension_force_publisher_= nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_uav2_tension_force", 1);
-    // Eland_tracker_to_controller_pub_ = nh2_.advertise<std_msgs::Bool>("Eland_tracker_to_controller", 1);
     if (_uav_name_ == _leader_uav_name_){  // leader
       DSM_uav1_publisher_ = nh2_.advertise<trackers_brubotics::DSM>("DSM_leader", 1);
       DSM_uav2_publisher_ = nh2_.advertise<trackers_brubotics::DSM>("DSM_follower", 1);
@@ -1057,6 +1059,8 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
       time_delay_anchoring_point_follower_for_leader_pub_ = nh2_.advertise<std_msgs::Float64>("time_delay_anchoring_point_follower_for_leader", 1);
       time_delay_position_cmd_follower_for_leader_pub_ = nh2_.advertise<std_msgs::Float64>("time_delay_position_cmd_follower_for_leader", 1);
       time_delay_goal_position_cmd_follower_for_leader_pub_ = nh2_.advertise<std_msgs::Float64>("time_delay_goal_position_cmd_follower_for_leader", 1);
+
+      distance_uavs_pub_ = nh2_.advertise<std_msgs::Float64>("distance_uavs", 1);
     }
     else if (_uav_name_ == _follower_uav_name_){ // follower
       uav_state_follower_for_leader_pub_ = nh2_.advertise<mrs_msgs::UavState>("uav_state_f_for_l", 1);
@@ -1255,22 +1259,7 @@ void DergbryanTracker::deactivate(void) {
 
   //publishDiagnostics();
 }
-//}
 
-// /*Eland_2UAVs()//{*/
-// void DergbryanTracker::Eland_tracker_to_controller(void) {
-
-//   ROS_INFO("[DergbryanTracker]: Sending Eland communication");
-
-//   Eland_tracker_to_controller_.data = true;
-//   try {
-//     Eland_tracker_to_controller_pub_.publish(Eland_tracker_to_controller_);
-//   }
-//   catch (...) {
-//     ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", Eland_tracker_to_controller_pub_.getTopic().c_str());
-//   }
-// }
-// //}
 
 /*resetStatic()//{*/
 bool DergbryanTracker::resetStatic(void) {
@@ -1510,7 +1499,6 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
               if(both_uavs_ready_){
                 if(max_time_delay > 2*_max_time_delay_communication_tracker_){ 
                   ROS_ERROR_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: follower data is delayed by more than 2 times the max delay => Eland ");
-                  // Eland_tracker_to_controller();
                   deactivate();
                 }
               }
@@ -1531,6 +1519,19 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
           else if(!payload_spawned_){
             ROS_WARN_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: Payload has not spawned!");
           }
+
+          
+          if(both_uavs_ready_){
+            distance_UAVs_out_.data = std::sqrt(std::pow(uav_state_.pose.position.x - uav_state_follower_for_leader_.pose.position.x,2) + std::pow(uav_state_.pose.position.y - uav_state_follower_for_leader_.pose.position.y,2) + std::pow(uav_state_.pose.position.z - uav_state_follower_for_leader_.pose.position.z,2));
+            if(distance_UAVs_out_.data > _load_length_ + max_distance_uavs_error_){
+              ROS_WARN_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: Distance between both UAvs %f > %f ==> Eland",distance_UAVs_out_.data,_load_length_ + max_distance_uavs_error_);
+              deactivate();
+            }
+            else if(distance_UAVs_out_.data < _load_length_ - max_distance_uavs_error_){
+              ROS_WARN_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: Distance between both UAvs %f < %f ==> Eland",distance_UAVs_out_.data,_load_length_ - max_distance_uavs_error_);
+              deactivate();
+            }   
+          }   
         }
     }
 
@@ -1595,7 +1596,6 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
             if(both_uavs_ready_){
               if(max_time_delay > 2*_max_time_delay_communication_tracker_){ 
                 ROS_ERROR_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: leader data is delayed by more than 2 times the max delay => Eland ");
-                // Eland_tracker_to_controller();
                 deactivate();
               }
             }
@@ -1746,9 +1746,10 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
     ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", ComputationalTime_publisher_.getTopic().c_str());
   }
 
-  // Time delays communication between 2UAVs with payload
+  
   if(_type_of_system_=="2uavs_payload"){
     if(_uav_name_ == _leader_uav_name_){
+      // Time delays communication between 2UAVs with payload
       try {
         time_delay_uav_state_follower_for_leader_pub_.publish(time_delay_uav_state_follower_for_leader_out_);
       }
@@ -1776,9 +1777,18 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
       catch (...) {
         ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", time_delay_goal_position_cmd_follower_for_leader_pub_.getTopic().c_str());
       }
+
+      // distance between both UAVs
+      try {
+        distance_uavs_pub_.publish(distance_UAVs_out_);
+      }
+      catch (...) {
+        ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", distance_uavs_pub_.getTopic().c_str());
+      }
     }
     else if(_uav_name_ == _follower_uav_name_){
       if(_use_derg_){
+        // Time delays communication between 2UAVs with payload
         try {
           time_delay_position_cmd_follower_from_leader_pub_.publish(time_delay_position_cmd_follower_from_leader_out_);
         }
