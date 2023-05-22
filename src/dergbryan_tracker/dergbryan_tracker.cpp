@@ -508,6 +508,7 @@ private:
   bool callback_data_leader_no_delay_ = false;   // true if all the data that is published by the leader and subscribed on by follower is not too much delayed
   double _max_time_delay_communication_tracker_;
   double _rotation_scaling_;
+  bool determine_distance_uavs_;
   double max_distance_uavs_error_;
 
   //|-----------------------------D-ERG--------------------------------|//
@@ -953,7 +954,9 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   param_loader2.loadParam("navigation_field/repulsion/self_collision/static_safety_margin", _delta_sc_);
   param_loader2.loadParam("two_uavs_payload/rotation_scaling", _rotation_scaling_);
   param_loader2.loadParam("two_uavs_payload/max_time_delay_communication_tracker", _max_time_delay_communication_tracker_);
-  param_loader2.loadParam("two_uavs_payload/max_distance_uavs_error", max_distance_uavs_error_);
+  param_loader2.loadParam("two_uavs_payload/distance_uavs/determine_distance_uavs", determine_distance_uavs_);
+  param_loader2.loadParam("two_uavs_payload/distance_uavs/max_distance_uavs_error", max_distance_uavs_error_);
+
   
   // Visualization (rviz):
   param_loader2.loadParam("enable_visualization", _enable_visualization_);
@@ -1520,18 +1523,19 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
             ROS_WARN_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: Payload has not spawned!");
           }
 
-          
-          if(both_uavs_ready_){
-            distance_UAVs_out_.data = std::sqrt(std::pow(uav_state_.pose.position.x - uav_state_follower_for_leader_.pose.position.x,2) + std::pow(uav_state_.pose.position.y - uav_state_follower_for_leader_.pose.position.y,2) + std::pow(uav_state_.pose.position.z - uav_state_follower_for_leader_.pose.position.z,2));
-            if(distance_UAVs_out_.data > _load_length_ + max_distance_uavs_error_){
-              ROS_WARN_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: Distance between both UAvs %f > %f ==> Eland",distance_UAVs_out_.data,_load_length_ + max_distance_uavs_error_);
-              deactivate();
-            }
-            else if(distance_UAVs_out_.data < _load_length_ - max_distance_uavs_error_){
-              ROS_WARN_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: Distance between both UAvs %f < %f ==> Eland",distance_UAVs_out_.data,_load_length_ - max_distance_uavs_error_);
-              deactivate();
+          if(determine_distance_uavs_){
+            if(both_uavs_ready_){
+              distance_UAVs_out_.data = std::sqrt(std::pow(uav_state_.pose.position.x - uav_state_follower_for_leader_.pose.position.x,2) + std::pow(uav_state_.pose.position.y - uav_state_follower_for_leader_.pose.position.y,2) + std::pow(uav_state_.pose.position.z - uav_state_follower_for_leader_.pose.position.z,2));
+              if(distance_UAVs_out_.data > _load_length_ + max_distance_uavs_error_){
+                ROS_WARN_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: Distance between both UAvs %f > %f ==> Eland",distance_UAVs_out_.data,_load_length_ + max_distance_uavs_error_);
+                deactivate();
+              }
+              else if(distance_UAVs_out_.data < _load_length_ - max_distance_uavs_error_){
+                ROS_WARN_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: Distance between both UAvs %f < %f ==> Eland",distance_UAVs_out_.data,_load_length_ - max_distance_uavs_error_);
+                deactivate();
+              }   
             }   
-          }   
+          }
         }
     }
 
