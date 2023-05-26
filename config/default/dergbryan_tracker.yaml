@@ -133,9 +133,9 @@ navigation_field:
 two_uavs_payload:
   rotation_scaling: 0.1 # keep it small
   max_time_delay_communication_tracker: 0.2 #[s]
-  # distance_uavs:
-  #   determine_distance_uavs: true
-  #   max_distance_uavs_error: 1.0 # [m] Safety landing if the distance between both UAVs differs too much load_length
+  distance_uavs:
+    failsafe_enabled: true
+    max_error: 1.0 # [m] Safety landing if the distance between both UAVs differs too much load_length
 
 
 enable_visualization: false   # RVIZ
