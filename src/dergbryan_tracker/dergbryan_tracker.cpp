@@ -1298,7 +1298,7 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
 
   if(emulate_nimbro_){
     emulate_nimbro_time_ = emulate_nimbro_time_ + _dt_;
-    if(emulate_nimbro_time_>emulate_nimbro_delay_){
+    if(emulate_nimbro_time_>=emulate_nimbro_delay_){
       emulate_nimbro_time_ = 0;
     }
   }
