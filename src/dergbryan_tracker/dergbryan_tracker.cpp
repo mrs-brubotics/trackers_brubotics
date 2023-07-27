@@ -462,6 +462,7 @@ private:
   bool callback_data_follower_no_delay_ = false; // true if all the data that is published by the follower and subscribed on by leader is not too much delayed
   bool callback_data_leader_no_delay_ = false;   // true if all the data that is published by the leader and subscribed on by follower is not too much delayed
   double _max_time_delay_communication_tracker_;
+  double _max_time_delay_eland_;
   double _rotation_scaling_;
   bool distance_uavs_failsafe_enabled;
   double distance_uavs_max_error_;
@@ -952,6 +953,7 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   param_loader2.loadParam("navigation_field/repulsion/self_collision/static_safety_margin", _delta_sc_);
   param_loader2.loadParam("two_uavs_payload/rotation_scaling", _rotation_scaling_);
   param_loader2.loadParam("two_uavs_payload/max_time_delay_communication_tracker", _max_time_delay_communication_tracker_);
+  param_loader2.loadParam("two_uavs_payload/max_time_delay_eland", _max_time_delay_eland_);
   param_loader2.loadParam("two_uavs_payload/distance_uavs/failsafe_enabled", distance_uavs_failsafe_enabled);
   param_loader2.loadParam("two_uavs_payload/distance_uavs/max_error", distance_uavs_max_error_);
 
@@ -1498,7 +1500,7 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
             
             if(_run_type_ == "uav" || (_baca_in_simulation_ && _run_type_ == "simulation")){
               if(both_uavs_ready_){
-                if(max_time_delay > 2*_max_time_delay_communication_tracker_){ 
+                if(max_time_delay > _max_time_delay_eland_){ 
                   ROS_ERROR_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: follower data is delayed by more than 2 times the max delay => Eland ");
                   deactivate();
                 }
@@ -1598,7 +1600,7 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
 
           if(_run_type_ == "uav" || (_baca_in_simulation_ && _run_type_ == "simulation")){
             if(both_uavs_ready_){
-              if(max_time_delay > 2*_max_time_delay_communication_tracker_){ 
+              if(max_time_delay > _max_time_delay_eland_){ 
                 ROS_ERROR_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: leader data is delayed by more than 2 times the max delay => Eland ");
                 deactivate();
               }
