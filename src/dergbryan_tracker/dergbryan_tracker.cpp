@@ -1560,7 +1560,7 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
       } 
       else if((_type_of_system_=="2uavs_payload" && _uav_name_ == _leader_uav_name_ && payload_spawned_)){
         if(callback_data_follower_no_delay_){
-          ROS_INFO_STREAM("[DergbryanTracker]: Leader is computing ERG");
+          // ROS_INFO_STREAM("[DergbryanTracker]: Leader is computing ERG");
           computeERG(); // computes the applied_ref_x_, applied_ref_y_, applied_ref_z_, position_cmd_follower_from_leader_, goal_position_cmd_follower_from_leader_
         } 
         else{
@@ -6568,8 +6568,8 @@ void DergbryanTracker::computeERG(){
       goal_position_cmd_follower_from_leader_.position.z = goal_position_cmd_follower_for_leader_.position.z;
     }
 
-    ROS_INFO_STREAM("[DergbryanTracker]: Leader publishes position_cmd and goal_position command to follower if nimbro_time = 0");
-    ROS_INFO_STREAM("[DergbryanTracker]: nimbro_time = " << emulate_nimbro_time_l_to_f);
+    // ROS_INFO_STREAM("[DergbryanTracker]: Leader publishes position_cmd and goal_position command to follower if nimbro_time = 0");
+    // ROS_INFO_STREAM("[DergbryanTracker]: nimbro_time = " << emulate_nimbro_time_l_to_f);
     
     if(emulate_nimbro_){
       if(emulate_nimbro_time_l_to_f>=emulate_nimbro_delay_){
@@ -6578,7 +6578,7 @@ void DergbryanTracker::computeERG(){
     }
     if(!emulate_nimbro_ || (emulate_nimbro_time_l_to_f == 0)){
       // Publish:
-      ROS_INFO_STREAM("[DergbryanTracker]: Leader is publishing position_cmd and goal_position command to follower");
+      // ROS_INFO_STREAM("[DergbryanTracker]: Leader is publishing position_cmd and goal_position command to follower");
       try {
         position_cmd_follower_from_leader_pub_.publish(position_cmd_follower_from_leader_);
       }
