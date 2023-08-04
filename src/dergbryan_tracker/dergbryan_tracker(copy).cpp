@@ -13,7 +13,6 @@
 #include <mrs_lib/attitude_converter.h>
 #include <geometry_msgs/PoseArray.h>
 #include <geometry_msgs/Pose.h>
-#include <mrs_msgs/MpcPredictionFullState.h>
 #include <mrs_msgs/FutureTrajectory.h>
 #include <mrs_msgs/FuturePoint.h>
 #include <ros/console.h>
@@ -281,10 +280,6 @@ private:
   bool _enable_diagnostics_pub_;
   bool _enable_trajectory_pub_;
 
-
-  int                     trajectory_id;
-
-
   // ---------------
   // ROS Publishers:
   // ---------------
@@ -303,7 +298,6 @@ private:
   ros::Publisher predicted_attrate_publisher_;      // predicted UAV attitude rate
   ros::Publisher predicted_des_attrate_publisher_;  // predicted UAV desired attitude rate
   ros::Publisher predicted_tiltangle_publisher_;    // predicted UAV tilt angle
-  ros::Publisher ph_prediction_full_state_;
   //|-----------------------------LOAD--------------------------------|//
   //  - ERG trajectory predictions: 
   ros::Publisher predicted_load_pose_publisher_;             // predicted LOAD pose
@@ -1010,7 +1004,6 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   predicted_attrate_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_attrate", 1);
   predicted_des_attrate_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_des_predicted_attrate", 1);
   predicted_tiltangle_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_tiltangle", 1);
-  ph_prediction_full_state_ = nh2_.advertise<mrs_msgs::MpcPredictionFullState>("prediction_full_state", 1);
   // TODO: create topic similar to predicted_load_position_errors_publisher_
   
   // 1 UAV LOAD:
@@ -2373,14 +2366,6 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
   Eigen::Vector3d torque_pred;
   Eigen::Vector3d attitude_acceleration_pred;
 
-  mrs_msgs::MpcPredictionFullState prediction_fs_out;
-  prediction_fs_out.header.stamp    = ros::Time::now();
-  prediction_fs_out.header.frame_id = uav_state_.header.frame_id;
-
-  ros::Time stamp = prediction_fs_out.header.stamp;
-
-  prediction_fs_out.input_id = trajectory_id;
-
   // ----------------------------------------------------
   // |          start trajectory prediction loop        |
   // ----------------------------------------------------
@@ -2447,14 +2432,6 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
       // Discrete trajectory prediction using the Euler formula's
       // TODO: in control predictions define predicted_acc also via uav_state
       // TODO: why are we suing two variables to update the states? Make it simpler.
-
-      
-      
-      stamp += ros::Duration(_prediction_dt_);
-      
-
-      prediction_fs_out.stamps.push_back(stamp);
-
       uav_state.velocity.linear.x = uav_state.velocity.linear.x + predicted_acc.position.x*_prediction_dt_;
       predicted_vel.position.x = uav_state.velocity.linear.x;
 
@@ -2472,60 +2449,6 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
 
       uav_state.pose.position.z = uav_state.pose.position.z + uav_state.velocity.linear.z*_prediction_dt_;
       predicted_pose.position.z = uav_state.pose.position.z;
-
-      {  // position
-        geometry_msgs::Point point;
-        
-        point.x = predicted_pose.position.x;
-        point.y = predicted_pose.position.y;
-        point.z = predicted_pose.position.z;
-
-        prediction_fs_out.position.push_back(point);
-      }
-
-      {  // velocity
-        geometry_msgs::Vector3 vector;
-
-        vector.x = predicted_vel.position.x;
-        vector.y = predicted_vel.position.y;
-        vector.z = predicted_vel.position.z;
-
-        prediction_fs_out.velocity.push_back(vector);
-      }
-
-      { // acceleration
-        geometry_msgs::Vector3 vector3;
-
-        vector3.x = predicted_acc.position.x;
-        vector3.y = predicted_acc.position.y;
-        vector3.z = predicted_acc.position.z;
-
-        prediction_fs_out.acceleration.push_back(vector3);
-      }
-
-      { // jerk
-        geometry_msgs::Vector3 vector3;
-
-        vector3.x = predicted_acc.position.x/_prediction_dt_;
-        vector3.y = predicted_acc.position.y/_prediction_dt_;
-        vector3.z = predicted_acc.position.z/_prediction_dt_;
-
-        prediction_fs_out.jerk.push_back(vector3);
-      }
-
-      { // heading
-
-        double heading_rate = uav_heading/_prediction_dt_;
-        double heading_acceleration = heading_rate/_prediction_dt_;
-        double heading_jerk = heading_acceleration/_prediction_dt_;
-
-        prediction_fs_out.heading.push_back(uav_heading);
-        prediction_fs_out.heading_rate.push_back(heading_rate);
-        prediction_fs_out.heading_acceleration.push_back(heading_acceleration);
-        prediction_fs_out.heading_jerk.push_back(heading_jerk);
-      }
-
-      ph_prediction_full_state_.publish(prediction_fs_out);
 
       // LOAD:
       if(_type_of_system_=="1uav_payload" && payload_spawned_){
@@ -7907,7 +7830,7 @@ std::tuple<bool, std::string, bool> DergbryanTracker::loadTrajectory(const mrs_m
   // auto x         = mrs_lib::get_mutexed(mutex_mpc_x_, mpc_x_); !!!!
   // auto uav_state = mrs_lib::get_mutexed(mutex_uav_state_, uav_state_);!!!!
   std::stringstream ss;
-  trajectory_id = msg.input_id;
+
   /* check the trajectory dt //{ */
 
   double trajectory_dt;
