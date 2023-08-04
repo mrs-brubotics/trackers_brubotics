@@ -145,7 +145,8 @@ private:
   //emulate nimbro
   bool emulate_nimbro_ = false;
   double emulate_nimbro_delay_;
-  double emulate_nimbro_time_ = 0;
+  double emulate_nimbro_time_l_to_f = 0;
+  double emulate_nimbro_time_f_to_l = 0;
 
   // | ------------------- declaring .yaml parameters ------------------- |
   // Se3CopyController:
@@ -1307,10 +1308,11 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
   }
 
   if(emulate_nimbro_){
-    emulate_nimbro_time_ = emulate_nimbro_time_ + _dt_;
-    if(emulate_nimbro_time_>=emulate_nimbro_delay_){
-      emulate_nimbro_time_ = 0;
-    }
+    emulate_nimbro_time_l_to_f = emulate_nimbro_time_l_to_f + _dt_;
+    emulate_nimbro_time_f_to_l = emulate_nimbro_time_f_to_l + _dt_;
+    // if(emulate_nimbro_time_>=emulate_nimbro_delay_){
+    //   emulate_nimbro_time_ = 0;
+    // }
   }
 
   /* TODO: currently we use the estimated mass of the leader uav for the predicitons of leader and 
@@ -1559,6 +1561,7 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
       } 
       else if((_type_of_system_=="2uavs_payload" && _uav_name_ == _leader_uav_name_ && payload_spawned_)){
         if(callback_data_follower_no_delay_){
+          // ROS_INFO_STREAM("[DergbryanTracker]: Leader is computing ERG");
           computeERG(); // computes the applied_ref_x_, applied_ref_y_, applied_ref_z_, position_cmd_follower_from_leader_, goal_position_cmd_follower_from_leader_
         } 
         else{
@@ -1910,8 +1913,13 @@ void DergbryanTracker::publishFollowerDataForLeaderIn2uavs_payload(mrs_msgs::Pos
 This function ensures that the data of the follower UAV (i.e., state of the uav, its anchoring point, and the position cmd) are published.
 The publishing of the payload state is only allowed from when the payload has spawned as to pevent NaN from being used in the trajectory predictions on the leader uav. 
 */
-  if(!emulate_nimbro_ || (emulate_nimbro_time_ == 0)){
-    if (_uav_name_ == _follower_uav_name_){  // only publish info of the follower UAV, not of the leader
+  if(_uav_name_ == _follower_uav_name_){
+    if(emulate_nimbro_){
+      if(emulate_nimbro_time_f_to_l>=emulate_nimbro_delay_){
+        emulate_nimbro_time_f_to_l = 0;
+      }
+    }
+    if (!emulate_nimbro_ || (emulate_nimbro_time_f_to_l == 0)){  // only publish info of the follower UAV, not of the leader 
       //ROS_INFO("publishFollowerDataForLeaderIn2uavs_payload");
       // 1) uav_state_follower_for_leader_pub_:
       try {
@@ -6561,8 +6569,17 @@ void DergbryanTracker::computeERG(){
       goal_position_cmd_follower_from_leader_.position.z = goal_position_cmd_follower_for_leader_.position.z;
     }
 
-    if(!emulate_nimbro_ || (emulate_nimbro_time_ == 0)){
+    // ROS_INFO_STREAM("[DergbryanTracker]: Leader publishes position_cmd and goal_position command to follower if nimbro_time = 0");
+    // ROS_INFO_STREAM("[DergbryanTracker]: nimbro_time = " << emulate_nimbro_time_l_to_f);
+    
+    if(emulate_nimbro_){
+      if(emulate_nimbro_time_l_to_f>=emulate_nimbro_delay_){
+        emulate_nimbro_time_l_to_f = 0;
+      }
+    }
+    if(!emulate_nimbro_ || (emulate_nimbro_time_l_to_f == 0)){
       // Publish:
+      // ROS_INFO_STREAM("[DergbryanTracker]: Leader is publishing position_cmd and goal_position command to follower");
       try {
         position_cmd_follower_from_leader_pub_.publish(position_cmd_follower_from_leader_);
       }
