@@ -334,8 +334,6 @@ private:
   ros::Publisher time_delay_goal_position_cmd_follower_for_leader_pub_;
   ros::Publisher time_delay_position_cmd_follower_from_leader_pub_;
   ros::Publisher time_delay_goal_position_cmd_follower_from_leader_pub_;
-  // Distance between the two UAVs
-  ros::Publisher distance_uavs_pub_;
   //  - ERG trajectory predictions: 
   ros::Publisher predicted_uav1_poses_publisher_;
   ros::Publisher predicted_uav2_poses_publisher_;
@@ -416,8 +414,6 @@ private:
   std_msgs::Float64 time_delay_goal_position_cmd_follower_for_leader_out_;
   std_msgs::Float64 time_delay_position_cmd_follower_from_leader_out_;
   std_msgs::Float64 time_delay_goal_position_cmd_follower_from_leader_out_;
-  // Distance between the two UAVs
-  std_msgs::Float64 distance_UAVs_out_;
 
   //Store and publish the predictions (over whole horizon).
   geometry_msgs::PoseArray predicted_uav1_poses_out_;
@@ -471,8 +467,6 @@ private:
   double _max_time_delay_communication_tracker_;
   double _max_time_delay_eland_;
   double _rotation_scaling_;
-  bool distance_uavs_failsafe_enabled;
-  double distance_uavs_max_error_;
   Eigen::Vector3d anchoring_pt_pose_position_ = Eigen::Vector3d::Zero(3); // TODO why must it be inititliazed to zero here?
   Eigen::Vector3d anchoring_pt_lin_vel_ = Eigen::Vector3d::Zero(3); // TODO why must it be inititliazed to zero here?
   ros::Subscriber data_payload_sub_;
@@ -961,8 +955,6 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   param_loader2.loadParam("two_uavs_payload/rotation_scaling", _rotation_scaling_);
   param_loader2.loadParam("two_uavs_payload/max_time_delay_communication_tracker", _max_time_delay_communication_tracker_);
   param_loader2.loadParam("two_uavs_payload/max_time_delay_eland", _max_time_delay_eland_);
-  param_loader2.loadParam("two_uavs_payload/distance_uavs/failsafe_enabled", distance_uavs_failsafe_enabled);
-  param_loader2.loadParam("two_uavs_payload/distance_uavs/max_error", distance_uavs_max_error_);
 
   
   // Visualization (rviz):
@@ -1070,8 +1062,6 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
       time_delay_anchoring_point_follower_for_leader_pub_ = nh2_.advertise<std_msgs::Float64>("time_delay_anchoring_point_follower_for_leader", 1);
       time_delay_position_cmd_follower_for_leader_pub_ = nh2_.advertise<std_msgs::Float64>("time_delay_position_cmd_follower_for_leader", 1);
       time_delay_goal_position_cmd_follower_for_leader_pub_ = nh2_.advertise<std_msgs::Float64>("time_delay_goal_position_cmd_follower_for_leader", 1);
-
-      distance_uavs_pub_ = nh2_.advertise<std_msgs::Float64>("distance_uavs", 1);
     }
     else if (_uav_name_ == _follower_uav_name_){ // follower
       uav_state_follower_for_leader_pub_ = nh2_.advertise<mrs_msgs::UavState>("uav_state_f_for_l", 1);
@@ -1531,22 +1521,6 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
           else if(!payload_spawned_){
             ROS_WARN_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: Payload has not spawned!");
           }
-
-          if(distance_uavs_failsafe_enabled){
-            if(both_uavs_ready_){
-              Eigen::Vector3d pos_leader(uav_state_.pose.position.x, uav_state_.pose.position.y, uav_state_.pose.position.z);
-              Eigen::Vector3d pos_follower(uav_state_follower_for_leader_.pose.position.x, uav_state_follower_for_leader_.pose.position.y, uav_state_follower_for_leader_.pose.position.z);
-              distance_UAVs_out_.data = (pos_leader - pos_follower).norm();
-              if(distance_UAVs_out_.data > _load_length_ + distance_uavs_max_error_){
-                ROS_WARN_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: Distance between both UAvs %f > %f ==> Eland",distance_UAVs_out_.data,_load_length_ + distance_uavs_max_error_);
-                deactivate();
-              }
-              else if(distance_UAVs_out_.data < _load_length_ - distance_uavs_max_error_){
-                ROS_WARN_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: Distance between both UAvs %f < %f ==> Eland",distance_UAVs_out_.data,_load_length_ - distance_uavs_max_error_);
-                deactivate();
-              }   
-            }   
-          }
         }
     }
 
@@ -1792,14 +1766,6 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
       }
       catch (...) {
         ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", time_delay_goal_position_cmd_follower_for_leader_pub_.getTopic().c_str());
-      }
-
-      // distance between both UAVs
-      try {
-        distance_uavs_pub_.publish(distance_UAVs_out_);
-      }
-      catch (...) {
-        ROS_ERROR("[DergbryanTracker]: Exception caught during publishing topic %s.", distance_uavs_pub_.getTopic().c_str());
       }
     }
     else if(_uav_name_ == _follower_uav_name_){
