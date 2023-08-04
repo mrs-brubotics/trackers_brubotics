@@ -770,6 +770,7 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   common_handlers_ = common_handlers;                          
   ros::NodeHandle nh_(parent_nh, "se3_copy_controller"); // NodeHandle 1 for Se3CopyController, used to load controller params
   ros::NodeHandle nh2_(parent_nh, "dergbryan_tracker"); // NodeHandle 2 for DergbryanTracker, used to load tracker params
+  ros::NodeHandle nh3_(parent_nh, "mpc_tracker"); // NodeHandle 3
   _uav_name_       = uav_name; // this UAV
   ros::Time::waitForValid();
 
@@ -1005,7 +1006,7 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   predicted_attrate_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_attrate", 1);
   predicted_des_attrate_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_des_predicted_attrate", 1);
   predicted_tiltangle_publisher_ = nh2_.advertise<geometry_msgs::PoseArray>("custom_predicted_tiltangle", 1);
-  ph_prediction_full_state_ = nh2_.advertise<mrs_msgs::MpcPredictionFullState>("prediction_full_state", 1);
+  ph_prediction_full_state_ = nh3_.advertise<mrs_msgs::MpcPredictionFullState>("prediction_full_state", 1);
   // TODO: create topic similar to predicted_load_position_errors_publisher_
   
   // 1 UAV LOAD:
