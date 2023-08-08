@@ -2502,7 +2502,7 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
         prediction_fs_out.heading_jerk.push_back(heading_jerk);
       }
 
-      ph_prediction_full_state_.publish(prediction_fs_out);
+      // ph_prediction_full_state_.publish(prediction_fs_out); // TODO: commented to not cause problems in test of Martin, later also clear msgs like other that use pushback
 
       // LOAD:
       if(_type_of_system_=="1uav_payload" && payload_spawned_){
