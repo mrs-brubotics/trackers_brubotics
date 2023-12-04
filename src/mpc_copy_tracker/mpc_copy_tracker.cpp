@@ -1,10 +1,9 @@
-#define VERSION "1.0.0.0"
-
 /* includes //{ */
-
 #include <ros/ros.h>
+#include <ros/package.h>
 
 #include <mrs_uav_managers/tracker.h>
+#include <mrs_uav_managers/controller.h>
 
 #include <geometry_msgs/Pose.h>
 #include <geometry_msgs/PoseArray.h>
@@ -12,31 +11,39 @@
 #include <mrs_msgs/FuturePoint.h>
 #include <mrs_msgs/FutureTrajectory.h>
 #include <mrs_msgs/MpcTrackerDiagnostics.h>
-#include <mrs_msgs/EstimatorType.h>
 #include <mrs_msgs/MpcPredictionFullState.h>
+#include <mrs_msgs/EstimationDiagnostics.h>
+#include <mrs_msgs/VelocityReference.h>
+#include <mrs_msgs/VelocityReferenceSrv.h>
 
 #include <std_msgs/String.h>
 
 #include <mrs_lib/profiler.h>
 #include <mrs_lib/utils.h>
-#include <mrs_lib/param_loader.h>
 #include <mrs_lib/mutex.h>
 #include <mrs_lib/attitude_converter.h>
 #include <mrs_lib/subscribe_handler.h>
+#include <mrs_lib/publisher_handler.h>
 #include <mrs_lib/geometry/cyclic.h>
 #include <mrs_lib/geometry/misc.h>
+#include <mrs_lib/scope_timer.h>
 
-#include <mpc_tracker_solver.h>
+#include <mpc_copy_tracker.h>
 
 #include <dynamic_reconfigure/server.h>
-#include <trackers_brubotics/mpc_copy_trackerConfig.h> //#include <mrs_uav_trackers/mpc_trackerConfig.h>
+#include <trackers_brubotics/mpc_copy_trackerConfig.h>
 
 #include <visualization_msgs/Marker.h>
 #include <visualization_msgs/MarkerArray.h>
 
+
+// added by us:
+#include <mrs_lib/param_loader.h>
 #include <trackers_brubotics/ComputationalTime.h> // custom ROS message
 #include <trackers_brubotics/DistanceBetweenUavs.h> // custom ROS message
 #include <trackers_brubotics/TrajectoryTracking.h> // custom ROS message
+
+
 //}
 
 /* defines //{ */
@@ -57,7 +64,7 @@ using sradians = mrs_lib::geometry::sradians;
 
 //}
 
-namespace mrs_uav_trackers
+namespace trackers_brubotics
 {
 
 namespace mpc_copy_tracker
@@ -67,18 +74,20 @@ namespace mpc_copy_tracker
 
 class MpcCopyTracker : public mrs_uav_managers::Tracker {
 public:
-  void initialize(const ros::NodeHandle& parent_nh, const std::string uav_name, std::shared_ptr<mrs_uav_managers::CommonHandlers_t> common_handlers);
-  std::tuple<bool, std::string> activate(const mrs_msgs::PositionCommand::ConstPtr& last_position_cmd);
+  bool initialize(const ros::NodeHandle& nh, std::shared_ptr<mrs_uav_managers::control_manager::CommonHandlers_t> common_handlers,
+                  std::shared_ptr<mrs_uav_managers::control_manager::PrivateHandlers_t> private_handlers);
+
+  std::tuple<bool, std::string> activate(const std::optional<mrs_msgs::TrackerCommand>& last_tracker_cmd);
   void                          deactivate(void);
   bool                          resetStatic(void);
 
-  const mrs_msgs::PositionCommand::ConstPtr update(const mrs_msgs::UavState::ConstPtr& uav_state, const mrs_msgs::AttitudeCommand::ConstPtr& last_attitude_cmd);
+  std::optional<mrs_msgs::TrackerCommand>   update(const mrs_msgs::UavState& uav_state, const mrs_uav_managers::Controller::ControlOutput& last_control_output);
   const std_srvs::SetBoolResponse::ConstPtr enableCallbacks(const std_srvs::SetBoolRequest::ConstPtr& cmd);
   const mrs_msgs::TrackerStatus             getStatus();
-  const std_srvs::TriggerResponse::ConstPtr switchOdometrySource(const mrs_msgs::UavState::ConstPtr& new_uav_state);
+  const std_srvs::TriggerResponse::ConstPtr switchOdometrySource(const mrs_msgs::UavState& new_uav_state);
 
   const mrs_msgs::ReferenceSrvResponse::ConstPtr           setReference(const mrs_msgs::ReferenceSrvRequest::ConstPtr& cmd);
-  const mrs_msgs::VelocityReferenceSrvResponse::ConstPtr setVelocityReference(const mrs_msgs::VelocityReferenceSrvRequest::ConstPtr &cmd);
+  const mrs_msgs::VelocityReferenceSrvResponse::ConstPtr   setVelocityReference(const mrs_msgs::VelocityReferenceSrvRequest::ConstPtr& cmd);
   const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr setTrajectoryReference(const mrs_msgs::TrajectoryReferenceSrvRequest::ConstPtr& cmd);
 
   const std_srvs::TriggerResponse::ConstPtr hover(const std_srvs::TriggerRequest::ConstPtr& cmd);
@@ -90,20 +99,21 @@ public:
   const mrs_msgs::DynamicsConstraintsSrvResponse::ConstPtr setConstraints(const mrs_msgs::DynamicsConstraintsSrvRequest::ConstPtr& cmd);
 
 private:
-  ros::NodeHandle                                     nh_;
-  std::shared_ptr<mrs_uav_managers::CommonHandlers_t> common_handlers_;
+  ros::NodeHandle nh_;
+
+  std::shared_ptr<mrs_uav_managers::control_manager::CommonHandlers_t>  common_handlers_;
+  std::shared_ptr<mrs_uav_managers::control_manager::PrivateHandlers_t> private_handlers_;
 
   std::atomic<bool> callbacks_enabled_ = true;
 
-  std::string _version_;
   std::string _uav_name_;
 
   // debugging publishers
-  ros::Publisher pub_diagnostics_;
-  ros::Publisher pub_status_string_;
+  mrs_lib::PublisherHandler<mrs_msgs::MpcTrackerDiagnostics> pub_diagnostics_;
+  mrs_lib::PublisherHandler<std_msgs::String>                pub_status_string_;
 
-  ros::Publisher pub_debug_processed_trajectory_poses_;
-  ros::Publisher pub_debug_processed_trajectory_markers_;
+  mrs_lib::PublisherHandler<geometry_msgs::PoseArray>        pub_debug_processed_trajectory_poses_;
+  mrs_lib::PublisherHandler<visualization_msgs::MarkerArray> pub_debug_processed_trajectory_markers_;
 
   mrs_msgs::UavState uav_state_;
   std::mutex         mutex_uav_state_;
@@ -127,28 +137,33 @@ private:
   mrs_msgs::DynamicsConstraints constraints_filtered_;
   std::mutex                    mutex_constraints_filtered_;
 
-  bool got_constraints_     = false;
-  bool all_constraints_set_ = false;
+  std::atomic<bool> got_constraints_     = false;
+  std::atomic<bool> all_constraints_set_ = false;
 
   double _diag_pos_tracking_thr_;
   double _diag_heading_tracking_thr_;
 
-  double _mpc_rate_;
+  double _mpc_synchronous_rate_limit_;
+  double _mpc_asynchronous_rate_;
 
-  double _dt1_;
+  double update_rate_ = 100.0;
+
+  double     dt1_;
+  std::mutex mutex_dt1_;
+
   double _dt2_;
 
-  MatrixXd          _A_;  // system matrix for virtual UAV
-  MatrixXd          _B_;  // input matrix for virtual UAV
-  MatrixXd          A_;   // system matrix for virtual UAV
-  MatrixXd          B_;   // input matrix for virtual UAV
+  MatrixXd          _mat_A_;  // system matrix for virtual UAV
+  MatrixXd          _mat_B_;  // input matrix for virtual UAV
+  MatrixXd          A_;       // system matrix for virtual UAV
+  MatrixXd          B_;       // input matrix for virtual UAV
   std::atomic<bool> model_first_iteration_ = true;
   ros::Time         model_iteration_last_time_;
 
-  MatrixXd _A_heading_;  // system matrix for heading
-  MatrixXd _B_heading_;  // input matrix for heading
-  MatrixXd A_heading_;   // system matrix for heading
-  MatrixXd B_heading_;   // input matrix for heading
+  MatrixXd _mat_A_heading_;  // system matrix for heading
+  MatrixXd _mat_B_heading_;  // input matrix for heading
+  MatrixXd A_heading_;       // system matrix for heading
+  MatrixXd B_heading_;       // input matrix for heading
 
   // the reference over the prediction horizon per axis
   MatrixXd   des_x_trajectory_;
@@ -165,6 +180,7 @@ private:
   std::shared_ptr<VectorXd> des_y_whole_trajectory_;
   std::shared_ptr<VectorXd> des_z_whole_trajectory_;
   std::shared_ptr<VectorXd> des_heading_whole_trajectory_;
+  int                       des_whole_trajectory_id_;
   std::mutex                mutex_des_whole_trajectory_;
 
   // trajectory tracking
@@ -174,8 +190,8 @@ private:
   std::mutex        mutex_trajectory_tracking_states_;
 
   // params of the loaded trajectory
-  int    trajectory_size_ = 0;
-  double trajectory_dt_;
+  int    trajectory_size_          = 0;
+  double trajectory_dt_            = 0.2;
   bool   trajectory_track_heading_ = false;
   bool   trajectory_tracking_loop_ = false;
   bool   trajectory_set_           = false;
@@ -187,8 +203,8 @@ private:
   std::mutex mutex_mpc_u_;
 
   // current state of the dynamical system
-  MatrixXd   mpc_x_;          // current state of the uav
-  MatrixXd   mpc_x_heading_;  // current heading of the uav
+  MatrixXd   mpc_x_;          // translation state
+  MatrixXd   mpc_x_heading_;  // heading state
   std::mutex mutex_mpc_x_;
 
   // odometry reset
@@ -200,10 +216,12 @@ private:
   MatrixXd   predicted_heading_trajectory_;
   std::mutex mutex_predicted_trajectory_;
 
-  ros::Publisher publisher_predicted_trajectory_debugging_;
-  ros::Publisher publisher_mpc_reference_debugging_;
-  ros::Publisher publisher_current_trajectory_point_;
-  ros::Publisher publisher_prediction_full_state_;
+  mrs_msgs::MpcPredictionFullState prediction_full_state_;
+  std::mutex                       mutex_prediction_full_state_;
+
+  mrs_lib::PublisherHandler<geometry_msgs::PoseArray>   ph_predicted_trajectory_debugging_;
+  mrs_lib::PublisherHandler<geometry_msgs::PoseArray>   ph_mpc_reference_debugging_;
+  mrs_lib::PublisherHandler<geometry_msgs::PoseStamped> ph_current_trajectory_point_;
 
   std::atomic<bool> mpc_computed_ = false;
 
@@ -211,10 +229,12 @@ private:
 
   // | ----------------------- MPC solver ----------------------- |
 
-  std::shared_ptr<mrs_mpc_solvers::mpc_tracker::Solver> mpc_solver_x_;
-  std::shared_ptr<mrs_mpc_solvers::mpc_tracker::Solver> mpc_solver_y_;
-  std::shared_ptr<mrs_mpc_solvers::mpc_tracker::Solver> mpc_solver_z_;
-  std::shared_ptr<mrs_mpc_solvers::mpc_tracker::Solver> mpc_solver_heading_;
+  std::shared_ptr<brubotics_mpc_solvers::mpc_copy_tracker::Solver> mpc_solver_y_;
+  std::shared_ptr<brubotics_mpc_solvers::mpc_copy_tracker::Solver> mpc_solver_x_;
+  std::shared_ptr<brubotics_mpc_solvers::mpc_copy_tracker::Solver> mpc_solver_z_;
+  std::shared_ptr<brubotics_mpc_solvers::mpc_copy_tracker::Solver> mpc_solver_heading_;
+
+  std::mutex mutex_mpc_calculation_;
 
   int _max_iters_xy_;
   int _max_iters_z_;
@@ -222,29 +242,27 @@ private:
 
   // | ----------- measuring the "MPC realtime factor" ---------- |
 
-  ros::Time mpc_start_time_;
-  double    mpc_total_delay_ = 0;
+  double mpc_rtf_ = 0.0;
 
   // | ------------------- collision avoidance ------------------ |
 
   // configurable params
-  bool collision_avoidance_enabled_ = false;
+  bool collision_avoidance_enabled_           = false;
+  bool collision_avoidance_enabled_passively_ = true;
 
   // TODO what is this?
   double    coef_scaler = 0;
   ros::Time coef_time;
 
   double minimum_collison_free_altitude_ = std::numeric_limits<double>::lowest();
-  int    active_collision_index_         = INT_MAX;
 
   // params
   double                   _avoidance_trajectory_rate_;
   double                   _avoidance_radius_threshold_;
-  double                   _avoidance_height_correction_;
-  std::string              _avoidance_trajectory_topic_name_;
+  double                   _avoidance_z_correction_;
   std::string              _avoidance_diagnostics_topic_name_;
   std::vector<std::string> _avoidance_other_uav_names_;
-  double                   _avoidance_height_threshold_;
+  double                   _avoidance_z_threshold_;
 
   // how old can the other UAV trajectory be (since receive time)
   double _collision_trajectory_timeout_;
@@ -265,36 +283,41 @@ private:
   int avoidance_this_uav_priority_;
 
   double            collision_free_altitude_;
-  std::atomic<bool> avoiding_collision_ = false;
+  std::atomic<bool> avoiding_collision_               = false;
+  bool              collision_avoidance_affecting_me_ = false;
 
   // avoidance trajectory will not be published unless we computed it at least once
   std::atomic<bool> future_was_predicted_ = false;
 
   // subscribing to the other UAV future trajectories
-  void callbackOtherMavTrajectory(mrs_lib::SubscribeHandler<mrs_msgs::FutureTrajectory>& sh_ptr);
+  void callbackOtherMavTrajectory(const mrs_msgs::FutureTrajectory::ConstPtr msg);
 
   std::vector<mrs_lib::SubscribeHandler<mrs_msgs::FutureTrajectory>> other_uav_trajectory_subscribers_;
   std::map<std::string, mrs_msgs::FutureTrajectory>                  other_uav_avoidance_trajectories_;
   std::mutex                                                         mutex_other_uav_avoidance_trajectories_;
 
   // subscribing to the other UAV diagnostics'
-  void callbackOtherMavDiagnostics(mrs_lib::SubscribeHandler<mrs_msgs::MpcTrackerDiagnostics>& sh_ptr);
+  void callbackOtherMavDiagnostics(const mrs_msgs::MpcTrackerDiagnostics::ConstPtr msg);
 
   std::vector<mrs_lib::SubscribeHandler<mrs_msgs::MpcTrackerDiagnostics>> other_uav_diag_subscribers_;
   std::map<std::string, mrs_msgs::MpcTrackerDiagnostics>                  other_uav_diagnostics_;
   std::mutex                                                              mutex_other_uav_diagnostics_;
 
-  double checkCollision(const double ax, const double ay, const double az, const double bx, const double by, const double bz);
-  double checkCollisionInflated(const double ax, const double ay, const double az, const double bx, const double by, const double bz);
+  bool checkCollision(const double ax, const double ay, const double az, const double bx, const double by, const double bz);
+  bool checkCollisionInflated(const double ax, const double ay, const double az, const double bx, const double by, const double bz);
 
-  ros::Publisher avoidance_trajectory_publisher_;
+  mrs_lib::PublisherHandler<mrs_msgs::FutureTrajectory> ph_avoidance_trajectory_;
 
   ros::ServiceServer service_server_toggle_avoidance_;
   bool               callbackToggleCollisionAvoidance(std_srvs::SetBool::Request& req, std_srvs::SetBool::Response& res);
 
+  mrs_lib::SubscribeHandler<mrs_msgs::EstimationDiagnostics> sh_estimation_diag_;
+
   // | --------------------- MPC calculation -------------------- |
 
   ros::Timer        timer_mpc_iteration_;
+  std::atomic<bool> mpc_synchronous_ = false;
+
   std::atomic<bool> mpc_timer_running_ = false;
   void              timerMPC(const ros::TimerEvent& event);
 
@@ -302,6 +325,15 @@ private:
 
   ros::Timer timer_trajectory_tracking_;
   void       timerTrajectoryTracking(const ros::TimerEvent& event);
+
+  // | -------------------- velocity tracking ------------------- |
+
+  ros::Timer                  timer_velocity_tracking_;
+  void                        timerVelocityTracking(const ros::TimerEvent& event);
+  ros::Time                   velocity_reference_time_;
+  mrs_msgs::VelocityReference velocity_reference_;
+  std::mutex                  mutex_velocity_reference_;
+  std::atomic<bool>           velocity_tracking_active_ = false;
 
   // | ------------------ avoidance trajectory ------------------ |
 
@@ -318,7 +350,6 @@ private:
 
   ros::Timer        timer_hover_;
   void              timerHover(const ros::TimerEvent& event);
-  std::atomic<bool> hover_timer_runnning_ = false;
   std::atomic<bool> hovering_in_progress_ = false;
   void              toggleHover(bool in);
 
@@ -333,6 +364,9 @@ private:
 
   void publishDiagnostics();
 
+  void debugPrintState(const double throttle);
+  void debugPrintMPCResult(const double throttle);
+
   void setGoal(const double pos_x, const double pos_y, const double pos_z, const double heading, const bool use_heading);
   void setRelativeGoal(const double pos_x, const double pos_y, const double pos_z, const double heading, const bool use_heading);
   void setSinglePointReference(const double x, const double y, const double z, const double heading);
@@ -346,7 +380,7 @@ private:
 
   void manageConstraints(void);
   void calculateMPC(void);
-  void iterateModel(void);
+  void iterateModel(const double& dt);
 
   // | ------------------------ profiler ------------------------ |
 
@@ -355,7 +389,7 @@ private:
 
   // | ------------------------- wiggle ------------------------- |
 
-  ros::ServiceServer service_client_wiggle_;
+  ros::ServiceServer service_server_wiggle_;
   bool               callbackWiggle(std_srvs::SetBool::Request& req, std_srvs::SetBool::Response& res);
 
   double wiggle_phase_ = 0;
@@ -372,8 +406,13 @@ private:
   std::mutex                                  mutex_drs_params_;
 
 
-  // Custom:
+
+
+ // Custom added by us:
   // ---------------------custom publishers --------------------------- //
+  //mrs_lib::PublisherHandler<mrs_msgs::MpcPredictionFullState> publisher_prediction_full_state_; // TODO check how to use this way of publishing as in new ctu code
+  ros::Publisher publisher_prediction_full_state_;
+
   ros::Publisher goal_pose_publisher_;  // input goal to tracker (i.e. desired user command or from loaded trajectory)
 
   // | ---------------------- desired goal ---------------------- |
@@ -423,10 +462,11 @@ private:
 
   bool _enable_diagnostics_pub_;
 
-  // -----------------------
-  // ROS callback functions:
-  // -----------------------
-  void callbackOtherUavPosition(const mrs_msgs::FutureTrajectoryConstPtr& msg);
+// -----------------------
+// ROS callback functions:
+// -----------------------
+
+void callbackOtherUavPosition(const mrs_msgs::FutureTrajectoryConstPtr& msg);
   std::map<std::string, mrs_msgs::FutureTrajectory> other_uavs_positions_;
 
   
@@ -435,7 +475,7 @@ private:
   std::vector<ros::Subscriber>  other_uav_subscribers_; // used for collision avoidance
 
   double Ra_ = 0.35; // TODO should be taken from urdf, how to do so??
- 
+
 };
 
 //}
@@ -444,65 +484,112 @@ private:
 
 /* //{ initialize() */
 
-void MpcCopyTracker::initialize(const ros::NodeHandle& parent_nh, [[maybe_unused]] const std::string uav_name,
-                            [[maybe_unused]] std::shared_ptr<mrs_uav_managers::CommonHandlers_t> common_handlers) {
+bool MpcCopyTracker::initialize(const ros::NodeHandle& nh, std::shared_ptr<mrs_uav_managers::control_manager::CommonHandlers_t> common_handlers,
+                            std::shared_ptr<mrs_uav_managers::control_manager::PrivateHandlers_t> private_handlers) {
+  ROS_INFO("[MpcCopyTracker]: start of initialize");
 
-  ros::NodeHandle nh_(parent_nh, "mpc_copy_tracker");
+  this->common_handlers_  = common_handlers;
+  this->private_handlers_ = private_handlers;
 
-  _uav_name_       = uav_name;
-  common_handlers_ = common_handlers;
+
+  // TODO: make global vars of these as in examples ctu. First make local and then set global equal to local.
+  ros::NodeHandle nh_(nh, "mpc_copy_tracker");
+  //nh_ = nh;
+
+
+
+  _uav_name_ = common_handlers->uav_name;
 
   ros::Time::waitForValid();
 
+  // --------------------------------------------------------------
+  // |                     loading parameters                     |
+  // --------------------------------------------------------------
+
+  // | ---------- loading params using the parent's nh ---------- |
+
+  mrs_lib::ParamLoader param_loader_parent(common_handlers->parent_nh, "ControlManager");
+
+  param_loader_parent.loadParam("enable_profiler", _profiler_enabled_);
+
+  if (!param_loader_parent.loadedSuccessfully()) {
+    ROS_ERROR("[MpcCopyTracker]: Could not load all parameters!");
+    return false;
+  }
+
+  // | -------------------- load param files -------------------- |
+  /* TODO: method below does not work as in https://github.com/ctu-mrs/mrs_uav_trackers/blob/master/src/mpc_tracker/mpc_tracker.cpp
+     private_handlers->param_loader->addYamlFile(ros::package::getPath("trackers_brubotics") + "/config/private/mpc_copy_tracker.yaml");
+     private_handlers->param_loader->addYamlFile(ros::package::getPath("trackers_brubotics") + "/config/public/mpc_copy_tracker.yaml");
+     use method as in https://github.com/ctu-mrs/example_tracker_plugin/blob/master/src/example_tracker.cpp
+  */
+  bool success = true;
+
+  // FYI
+  // This method will load the file using `rosparam get`
+  //   Pros: you can the full power of the official param loading
+  //   Cons: it is slower
+  //
+  // Alternatives:
+  //   You can load the file directly into the ParamLoader as shown below.
+
+  success *= private_handlers->loadConfigFile(ros::package::getPath("trackers_brubotics") + "/config/private/mpc_copy_tracker.yaml");
+
+  if (!success) {
+    return false;
+  }
+
+  success *= private_handlers->loadConfigFile(ros::package::getPath("trackers_brubotics") + "/config/public/mpc_copy_tracker.yaml");
+  if (!success) {
+    return false;
+  }
+
+  // TODO: how is the link between the yaml file choice and below??? now we don't have launch file anymore
+
   mrs_lib::ParamLoader param_loader(nh_, "MpcCopyTracker");
 
-  param_loader.loadParam("version", _version_);
+  const std::string yaml_prefix = "trackers_brubotics/mpc_copy_tracker/";
 
-  if (_version_ != VERSION) {
+  param_loader.loadParam("network/robot_names", _avoidance_other_uav_names_);
 
-    ROS_ERROR("[MpcCopyTracker]: the version of the binary (%s) does not match the config file (%s), please build me!", VERSION, _version_.c_str());
-    ros::shutdown();
+  param_loader.loadParam(yaml_prefix + "mpc_loop/synchronous_rate_limit", _mpc_synchronous_rate_limit_);
+  param_loader.loadParam(yaml_prefix + "mpc_loop/asynchronous_loop_rate", _mpc_asynchronous_rate_);
+
+  if (_mpc_asynchronous_rate_ < 15) {
+    ROS_ERROR("[MpcCopyTracker]: the asynchronous_loop_rate must be > 15 Hz");
+    return false;
   }
 
-  param_loader.loadParam("enable_profiler", _profiler_enabled_);
+  dt1_ = 1.0 / _mpc_asynchronous_rate_;
 
-  param_loader.loadParam("mpc_rate", _mpc_rate_);
+  param_loader.loadParam(yaml_prefix + "braking/enabled", drs_params_.braking_enabled);
+  param_loader.loadParam(yaml_prefix + "braking/q_vel_braking", drs_params_.q_vel_braking);
+  param_loader.loadParam(yaml_prefix + "braking/q_vel_no_braking", drs_params_.q_vel_no_braking);
 
-  if (_mpc_rate_ < 10.0) {
-    ROS_ERROR("[MpcCopyTracker]: mpc_rate should be >= 10 Hz");
-    ros::shutdown();
-  }
+  param_loader.loadParam(yaml_prefix + "model/translation/n_states", _mpc_n_states_);
+  param_loader.loadParam(yaml_prefix + "model/translation/n_inputs", _mpc_m_states_);
+  param_loader.loadMatrixStatic(yaml_prefix + "model/translation/A", _mat_A_, _mpc_n_states_, _mpc_n_states_);
+  param_loader.loadMatrixStatic(yaml_prefix + "model/translation/B", _mat_B_, _mpc_n_states_, _mpc_m_states_);
 
-  _dt1_ = 1.0 / _mpc_rate_;
+  A_ = _mat_A_;
+  B_ = _mat_B_;
 
-  param_loader.loadParam("braking/enabled", drs_params_.braking_enabled);
-  param_loader.loadParam("braking/q_vel_braking", drs_params_.q_vel_braking);
-  param_loader.loadParam("braking/q_vel_no_braking", drs_params_.q_vel_no_braking);
+  param_loader.loadParam(yaml_prefix + "model/heading/n_states", _mpc_n_states_heading_);
+  param_loader.loadParam(yaml_prefix + "model/heading/n_inputs", _mpc_n_inputs_heading_);
+  param_loader.loadMatrixStatic(yaml_prefix + "model/heading/A", _mat_A_heading_, _mpc_n_states_heading_, _mpc_n_states_heading_);
+  param_loader.loadMatrixStatic(yaml_prefix + "model/heading/B", _mat_B_heading_, _mpc_n_states_heading_, _mpc_n_inputs_heading_);
 
-  param_loader.loadParam("model/translation/n_states", _mpc_n_states_);
-  param_loader.loadParam("model/translation/n_inputs", _mpc_m_states_);
-  param_loader.loadMatrixStatic("model/translation/A", _A_, _mpc_n_states_, _mpc_n_states_);
-  param_loader.loadMatrixStatic("model/translation/B", _B_, _mpc_n_states_, _mpc_m_states_);
-
-  A_ = _A_;
-  B_ = _B_;
-
-  param_loader.loadParam("model/heading/n_states", _mpc_n_states_heading_);
-  param_loader.loadParam("model/heading/n_inputs", _mpc_n_inputs_heading_);
-  param_loader.loadMatrixStatic("model/heading/A", _A_heading_, _mpc_n_states_heading_, _mpc_n_states_heading_);
-  param_loader.loadMatrixStatic("model/heading/B", _B_heading_, _mpc_n_states_heading_, _mpc_n_inputs_heading_);
-
-  A_heading_ = _A_heading_;
-  B_heading_ = _B_heading_;
+  A_heading_ = _mat_A_heading_;
+  B_heading_ = _mat_B_heading_;
 
   // load the MPC parameters
-  param_loader.loadParam("mpc_solver/horizon_len", _mpc_horizon_len_);
+  param_loader.loadParam(yaml_prefix + "mpc_solver/horizon_len", _mpc_horizon_len_);
 
-  param_loader.loadParam("mpc_solver/dt2", _dt2_);
+  param_loader.loadParam(yaml_prefix + "mpc_solver/dt2", _dt2_);
 
-  param_loader.loadParam("diagnostics/rate", _diagnostics_rate_);
-  param_loader.loadParam("diagnostics/position_tracking_threshold", _diag_pos_tracking_thr_);
-  param_loader.loadParam("diagnostics/orientation_tracking_threshold", _diag_heading_tracking_thr_);
+  param_loader.loadParam(yaml_prefix + "diagnostics/rate", _diagnostics_rate_);
+  param_loader.loadParam(yaml_prefix + "diagnostics/position_tracking_threshold", _diag_pos_tracking_thr_);
+  param_loader.loadParam(yaml_prefix + "diagnostics/orientation_tracking_threshold", _diag_heading_tracking_thr_);
 
   bool verbose_xy      = false;
   bool verbose_z       = false;
@@ -512,48 +599,52 @@ void MpcCopyTracker::initialize(const ros::NodeHandle& parent_nh, [[maybe_unused
   std::vector<double> z_Q;
   std::vector<double> heading_Q;
 
-  param_loader.loadParam("mpc_solver/xy/verbose", verbose_xy);
-  param_loader.loadParam("mpc_solver/xy/max_n_iterations", _max_iters_xy_);
-  param_loader.loadParam("mpc_solver/xy/Q", xy_Q);
+  param_loader.loadParam(yaml_prefix + "mpc_solver/xy/verbose", verbose_xy);
+  param_loader.loadParam(yaml_prefix + "mpc_solver/xy/max_n_iterations", _max_iters_xy_);
+  param_loader.loadParam(yaml_prefix + "mpc_solver/xy/Q", xy_Q);
 
-  param_loader.loadParam("mpc_solver/z/verbose", verbose_z);
-  param_loader.loadParam("mpc_solver/z/max_n_iterations", _max_iters_z_);
-  param_loader.loadParam("mpc_solver/z/Q", z_Q);
+  param_loader.loadParam(yaml_prefix + "mpc_solver/z/verbose", verbose_z);
+  param_loader.loadParam(yaml_prefix + "mpc_solver/z/max_n_iterations", _max_iters_z_);
+  param_loader.loadParam(yaml_prefix + "mpc_solver/z/Q", z_Q);
 
-  param_loader.loadParam("mpc_solver/heading/verbose", verbose_heading);
-  param_loader.loadParam("mpc_solver/heading/max_n_iterations", _max_iters_heading_);
-  param_loader.loadParam("mpc_solver/heading/Q", heading_Q);
+  param_loader.loadParam(yaml_prefix + "mpc_solver/heading/verbose", verbose_heading);
+  param_loader.loadParam(yaml_prefix + "mpc_solver/heading/max_n_iterations", _max_iters_heading_);
+  param_loader.loadParam(yaml_prefix + "mpc_solver/heading/Q", heading_Q);
 
-  param_loader.loadParam("wiggle/enabled", drs_params_.wiggle_enabled);
-  param_loader.loadParam("wiggle/amplitude", drs_params_.wiggle_amplitude);
-  param_loader.loadParam("wiggle/frequency", drs_params_.wiggle_frequency);
+  param_loader.loadParam(yaml_prefix + "wiggle/enabled", drs_params_.wiggle_enabled);
+  param_loader.loadParam(yaml_prefix + "wiggle/amplitude", drs_params_.wiggle_amplitude);
+  param_loader.loadParam(yaml_prefix + "wiggle/frequency", drs_params_.wiggle_frequency);
 
-  // collision avoidance
-  param_loader.loadParam("collision_avoidance/enabled", collision_avoidance_enabled_);
-  param_loader.loadParam("network/robot_names", _avoidance_other_uav_names_);
-  param_loader.loadParam("predicted_trajectory_topic", _avoidance_trajectory_topic_name_);
-  param_loader.loadParam("diagnostics_topic", _avoidance_diagnostics_topic_name_);
-  param_loader.loadParam("collision_avoidance/predicted_trajectory_publish_rate", _avoidance_trajectory_rate_);
-  param_loader.loadParam("collision_avoidance/correction", _avoidance_height_correction_);
-  param_loader.loadParam("collision_avoidance/radius", _avoidance_radius_threshold_);
-  param_loader.loadParam("collision_avoidance/altitude_threshold", _avoidance_height_threshold_);
-  param_loader.loadParam("collision_avoidance/collision_horizontal_speed_coef", _avoidance_collision_horizontal_speed_coef_);
-  param_loader.loadParam("collision_avoidance/collision_slow_down_fully", _avoidance_collision_slow_down_fully_);
-  param_loader.loadParam("collision_avoidance/collision_slow_down_start", _avoidance_collision_slow_down_);
-  param_loader.loadParam("collision_avoidance/collision_start_climbing", _avoidance_collision_start_climbing_);
-  param_loader.loadParam("collision_avoidance/trajectory_timeout", _collision_trajectory_timeout_);
-  
-  param_loader.loadParam("enable_diagnostics_pub", _enable_diagnostics_pub_);
+  param_loader.loadParam(yaml_prefix + "collision_avoidance/enabled", collision_avoidance_enabled_);
+  param_loader.loadParam(yaml_prefix + "collision_avoidance/enabled_passively", collision_avoidance_enabled_passively_);
+  param_loader.loadParam(yaml_prefix + "collision_avoidance/predicted_trajectory_publish_rate", _avoidance_trajectory_rate_);
+  param_loader.loadParam(yaml_prefix + "collision_avoidance/correction", _avoidance_z_correction_);
+  param_loader.loadParam(yaml_prefix + "collision_avoidance/radius", _avoidance_radius_threshold_);
+  param_loader.loadParam(yaml_prefix + "collision_avoidance/altitude_threshold", _avoidance_z_threshold_);
+  param_loader.loadParam(yaml_prefix + "collision_avoidance/collision_horizontal_speed_coef", _avoidance_collision_horizontal_speed_coef_);
+  param_loader.loadParam(yaml_prefix + "collision_avoidance/collision_slow_down_fully", _avoidance_collision_slow_down_fully_);
+  param_loader.loadParam(yaml_prefix + "collision_avoidance/collision_slow_down_start", _avoidance_collision_slow_down_);
+  param_loader.loadParam(yaml_prefix + "collision_avoidance/collision_start_climbing", _avoidance_collision_start_climbing_);
+  param_loader.loadParam(yaml_prefix + "collision_avoidance/trajectory_timeout", _collision_trajectory_timeout_);
+
+  param_loader.loadParam(yaml_prefix + "enable_diagnostics_pub", _enable_diagnostics_pub_); // added by us
 
   if (!param_loader.loadedSuccessfully()) {
     ROS_ERROR("[MpcCopyTracker]: could not load all parameters!");
-    ros::shutdown();
+    return false;
+  }
+  else{
+    ROS_INFO("[MpcCopyTracker]: correctly loaded all MpcCopyTracker parameters!");
   }
 
-  mpc_solver_x_       = std::make_shared<mrs_mpc_solvers::mpc_tracker::Solver>("MpcCopyTracker", verbose_xy, _max_iters_xy_, xy_Q, _dt1_, _dt2_, 0);
-  mpc_solver_y_       = std::make_shared<mrs_mpc_solvers::mpc_tracker::Solver>("MpcCopyTracker", verbose_xy, _max_iters_xy_, xy_Q, _dt1_, _dt2_, 1);
-  mpc_solver_z_       = std::make_shared<mrs_mpc_solvers::mpc_tracker::Solver>("MpcCopyTracker", verbose_z, _max_iters_z_, z_Q, _dt1_, _dt2_, 2);
-  mpc_solver_heading_ = std::make_shared<mrs_mpc_solvers::mpc_tracker::Solver>("MpcCopyTracker", verbose_heading, _max_iters_heading_, heading_Q, _dt1_, _dt2_, 0);
+
+  ROS_INFO_STREAM("[MpcCopyTracker]: initializing solvers with dt1 = " << dt1_);
+
+  mpc_solver_y_ = std::make_shared<brubotics_mpc_solvers::mpc_copy_tracker::Solver>("MpcTracker_y", verbose_xy, _max_iters_xy_, xy_Q, dt1_, _dt2_, 1);
+  mpc_solver_x_ = std::make_shared<brubotics_mpc_solvers::mpc_copy_tracker::Solver>("MpcTracker_x", verbose_xy, _max_iters_xy_, xy_Q, dt1_, _dt2_, 0);
+  mpc_solver_z_ = std::make_shared<brubotics_mpc_solvers::mpc_copy_tracker::Solver>("MpcTracker_z", verbose_z, _max_iters_z_, z_Q, dt1_, _dt2_, 2);
+  mpc_solver_heading_ =
+      std::make_shared<brubotics_mpc_solvers::mpc_copy_tracker::Solver>("MpcTracker_hdg", verbose_heading, _max_iters_heading_, heading_Q, dt1_, _dt2_, 0);
 
   mpc_x_         = MatrixXd::Zero(_mpc_n_states_, 1);
   mpc_x_heading_ = MatrixXd::Zero(_mpc_n_states_heading_, 1);
@@ -568,10 +659,10 @@ void MpcCopyTracker::initialize(const ros::NodeHandle& parent_nh, [[maybe_unused
   des_z_filtered_offset_  = MatrixXd::Zero(_mpc_horizon_len_, 1);
   des_heading_trajectory_ = MatrixXd::Zero(_mpc_horizon_len_, 1);
 
-  service_client_wiggle_ = nh_.advertiseService("wiggle_in", &MpcCopyTracker::callbackWiggle, this);
+  service_server_wiggle_ = nh_.advertiseService("wiggle", &MpcCopyTracker::callbackWiggle, this);
 
-  pub_diagnostics_   = nh_.advertise<mrs_msgs::MpcTrackerDiagnostics>("diagnostics_out", 1);
-  pub_status_string_ = nh_.advertise<std_msgs::String>("string_out", 1);
+  pub_diagnostics_   = mrs_lib::PublisherHandler<mrs_msgs::MpcTrackerDiagnostics>(nh_, "diagnostics", 1);
+  pub_status_string_ = mrs_lib::PublisherHandler<std_msgs::String>(nh_, "string", 1);
 
   // extract the numerical name
   sscanf(_uav_name_.c_str(), "uav%d", &avoidance_this_uav_number_);
@@ -596,33 +687,38 @@ void MpcCopyTracker::initialize(const ros::NodeHandle& parent_nh, [[maybe_unused
     it++;
   }
 
-  // create publishers for predicted trajectory
-  avoidance_trajectory_publisher_           = nh_.advertise<mrs_msgs::FutureTrajectory>("predicted_trajectory", 1);
-  publisher_predicted_trajectory_debugging_ = nh_.advertise<geometry_msgs::PoseArray>("predicted_trajectory_debugging", 1);
-  publisher_mpc_reference_debugging_        = nh_.advertise<geometry_msgs::PoseArray>("mpc_reference_debugging", 1, true);
-  publisher_current_trajectory_point_       = nh_.advertise<geometry_msgs::PoseStamped>("current_trajectory_point_out", 1, true);
-  publisher_prediction_full_state_          = nh_.advertise<mrs_msgs::MpcPredictionFullState>("prediction_full_state", 1, true);
+  // initialize velocity tracker
 
-  pub_debug_processed_trajectory_poses_   = nh_.advertise<geometry_msgs::PoseArray>("trajectory_processed/poses_out", 1, true);
-  pub_debug_processed_trajectory_markers_ = nh_.advertise<visualization_msgs::MarkerArray>("trajectory_processed/markers_out", 1, true);
+  velocity_reference_time_ = ros::Time(0);
+
+  // create publishers for predicted trajectory
+
+  ph_avoidance_trajectory_           = mrs_lib::PublisherHandler<mrs_msgs::FutureTrajectory>(nh_, "predicted_trajectory", 1);
+  ph_predicted_trajectory_debugging_ = mrs_lib::PublisherHandler<geometry_msgs::PoseArray>(nh_, "predicted_trajectory_debugging", 1);
+  ph_mpc_reference_debugging_        = mrs_lib::PublisherHandler<geometry_msgs::PoseArray>(nh_, "mpc_reference_debugging", 1, true);
+  ph_current_trajectory_point_       = mrs_lib::PublisherHandler<geometry_msgs::PoseStamped>(nh_, "current_trajectory_point", 1, true);
+  publisher_prediction_full_state_   = nh_.advertise<mrs_msgs::MpcPredictionFullState>("prediction_full_state", 1, true);// mrs_lib::PublisherHandler<mrs_msgs::MpcPredictionFullState>(nh_, "prediction_full_state", 1, true); // added by us
+           
+
+  pub_debug_processed_trajectory_poses_   = mrs_lib::PublisherHandler<geometry_msgs::PoseArray>(nh_, "trajectory_processed/poses", 1, true);
+  pub_debug_processed_trajectory_markers_ = mrs_lib::PublisherHandler<visualization_msgs::MarkerArray>(nh_, "trajectory_processed/markers", 1, true);
 
   // preallocate predicted trajectory
   predicted_trajectory_         = MatrixXd::Zero(_mpc_horizon_len_ * _mpc_n_states_, 1);
   predicted_heading_trajectory_ = MatrixXd::Zero(_mpc_horizon_len_ * _mpc_n_states_, 1);
 
-  collision_free_altitude_ = common_handlers_->safety_area.getMinHeight();
+  collision_free_altitude_ = std::numeric_limits<float>::lowest();
 
   // collision avoidance toggle service
-  service_server_toggle_avoidance_ = nh_.advertiseService("collision_avoidance_in", &MpcCopyTracker::callbackToggleCollisionAvoidance, this);
+  service_server_toggle_avoidance_ = nh_.advertiseService("collision_avoidance", &MpcCopyTracker::callbackToggleCollisionAvoidance, this);
 
+  // added by us ------
   DistanceBetweenUavs_publisher_ = nh_.advertise<trackers_brubotics::DistanceBetweenUavs>("DistanceBetweenUavs", 1);
   TrajectoryTracking_publisher_ = nh_.advertise<trackers_brubotics::TrajectoryTracking>("TrajectoryTracking", 1);
   ComputationalTime_publisher_ = nh_.advertise<trackers_brubotics::ComputationalTime>("ComputationalTime", 1);
   avoidance_pos_publisher_ = nh_.advertise<mrs_msgs::FutureTrajectory>("uav_position", 1);
 
-
-
-
+  // -----------
   mrs_lib::SubscribeHandlerOptions shopts;
   shopts.nh                 = nh_;
   shopts.node_name          = "MpcCopyTracker";
@@ -633,28 +729,33 @@ void MpcCopyTracker::initialize(const ros::NodeHandle& parent_nh, [[maybe_unused
   shopts.transport_hints    = ros::TransportHints().tcpNoDelay();
 
   // create subscribers on other drones diagnostics
-  for (int i = 0; i < int(_avoidance_other_uav_names_.size()); i++) {
+  if (collision_avoidance_enabled_ || collision_avoidance_enabled_passively_) {
 
-    std::string prediction_topic_name = std::string("/") + _avoidance_other_uav_names_[i] + std::string("/") + _avoidance_trajectory_topic_name_;
-    std::string diag_topic_name       = std::string("/") + _avoidance_other_uav_names_[i] + std::string("/") + _avoidance_diagnostics_topic_name_;
+    for (int i = 0; i < int(_avoidance_other_uav_names_.size()); i++) {
 
-    ROS_INFO("[MpcCopyTracker]: subscribing to %s", prediction_topic_name.c_str());
+      std::string prediction_topic_name = std::string("/") + _avoidance_other_uav_names_[i] + "/control_manager/mpc_copy_tracker/predicted_trajectory";
+      std::string diag_topic_name       = std::string("/") + _avoidance_other_uav_names_[i] + "/control_manager/mpc_copy_tracker/diagnostics";
 
-    other_uav_trajectory_subscribers_.push_back(
-        mrs_lib::SubscribeHandler<mrs_msgs::FutureTrajectory>(shopts, prediction_topic_name, &MpcCopyTracker::callbackOtherMavTrajectory, this));
+      ROS_INFO("[MpcCopyTracker]: subscribing to %s", prediction_topic_name.c_str());
 
-    ROS_INFO("[MpcCopyTracker]: subscribing to %s", diag_topic_name.c_str());
+      other_uav_trajectory_subscribers_.push_back(
+          mrs_lib::SubscribeHandler<mrs_msgs::FutureTrajectory>(shopts, prediction_topic_name, &MpcCopyTracker::callbackOtherMavTrajectory, this));
 
-    other_uav_diag_subscribers_.push_back(
-        mrs_lib::SubscribeHandler<mrs_msgs::MpcTrackerDiagnostics>(shopts, diag_topic_name, &MpcCopyTracker::callbackOtherMavDiagnostics, this));
-  
-    std::string position_topic_name = std::string("/") + _avoidance_other_uav_names_[i] + std::string("/") + std::string("control_manager/mpc_copy_tracker/uav_position"); 
-    ROS_INFO("[MpcCopyTracker]: subscribing to %s", position_topic_name.c_str());
-    other_uav_subscribers_.push_back(nh_.subscribe(position_topic_name, 1, &MpcCopyTracker::callbackOtherUavPosition, this, ros::TransportHints().tcpNoDelay()));
-  
-  
+      ROS_INFO("[MpcCopyTracker]: subscribing to %s", diag_topic_name.c_str());
+
+      other_uav_diag_subscribers_.push_back(
+          mrs_lib::SubscribeHandler<mrs_msgs::MpcTrackerDiagnostics>(shopts, diag_topic_name, &MpcCopyTracker::callbackOtherMavDiagnostics, this));
+    
+      // added by us: -----
+      std::string position_topic_name = std::string("/") + _avoidance_other_uav_names_[i] + std::string("/") + std::string("control_manager/mpc_copy_tracker/uav_position"); 
+      ROS_INFO("[MpcCopyTracker]: subscribing to %s", position_topic_name.c_str());
+      other_uav_subscribers_.push_back(nh_.subscribe(position_topic_name, 1, &MpcCopyTracker::callbackOtherUavPosition, this, ros::TransportHints().tcpNoDelay()));
+      // -----
+    }
   }
 
+  sh_estimation_diag_ = mrs_lib::SubscribeHandler<mrs_msgs::EstimationDiagnostics>(shopts, std::string("/") + _uav_name_ + "/estimation_manager/diagnostics");
+  
   // create custom publishers
   goal_pose_publisher_ = nh_.advertise<mrs_msgs::ReferenceStamped>("goal_pose", 1);
 
@@ -667,28 +768,32 @@ void MpcCopyTracker::initialize(const ros::NodeHandle& parent_nh, [[maybe_unused
 
   // | ------------------------ profiler ------------------------ |
 
-  profiler = mrs_lib::Profiler(nh_, "MpcCopyTracker", _profiler_enabled_);
+  profiler = mrs_lib::Profiler(common_handlers->parent_nh, "MpcCopyTracker", _profiler_enabled_);
 
   // | ------------------------- timers ------------------------- |
 
-  timer_avoidance_trajectory_ = nh_.createTimer(ros::Rate(_avoidance_trajectory_rate_), &MpcCopyTracker::timerAvoidanceTrajectory, this);
+  timer_avoidance_trajectory_ = nh_.createTimer(ros::Rate(_avoidance_trajectory_rate_), &MpcCopyTracker::timerAvoidanceTrajectory, this, false,
+                                                collision_avoidance_enabled_ || collision_avoidance_enabled_passively_);
   timer_diagnostics_          = nh_.createTimer(ros::Rate(_diagnostics_rate_), &MpcCopyTracker::timerDiagnostics, this);
-  timer_mpc_iteration_        = nh_.createTimer(ros::Rate(_mpc_rate_), &MpcCopyTracker::timerMPC, this);
+  timer_mpc_iteration_        = nh_.createTimer(ros::Rate(_mpc_asynchronous_rate_), &MpcCopyTracker::timerMPC, this, false, false);
   timer_trajectory_tracking_  = nh_.createTimer(ros::Rate(1.0), &MpcCopyTracker::timerTrajectoryTracking, this, false, false);
+  timer_velocity_tracking_    = nh_.createTimer(ros::Rate(30.0), &MpcCopyTracker::timerVelocityTracking, this, false, false);
   timer_hover_                = nh_.createTimer(ros::Rate(10.0), &MpcCopyTracker::timerHover, this, false, false);
 
   // | ----------------------- finish init ---------------------- |
 
   is_initialized_ = true;
 
-  ROS_INFO("[MpcCopyTracker]: initialized, version %s", VERSION);
+  ROS_INFO("[MpcCopyTracker]: initialized");
+
+  return true;
 }
 
 //}
 
 /* //{ activate() */
 
-std::tuple<bool, std::string> MpcCopyTracker::activate(const mrs_msgs::PositionCommand::ConstPtr& last_position_cmd) {
+std::tuple<bool, std::string> MpcCopyTracker::activate(const std::optional<mrs_msgs::TrackerCommand>& last_tracker_cmd) {
 
   std::stringstream ss;
 
@@ -716,42 +821,42 @@ std::tuple<bool, std::string> MpcCopyTracker::activate(const mrs_msgs::PositionC
   MatrixXd mpc_x         = MatrixXd::Zero(_mpc_n_states_, 1);
   MatrixXd mpc_x_heading = MatrixXd::Zero(_mpc_n_states_heading_, 1);
 
-  if (mrs_msgs::PositionCommand::Ptr() != last_position_cmd) {
+  if (last_tracker_cmd) {
 
     // set the initial condition from the last tracker's cmd
 
-    if (last_position_cmd->use_position_horizontal) {
-      mpc_x(0, 0) = last_position_cmd->position.x;
-      mpc_x(4, 0) = last_position_cmd->position.y;
+    if (last_tracker_cmd->use_position_horizontal) {
+      mpc_x(0, 0) = last_tracker_cmd->position.x;
+      mpc_x(4, 0) = last_tracker_cmd->position.y;
     } else {
       mpc_x(0, 0) = uav_state.pose.position.x;
       mpc_x(4, 0) = uav_state.pose.position.y;
     }
 
-    if (last_position_cmd->use_position_vertical) {
-      mpc_x(8, 0) = last_position_cmd->position.z;
+    if (last_tracker_cmd->use_position_vertical) {
+      mpc_x(8, 0) = last_tracker_cmd->position.z;
     } else {
       mpc_x(8, 0) = uav_state.pose.position.z;
     }
 
-    if (last_position_cmd->use_velocity_horizontal) {
-      mpc_x(1, 0) = last_position_cmd->velocity.x;
-      mpc_x(5, 0) = last_position_cmd->velocity.y;
+    if (last_tracker_cmd->use_velocity_horizontal) {
+      mpc_x(1, 0) = last_tracker_cmd->velocity.x;
+      mpc_x(5, 0) = last_tracker_cmd->velocity.y;
     } else {
       mpc_x(1, 0) = uav_state.velocity.linear.x;
       mpc_x(5, 0) = uav_state.velocity.linear.y;
     }
 
-    if (last_position_cmd->use_velocity_vertical) {
-      mpc_x(9, 0) = last_position_cmd->velocity.z;
+    if (last_tracker_cmd->use_velocity_vertical) {
+      mpc_x(9, 0) = last_tracker_cmd->velocity.z;
     } else {
       mpc_x(9, 0) = uav_state.velocity.linear.z;
     }
 
-    if (last_position_cmd->use_acceleration) {
-      mpc_x(2, 0)  = last_position_cmd->acceleration.x;
-      mpc_x(6, 0)  = last_position_cmd->acceleration.y;
-      mpc_x(10, 0) = last_position_cmd->acceleration.z;
+    if (last_tracker_cmd->use_acceleration) {
+      mpc_x(2, 0)  = last_tracker_cmd->acceleration.x;
+      mpc_x(6, 0)  = last_tracker_cmd->acceleration.y;
+      mpc_x(10, 0) = last_tracker_cmd->acceleration.z;
     } else {
       mpc_x(2, 0)  = 0;
       mpc_x(6, 0)  = 0;
@@ -763,11 +868,11 @@ std::tuple<bool, std::string> MpcCopyTracker::activate(const mrs_msgs::PositionC
     mpc_x(7, 0)  = 0;
     mpc_x(11, 0) = 0;
 
-    if (last_position_cmd->use_heading) {
-      mpc_x_heading(0, 0) = last_position_cmd->heading;
-    } else if (last_position_cmd->use_orientation) {
+    if (last_tracker_cmd->use_heading) {
+      mpc_x_heading(0, 0) = last_tracker_cmd->heading;
+    } else if (last_tracker_cmd->use_orientation) {
       try {
-        mpc_x_heading(0, 0) = mrs_lib::AttitudeConverter(last_position_cmd->orientation).getHeading();
+        mpc_x_heading(0, 0) = mrs_lib::AttitudeConverter(last_tracker_cmd->orientation).getHeading();
       }
       catch (...) {
         mpc_x_heading(0, 0) = uav_state_heading;
@@ -776,8 +881,8 @@ std::tuple<bool, std::string> MpcCopyTracker::activate(const mrs_msgs::PositionC
       mpc_x_heading(0, 0) = uav_state_heading;
     }
 
-    if (last_position_cmd->use_heading_rate) {
-      mpc_x_heading(1, 0) = last_position_cmd->heading_rate;
+    if (last_tracker_cmd->use_heading_rate) {
+      mpc_x_heading(1, 0) = last_tracker_cmd->heading_rate;
     } else {
       mpc_x_heading(1, 0) = uav_state.velocity.angular.z;
     }
@@ -825,9 +930,6 @@ std::tuple<bool, std::string> MpcCopyTracker::activate(const mrs_msgs::PositionC
 
   timer_trajectory_tracking_.stop();
 
-  mpc_start_time_  = ros::Time::now();
-  mpc_total_delay_ = 0;
-
   ss << "activated";
   ROS_INFO_STREAM("[MpcCopyTracker]: " << ss.str());
 
@@ -840,13 +942,17 @@ std::tuple<bool, std::string> MpcCopyTracker::activate(const mrs_msgs::PositionC
 
   model_first_iteration_ = true;
 
-  A_ = _A_;
-  B_ = _B_;
+  A_ = _mat_A_;
+  B_ = _mat_B_;
 
-  A_heading_ = _A_heading_;
-  B_heading_ = _B_heading_;
+  A_heading_ = _mat_A_heading_;
+  B_heading_ = _mat_B_heading_;
 
   is_active_ = true;
+
+  if (!mpc_synchronous_) {
+    timer_mpc_iteration_.start();
+  }
 
   return std::tuple(true, ss.str());
 }
@@ -873,6 +979,8 @@ void MpcCopyTracker::deactivate(void) {
   }
 
   ROS_INFO("[MpcCopyTracker]: deactivated");
+
+  timer_mpc_iteration_.stop();
 
   publishDiagnostics();
 }
@@ -936,9 +1044,6 @@ bool MpcCopyTracker::resetStatic(void) {
 
     timer_trajectory_tracking_.stop();
 
-    mpc_start_time_  = ros::Time::now();
-    mpc_total_delay_ = 0;
-
     ROS_INFO("[MpcCopyTracker]: reseted");
   }
 
@@ -954,117 +1059,143 @@ bool MpcCopyTracker::resetStatic(void) {
 
 /* //{ update() */
 
-const mrs_msgs::PositionCommand::ConstPtr MpcCopyTracker::update(const mrs_msgs::UavState::ConstPtr&                         uav_state,
-                                                             [[maybe_unused]] const mrs_msgs::AttitudeCommand::ConstPtr& last_attitude_cmd) {
+std::optional<mrs_msgs::TrackerCommand> MpcCopyTracker::update(const mrs_msgs::UavState& uav_state,
+                                                           [[maybe_unused]] const mrs_uav_managers::Controller::ControlOutput& last_control_output) {
 
-  mrs_lib::Routine profiler_routine = profiler.createRoutine("update");
+  mrs_lib::Routine    profiler_routine = profiler.createRoutine("update");
+  mrs_lib::ScopeTimer timer            = mrs_lib::ScopeTimer("MpcCopyTracker::update", common_handlers_->scope_timer.logger, common_handlers_->scope_timer.enabled);
 
-  mrs_lib::set_mutexed(mutex_uav_state_, *uav_state, uav_state_);
+  auto old_uav_state = mrs_lib::get_mutexed(mutex_uav_state_, uav_state_);
+
+  // calculate dt
+  double dt = (uav_state.header.stamp - old_uav_state.header.stamp).toSec();
+
+  // save the uav state
+  mrs_lib::set_mutexed(mutex_uav_state_, uav_state, uav_state_);
 
   {
     std::scoped_lock lock(mutex_uav_state_);
 
-    uav_state_ = *uav_state;
     uav_x_     = uav_state_.pose.position.x;
     uav_y_     = uav_state_.pose.position.y;
     uav_z_     = uav_state_.pose.position.z;
-
-    //got_uav_state_ = true;
   }
+
+  if (dt > 0) {
+
+    double rate = 1.0 / dt;
+
+    update_rate_ = 0.9 * update_rate_ + 0.1 * rate;
+
+    if (mpc_synchronous_ && (update_rate_ > _mpc_synchronous_rate_limit_)) {
+      mpc_synchronous_ = false;
+      ROS_INFO("[MpcCopyTracker]: detecting high update date (%.1f Hz > %.1f Hz), switching to asynchronous mode.", rate, _mpc_synchronous_rate_limit_);
+      if (is_active_) {
+        timer_mpc_iteration_.start();
+      }
+    } else if (!mpc_synchronous_ && (update_rate_ <= _mpc_synchronous_rate_limit_)) {
+      mpc_synchronous_ = true;
+      ROS_INFO("[MpcCopyTracker]: detecting low update rate (%.1f Hz < %.1f Hz), switching to synchronous mode.", rate, _mpc_synchronous_rate_limit_);
+      timer_mpc_iteration_.stop();
+    }
+  }
+
   // up to this part the update() method is evaluated even when the tracker is not active
   if (!is_active_) {
-    return mrs_msgs::PositionCommand::Ptr();
+    return {};
   }
 
-  mrs_msgs::PositionCommand position_cmd;
+  mrs_msgs::TrackerCommand tracker_cmd;
+
+  // added by us: ----------
   // set the header
-  position_cmd.header.stamp    = uav_state->header.stamp;
-  position_cmd.header.frame_id = uav_state->header.frame_id;
+  tracker_cmd.header.stamp    = uav_state.header.stamp;
+  tracker_cmd.header.frame_id = uav_state.header.frame_id;
   if (starting_bool_) {
     // stay in place
-    goal_x_= uav_state->pose.position.x;
-    goal_y_= uav_state->pose.position.y;
-    goal_z_= uav_state->pose.position.z;
+    goal_x_= uav_state.pose.position.x;
+    goal_y_= uav_state.pose.position.y;
+    goal_z_= uav_state.pose.position.z;
     // set heading based on current odom
     try {
-      goal_heading_ = mrs_lib::AttitudeConverter(uav_state->pose.orientation).getHeading();
-      position_cmd.use_heading = 1;
+      goal_heading_ = mrs_lib::AttitudeConverter(uav_state.pose.orientation).getHeading();
+      tracker_cmd.use_heading = 1;
     }
     catch (...) {
-      position_cmd.use_heading = 0;
+      tracker_cmd.use_heading = 0;
       ROS_ERROR_THROTTLE(1.0, "[MpcCopyTracker]: could not calculate the current UAV heading");
     }
 
     starting_bool_=false;
-  return mrs_msgs::PositionCommand::ConstPtr(new mrs_msgs::PositionCommand(position_cmd));
-}
+    return {tracker_cmd};//TODO: old code: return mrs_msgs::PositionCommand::ConstPtr(new mrs_msgs::PositionCommand(tracker_cmd));
+  }
+  //------------
 
-  if (!mpc_computed_ || mpc_result_invalid_) {
+  if (!mpc_synchronous_ && (!mpc_computed_ || mpc_result_invalid_)) {
 
     ROS_WARN_THROTTLE(0.1, "[MpcCopyTracker]: MPC not ready, returning current odom as the command");
 
     // set the header
-    position_cmd.header.stamp    = uav_state->header.stamp;
-    position_cmd.header.frame_id = uav_state->header.frame_id;
+    tracker_cmd.header.stamp    = uav_state.header.stamp;
+    tracker_cmd.header.frame_id = uav_state.header.frame_id;
 
     // set positions from odom
-    position_cmd.position.x              = uav_state->pose.position.x;
-    position_cmd.position.y              = uav_state->pose.position.y;
-    position_cmd.position.z              = uav_state->pose.position.z;
-    position_cmd.use_position_vertical   = 1;
-    position_cmd.use_position_horizontal = 1;
+    tracker_cmd.position.x              = uav_state.pose.position.x;
+    tracker_cmd.position.y              = uav_state.pose.position.y;
+    tracker_cmd.position.z              = uav_state.pose.position.z;
+    tracker_cmd.use_position_vertical   = 1;
+    tracker_cmd.use_position_horizontal = 1;
 
     // set velocities from odom
-    position_cmd.velocity.x              = uav_state->velocity.linear.x;
-    position_cmd.velocity.y              = uav_state->velocity.linear.y;
-    position_cmd.velocity.z              = uav_state->velocity.linear.z;
-    position_cmd.use_velocity_vertical   = 1;
-    position_cmd.use_velocity_horizontal = 1;
+    tracker_cmd.velocity.x              = uav_state.velocity.linear.x;
+    tracker_cmd.velocity.y              = uav_state.velocity.linear.y;
+    tracker_cmd.velocity.z              = uav_state.velocity.linear.z;
+    tracker_cmd.use_velocity_vertical   = 1;
+    tracker_cmd.use_velocity_horizontal = 1;
 
     // set zero accelerations
-    position_cmd.acceleration.x   = 0;
-    position_cmd.acceleration.y   = 0;
-    position_cmd.acceleration.z   = 0;
-    position_cmd.use_acceleration = 1;
+    tracker_cmd.acceleration.x   = 0;
+    tracker_cmd.acceleration.y   = 0;
+    tracker_cmd.acceleration.z   = 0;
+    tracker_cmd.use_acceleration = 1;
 
     try {
-      position_cmd.heading     = mrs_lib::AttitudeConverter(uav_state->pose.orientation).getHeading();
-      position_cmd.use_heading = 1;
+      tracker_cmd.heading     = mrs_lib::AttitudeConverter(uav_state.pose.orientation).getHeading();
+      tracker_cmd.use_heading = 1;
     }
     catch (...) {
-      position_cmd.use_heading = 0;
+      tracker_cmd.use_heading = 0;
       ROS_WARN_THROTTLE(1.0, "[MpcCopyTracker]: could not calculate the current UAV heading");
     }
 
     // set zero jerk
-    position_cmd.jerk.x = 0;
-    position_cmd.jerk.y = 0;
-    position_cmd.jerk.z = 0;
+    tracker_cmd.jerk.x = 0;
+    tracker_cmd.jerk.y = 0;
+    tracker_cmd.jerk.z = 0;
 
     try {
-      position_cmd.heading_rate     = mrs_lib::AttitudeConverter(uav_state->pose.orientation).getHeadingRate(uav_state->velocity.angular);
-      position_cmd.use_heading_rate = 1;
+      tracker_cmd.heading_rate     = mrs_lib::AttitudeConverter(uav_state.pose.orientation).getHeadingRate(uav_state.velocity.angular);
+      tracker_cmd.use_heading_rate = 1;
     }
     catch (...) {
-      position_cmd.use_heading_rate = 0;
+      tracker_cmd.use_heading_rate = 0;
       ROS_WARN_THROTTLE(1.0, "[MpcCopyTracker]: could not calculate the current UAV heading rate");
     }
 
-    return mrs_msgs::PositionCommand::ConstPtr(new mrs_msgs::PositionCommand(position_cmd));
+    return {tracker_cmd};
   }
 
+  // added by us: ---------
   // Prepare the goal_pose_msg
   mrs_msgs::ReferenceStamped goal_pose_msg;
   // goal_pose_msg.header.stamp          = ros::Time::now();
   // goal_pose_msg.header.frame_id  = "fcu_untilted";
-  goal_pose_msg.header.stamp    = uav_state->header.stamp;
-  goal_pose_msg.header.frame_id = uav_state->header.frame_id;
+  goal_pose_msg.header.stamp    = uav_state.header.stamp;
+  goal_pose_msg.header.frame_id = uav_state.header.frame_id;
   goal_pose_msg.reference.position.x  = goal_x_;
   goal_pose_msg.reference.position.y  = goal_y_;
   goal_pose_msg.reference.position.z  = goal_z_;
   goal_pose_msg.reference.heading = goal_heading_;
-
-
   // Publishers:
   try {
     goal_pose_publisher_.publish(goal_pose_msg);
@@ -1072,15 +1203,27 @@ const mrs_msgs::PositionCommand::ConstPtr MpcCopyTracker::update(const mrs_msgs:
   catch (...) {
     ROS_ERROR("[MpcCopyTracker]: Exception caught during publishing topic %s.", goal_pose_publisher_.getTopic().c_str());
   }
+  //--------------
 
+  ros::TimerEvent event;
 
+  if (mpc_synchronous_) {
+    ROS_DEBUG_THROTTLE(1.0, "[MpcCopyTracker]: running in SYNCHRONOUS mode");
+    timerMPC(event);
+  } else {
+    ROS_DEBUG_THROTTLE(1.0, "[MpcCopyTracker]: running in ASYNCHRONOUS mode");
+  }
 
-
-  iterateModel();
+  if (dt > 0) {
+    iterateModel(dt);
+  } else {
+    ROS_WARN_THROTTLE(1.0, "[MpcCopyTracker]: dt !> 0, not iterating the model");
+  }
 
   auto [mpc_x, mpc_x_heading] = mrs_lib::get_mutexed(mutex_mpc_x_, mpc_x_, mpc_x_heading_);
+  auto prediction_full_state  = mrs_lib::get_mutexed(mutex_prediction_full_state_, prediction_full_state_);
 
-  // chech wheather all outputs are finite
+  // check whether all outputs are finite
   bool arefinite = true;
   for (int i = 0; i < 12; i++) {
     if (!std::isfinite(mpc_x(i, 0))) {
@@ -1091,43 +1234,36 @@ const mrs_msgs::PositionCommand::ConstPtr MpcCopyTracker::update(const mrs_msgs:
   if (arefinite) {
 
     // set the desired states base on the result of the mpc
-    position_cmd.position.x     = mpc_x(0, 0);
-    position_cmd.velocity.x     = mpc_x(1, 0);
-    position_cmd.acceleration.x = mpc_x(2, 0);
-    position_cmd.jerk.x         = mpc_x(3, 0);
+    tracker_cmd.position.x     = mpc_x(0, 0);
+    tracker_cmd.velocity.x     = mpc_x(1, 0);
+    tracker_cmd.acceleration.x = mpc_x(2, 0);
+    tracker_cmd.jerk.x         = mpc_x(3, 0);
 
-    position_cmd.position.y     = mpc_x(4, 0);
-    position_cmd.velocity.y     = mpc_x(5, 0);
-    position_cmd.acceleration.y = mpc_x(6, 0);
-    position_cmd.jerk.y         = mpc_x(7, 0);
+    tracker_cmd.position.y     = mpc_x(4, 0);
+    tracker_cmd.velocity.y     = mpc_x(5, 0);
+    tracker_cmd.acceleration.y = mpc_x(6, 0);
+    tracker_cmd.jerk.y         = mpc_x(7, 0);
 
-    position_cmd.position.z     = mpc_x(8, 0);
-    position_cmd.velocity.z     = mpc_x(9, 0);
-    position_cmd.acceleration.z = mpc_x(10, 0);
-    position_cmd.jerk.z         = mpc_x(11, 0);
+    tracker_cmd.position.z     = mpc_x(8, 0);
+    tracker_cmd.velocity.z     = mpc_x(9, 0);
+    tracker_cmd.acceleration.z = mpc_x(10, 0);
+    tracker_cmd.jerk.z         = mpc_x(11, 0);
 
-    position_cmd.use_position_vertical   = 1;
-    position_cmd.use_position_horizontal = 1;
-    position_cmd.use_velocity_vertical   = 1;
-    position_cmd.use_velocity_horizontal = 1;
-    position_cmd.use_acceleration        = 1;
-    position_cmd.use_jerk                = 1;
+    tracker_cmd.full_state_prediction = prediction_full_state;
+
+    tracker_cmd.use_position_vertical     = 1;
+    tracker_cmd.use_position_horizontal   = 1;
+    tracker_cmd.use_velocity_vertical     = 1;
+    tracker_cmd.use_velocity_horizontal   = 1;
+    tracker_cmd.use_acceleration          = 1;
+    tracker_cmd.use_jerk                  = 1;
+    tracker_cmd.use_full_state_prediction = 1;
 
   } else {
 
-    ROS_ERROR_THROTTLE(1.0, "[MpcCopyTracker]: MPC outputs are not finite!");
+    ROS_ERROR_THROTTLE(1.0, "[MpcCopyTracker]: MPC translation outputs are not finite!");
 
-    position_cmd.velocity.x     = 0;
-    position_cmd.acceleration.x = 0;
-    position_cmd.jerk.x         = 0;
-
-    position_cmd.velocity.y     = 0;
-    position_cmd.acceleration.y = 0;
-    position_cmd.jerk.y         = 0;
-
-    position_cmd.velocity.z     = 0;
-    position_cmd.acceleration.z = 0;
-    position_cmd.jerk.z         = 0;
+    return {};
   }
 
   bool heading_finite = true;
@@ -1139,28 +1275,29 @@ const mrs_msgs::PositionCommand::ConstPtr MpcCopyTracker::update(const mrs_msgs:
 
   if (heading_finite) {
 
-    position_cmd.heading              = mpc_x_heading(0, 0);
-    position_cmd.heading_rate         = mpc_x_heading(1, 0);
-    position_cmd.heading_acceleration = mpc_x_heading(2, 0);
-    position_cmd.heading_jerk         = mpc_x_heading(3, 0);
+    tracker_cmd.heading              = mpc_x_heading(0, 0);
+    tracker_cmd.heading_rate         = mpc_x_heading(1, 0);
+    tracker_cmd.heading_acceleration = mpc_x_heading(2, 0);
+    tracker_cmd.heading_jerk         = mpc_x_heading(3, 0);
 
-    position_cmd.use_heading              = 1;
-    position_cmd.use_heading_rate         = 1;
-    position_cmd.use_heading_acceleration = 1;
-    position_cmd.use_heading_jerk         = 1;
+    tracker_cmd.use_heading              = 1;
+    tracker_cmd.use_heading_rate         = 1;
+    tracker_cmd.use_heading_acceleration = 1;
+    tracker_cmd.use_heading_jerk         = 1;
 
   } else {
 
-    ROS_ERROR_THROTTLE(1.0, "[MpcCopyTracker]: heading output is not finite!");
+    ROS_ERROR_THROTTLE(1.0, "[MpcCopyTracker]: MPC heading output is not finite!");
 
-    position_cmd.heading_rate     = 0;
-    position_cmd.use_heading_rate = 1;
+    return {};
   }
 
   // set the header
-  position_cmd.header.stamp    = uav_state->header.stamp;
-  position_cmd.header.frame_id = uav_state->header.frame_id;
+  tracker_cmd.header.stamp    = uav_state.header.stamp;
+  tracker_cmd.header.frame_id = uav_state.header.frame_id;
 
+
+  // added by us: ------------
   // Prepare the uav_posistion_out_ msg:
   uav_posistion_out_.stamp = uav_state_.header.stamp; //ros::Time::now();
   uav_posistion_out_.uav_name = _uav_name_;
@@ -1178,8 +1315,7 @@ const mrs_msgs::PositionCommand::ConstPtr MpcCopyTracker::update(const mrs_msgs:
     ROS_ERROR("[MpcCopyTracker]: Exception caught during publishing topic %s.", avoidance_pos_publisher_.getTopic().c_str());
   }
 
-
-  // Diagnostics Publisher - distance to collisions:
+   // Diagnostics Publisher - distance to collisions:
   if(_enable_diagnostics_pub_){
     /*
     - compute relevant info for: collision avoidance.
@@ -1237,11 +1373,6 @@ const mrs_msgs::PositionCommand::ConstPtr MpcCopyTracker::update(const mrs_msgs:
 
   }
   // ------------------------
-
-
-
-
-
   // publishing here can leas to forgotten or or additionaldata in the parts message. publishing is now done right after the message is filled.
   // ComputationalTime_msg_.stamp = uav_state_.header.stamp;
   // try {
@@ -1257,13 +1388,11 @@ const mrs_msgs::PositionCommand::ConstPtr MpcCopyTracker::update(const mrs_msgs:
   // TODO maybe then better to place these in the try catch statement right after they are published.
   //  - Predictions computed in trajectory_prediction_general() and used in DERG_computation():
   uav_posistion_out_.points.clear();
-
-
-
+  // ---------------
   // u have to return a position command
   // can set the jerk to 0
-  return mrs_msgs::PositionCommand::ConstPtr(new mrs_msgs::PositionCommand(position_cmd));
-}
+  return {tracker_cmd};
+}  // namespace mpc_copy_tracker
 
 //}
 
@@ -1327,12 +1456,14 @@ const mrs_msgs::TrackerStatus MpcCopyTracker::getStatus() {
 
     debug_trajectory_point.pose.orientation = mrs_lib::AttitudeConverter(0, 0, (*des_heading_whole_trajectory_)(trajectory_tracking_idx));
 
-    try {
-      publisher_current_trajectory_point_.publish(debug_trajectory_point);
-    }
-    catch (...) {
-      ROS_ERROR("[MpcCopyTracker]: exception caught during publishing topic %s", publisher_current_trajectory_point_.getTopic().c_str());
-    }
+    ph_current_trajectory_point_.publish(debug_trajectory_point);
+    // TODO: check why old code was inside try catch statement
+    // try {
+    //   ph_current_trajectory_point_.publish(debug_trajectory_point);
+    // }
+    // catch (...) {
+    //   ROS_ERROR("[MpcCopyTracker]: exception caught during publishing topic %s", ph_current_trajectory_point_.getTopic().c_str());
+    // }
   }
 
   return tracker_status;
@@ -1367,7 +1498,7 @@ const std_srvs::SetBoolResponse::ConstPtr MpcCopyTracker::enableCallbacks(const 
 
 /* switchOdometrySource() //{ */
 
-const std_srvs::TriggerResponse::ConstPtr MpcCopyTracker::switchOdometrySource(const mrs_msgs::UavState::ConstPtr& new_uav_state) {
+const std_srvs::TriggerResponse::ConstPtr MpcCopyTracker::switchOdometrySource(const mrs_msgs::UavState& new_uav_state) {
 
   odometry_reset_in_progress_ = true;
   mpc_result_invalid_         = true;
@@ -1379,9 +1510,9 @@ const std_srvs::TriggerResponse::ConstPtr MpcCopyTracker::switchOdometrySource(c
       "[MpcCopyTracker]: start of odmetry reset, curent state [x: %.2f, y: %.2f, z: %.2f] [x_d: %.2f, y_d: %.2f, z_d: %.2f] [x_dd: %.2f, y_dd: %.2f, z_dd: "
       "%.2f], "
       "new odom [x: %.2f, y: %.2f, z: %.2f] [x_d: %.2f, y_d: %.2f, z_d: %.2f] [x_dd: %.2f, y_dd: %.2f, z_dd: %.2f]",
-      x(0, 0), x(4, 0), x(8, 0), x(1, 0), x(5, 0), x(9, 0), x(2, 0), x(6, 0), x(10, 0), new_uav_state->pose.position.x, new_uav_state->pose.position.y,
-      new_uav_state->pose.position.z, new_uav_state->velocity.linear.x, new_uav_state->velocity.linear.y, new_uav_state->velocity.linear.z,
-      new_uav_state->acceleration.linear.x, new_uav_state->acceleration.linear.y, new_uav_state->acceleration.linear.z);
+      x(0, 0), x(4, 0), x(8, 0), x(1, 0), x(5, 0), x(9, 0), x(2, 0), x(6, 0), x(10, 0), new_uav_state.pose.position.x, new_uav_state.pose.position.y,
+      new_uav_state.pose.position.z, new_uav_state.velocity.linear.x, new_uav_state.velocity.linear.y, new_uav_state.velocity.linear.z,
+      new_uav_state.acceleration.linear.x, new_uav_state.acceleration.linear.y, new_uav_state.acceleration.linear.z);
 
   timer_mpc_iteration_.stop();
   ROS_INFO("[MpcCopyTracker]: mpc timer stopped");
@@ -1391,6 +1522,7 @@ const std_srvs::TriggerResponse::ConstPtr MpcCopyTracker::switchOdometrySource(c
     ROS_DEBUG("[MpcCopyTracker]: the mpc is in the middle of an iteration, waiting for it to finish");
     ros::Duration wait(0.001);
     wait.sleep();
+
     if (!mpc_timer_running_) {
       ROS_DEBUG("[ControlManager]: mpc timer finished");
       break;
@@ -1398,12 +1530,11 @@ const std_srvs::TriggerResponse::ConstPtr MpcCopyTracker::switchOdometrySource(c
   }
 
   // | --------- recalculate the goal to new coordinates -------- |
-  double dx, dy, dz, dheading;
-  double dvz, dvheading;
 
-  double old_heading, new_heading;
+  double old_heading  = 0;
+  double new_heading  = 0;
   bool   got_headings = true;
-
+  // TODO: why LineTracker and not MpcCopyTracker?
   try {
     old_heading = mrs_lib::AttitudeConverter(uav_state.pose.orientation).getHeading();
   }
@@ -1413,7 +1544,7 @@ const std_srvs::TriggerResponse::ConstPtr MpcCopyTracker::switchOdometrySource(c
   }
 
   try {
-    new_heading = mrs_lib::AttitudeConverter(new_uav_state->pose.orientation).getHeading();
+    new_heading = mrs_lib::AttitudeConverter(new_uav_state.pose.orientation).getHeading();
   }
   catch (...) {
     ROS_ERROR_THROTTLE(1.0, "[LineTracker]: could not calculate the new UAV heading");
@@ -1430,13 +1561,10 @@ const std_srvs::TriggerResponse::ConstPtr MpcCopyTracker::switchOdometrySource(c
   }
 
   // calculate the difference of position
-  dx       = new_uav_state->pose.position.x - uav_state_.pose.position.x;
-  dy       = new_uav_state->pose.position.y - uav_state_.pose.position.y;
-  dz       = new_uav_state->pose.position.z - uav_state_.pose.position.z;
-  dheading = new_heading - old_heading;
-
-  // calculate the difference in heading
-  dvheading = new_uav_state->velocity.angular.z - uav_state_.velocity.angular.z;
+  double dx       = new_uav_state.pose.position.x - uav_state_.pose.position.x;
+  double dy       = new_uav_state.pose.position.y - uav_state_.pose.position.y;
+  double dz       = new_uav_state.pose.position.z - uav_state_.pose.position.z;
+  double dheading = new_heading - old_heading;
 
   ROS_INFO("[MpcCopyTracker]: dx %f dy %f dz %f dheading %f", dx, dy, dz, dheading);
 
@@ -1450,8 +1578,8 @@ const std_srvs::TriggerResponse::ConstPtr MpcCopyTracker::switchOdometrySource(c
         Eigen::Vector2d temp_vec((*des_x_whole_trajectory_)(i)-uav_state_.pose.position.x, (*des_y_whole_trajectory_)(i)-uav_state_.pose.position.y);
         temp_vec = Eigen::Rotation2D<double>(dheading).toRotationMatrix() * temp_vec;
 
-        (*des_x_whole_trajectory_)(i) = new_uav_state->pose.position.x + temp_vec[0];
-        (*des_y_whole_trajectory_)(i) = new_uav_state->pose.position.y + temp_vec[1];
+        (*des_x_whole_trajectory_)(i) = new_uav_state.pose.position.x + temp_vec[0];
+        (*des_y_whole_trajectory_)(i) = new_uav_state.pose.position.y + temp_vec[1];
         (*des_z_whole_trajectory_)(i) += dz;
         (*des_heading_whole_trajectory_)(i) += dheading;
       }
@@ -1462,27 +1590,25 @@ const std_srvs::TriggerResponse::ConstPtr MpcCopyTracker::switchOdometrySource(c
       Eigen::Vector2d temp_vec(des_x_trajectory_(i) - uav_state_.pose.position.x, des_y_trajectory_(i) - uav_state_.pose.position.y);
       temp_vec = Eigen::Rotation2D<double>(dheading).toRotationMatrix() * temp_vec;
 
-      des_x_trajectory_(i, 0) = new_uav_state->pose.position.x + temp_vec[0];
-      des_y_trajectory_(i, 0) = new_uav_state->pose.position.y + temp_vec[1];
+      des_x_trajectory_(i, 0) = new_uav_state.pose.position.x + temp_vec[0];
+      des_y_trajectory_(i, 0) = new_uav_state.pose.position.y + temp_vec[1];
       des_z_trajectory_(i, 0) += dz;
       des_heading_trajectory_(i, 0) += dheading;
     }
-
-    dvz = new_uav_state->velocity.linear.z - uav_state_.velocity.linear.z;
 
     // update the position
     {
       Eigen::Vector2d temp_vec(mpc_x_(0, 0) - uav_state_.pose.position.x, mpc_x_(4, 0) - uav_state_.pose.position.y);
       temp_vec     = Eigen::Rotation2D<double>(dheading).toRotationMatrix() * temp_vec;
-      mpc_x_(0, 0) = new_uav_state->pose.position.x + temp_vec[0];
-      mpc_x_(4, 0) = new_uav_state->pose.position.y + temp_vec[1];
+      mpc_x_(0, 0) = new_uav_state.pose.position.x + temp_vec[0];
+      mpc_x_(4, 0) = new_uav_state.pose.position.y + temp_vec[1];
       mpc_x_(8, 0) += dz;
     }
 
     // update the velocity
     {
-      mpc_x_(1, 0) = new_uav_state->velocity.linear.x;
-      mpc_x_(5, 0) = new_uav_state->velocity.linear.y;
+      mpc_x_(1, 0) = new_uav_state.velocity.linear.x;
+      mpc_x_(5, 0) = new_uav_state.velocity.linear.y;
       // we leave the z velocity as it was in the original frame
     }
 
@@ -1495,7 +1621,7 @@ const std_srvs::TriggerResponse::ConstPtr MpcCopyTracker::switchOdometrySource(c
 
     // update the heading and its derivative
     mpc_x_heading_(0, 0) += dheading;
-    mpc_x_heading_(1, 0) = new_uav_state->velocity.angular.x;
+    mpc_x_heading_(1, 0) = new_uav_state.velocity.angular.x;
   }
 
   ROS_INFO(
@@ -1504,7 +1630,10 @@ const std_srvs::TriggerResponse::ConstPtr MpcCopyTracker::switchOdometrySource(c
       x(0, 0), x(4, 0), x(8, 0), x(1, 0), x(5, 0), x(9, 0), x(2, 0), x(6, 0), x(10, 0));
 
   ROS_INFO("[MpcCopyTracker]: starting the MPC timer");
-  timer_mpc_iteration_.start();
+
+  if (!mpc_synchronous_) {
+    timer_mpc_iteration_.start();
+  }
 
   odometry_reset_in_progress_ = false;
 
@@ -1610,20 +1739,26 @@ const mrs_msgs::DynamicsConstraintsSrvResponse::ConstPtr MpcCopyTracker::setCons
 
   mrs_lib::set_mutexed(mutex_constraints_, constraints->constraints, constraints_);
 
-  got_constraints_ = true;
-
   // directly updated the speeds in the constraints
   // the reset needs to wait for manageConstraints()
   {
     std::scoped_lock lock(mutex_constraints_filtered_);
 
-    auto constraints = mrs_lib::get_mutexed(mutex_constraints_, constraints_);
+    // important! this needs to be done to initialize the full struct
+    if (!got_constraints_) {
 
-    constraints_filtered_.horizontal_speed          = constraints.horizontal_speed;
-    constraints_filtered_.vertical_ascending_speed  = constraints.vertical_ascending_speed;
-    constraints_filtered_.vertical_descending_speed = constraints.vertical_descending_speed;
-    constraints_filtered_.heading_speed             = constraints.heading_speed;
+      constraints_filtered_ = constraints->constraints;
+
+    } else {
+
+      constraints_filtered_.horizontal_speed          = constraints->constraints.horizontal_speed;
+      constraints_filtered_.vertical_ascending_speed  = constraints->constraints.vertical_ascending_speed;
+      constraints_filtered_.vertical_descending_speed = constraints->constraints.vertical_descending_speed;
+      constraints_filtered_.heading_speed             = constraints->constraints.heading_speed;
+    }
   }
+
+  got_constraints_ = true;
 
   all_constraints_set_ = false;
 
@@ -1662,9 +1797,35 @@ const mrs_msgs::ReferenceSrvResponse::ConstPtr MpcCopyTracker::setReference(cons
 
 /* //{ setVelocityReference() */
 
-const mrs_msgs::VelocityReferenceSrvResponse::ConstPtr MpcCopyTracker::setVelocityReference([
-    [maybe_unused]] const mrs_msgs::VelocityReferenceSrvRequest::ConstPtr &cmd) {
-  return mrs_msgs::VelocityReferenceSrvResponse::Ptr();
+const mrs_msgs::VelocityReferenceSrvResponse::ConstPtr MpcCopyTracker::setVelocityReference(const mrs_msgs::VelocityReferenceSrvRequest::ConstPtr& cmd) {
+
+  if (!is_initialized_) {
+    return mrs_msgs::VelocityReferenceSrvResponse::Ptr();
+  }
+
+  {
+    std::scoped_lock lock(mutex_velocity_reference_);
+
+    velocity_reference_time_ = ros::Time::now();
+
+    velocity_reference_ = cmd->reference;
+  }
+
+  if (!velocity_tracking_active_) {
+
+    ROS_INFO("[MpcCopyTracker]: starting velocity tracking timer");
+
+    timer_velocity_tracking_.stop();
+    timer_velocity_tracking_.start();
+
+    velocity_tracking_active_ = true;
+  }
+
+  mrs_msgs::VelocityReferenceSrvResponse response;
+  response.success = true;
+  response.message = "reference set";
+
+  return mrs_msgs::VelocityReferenceSrvResponse::ConstPtr(new mrs_msgs::VelocityReferenceSrvResponse(response));
 }
 
 //}
@@ -1692,17 +1853,19 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr MpcCopyTracker::setTraj
 
 /* //{ callbackOtherMavTrajectory() */
 
-void MpcCopyTracker::callbackOtherMavTrajectory(mrs_lib::SubscribeHandler<mrs_msgs::FutureTrajectory>& sh_ptr) {
+void MpcCopyTracker::callbackOtherMavTrajectory(const mrs_msgs::FutureTrajectory::ConstPtr msg) {
 
   if (!is_initialized_) {
     return;
   }
 
-  mrs_lib::Routine profiler_routine = profiler.createRoutine("callbackOtherMavTrajectory");
+  mrs_lib::Routine    profiler_routine = profiler.createRoutine("callbackOtherMavTrajectory");
+  mrs_lib::ScopeTimer timer =
+      mrs_lib::ScopeTimer("MpcCopyTracker::callbackOtherMavTrajectory", common_handlers_->scope_timer.logger, common_handlers_->scope_timer.enabled);
 
   auto uav_state = mrs_lib::get_mutexed(mutex_uav_state_, uav_state_);
 
-  mrs_msgs::FutureTrajectory trajectory = *sh_ptr.getMsg();
+  mrs_msgs::FutureTrajectory trajectory = *msg;
 
   // the times might not be synchronized, so just remember the time of receiving it
   trajectory.stamp = ros::Time::now();
@@ -1759,13 +1922,15 @@ void MpcCopyTracker::callbackOtherMavTrajectory(mrs_lib::SubscribeHandler<mrs_ms
 
 /* //{ callbackOtherMavDiagnostics() */
 
-void MpcCopyTracker::callbackOtherMavDiagnostics(mrs_lib::SubscribeHandler<mrs_msgs::MpcTrackerDiagnostics>& sh_ptr) {
+void MpcCopyTracker::callbackOtherMavDiagnostics(const mrs_msgs::MpcTrackerDiagnostics::ConstPtr msg) {
 
-  mrs_lib::Routine profiler_routine = profiler.createRoutine("callbackOtherMavDiagnostics");
+  mrs_lib::Routine    profiler_routine = profiler.createRoutine("callbackOtherMavDiagnostics");
+  mrs_lib::ScopeTimer timer =
+      mrs_lib::ScopeTimer("MpcCopyTracker::callbackOtherMavDiagnostics", common_handlers_->scope_timer.logger, common_handlers_->scope_timer.enabled);
 
   std::scoped_lock lock(mutex_other_uav_diagnostics_);
 
-  mrs_msgs::MpcTrackerDiagnostics diagnostics = *sh_ptr.getMsg();
+  mrs_msgs::MpcTrackerDiagnostics diagnostics = *msg;
 
   // fill in the current time
   // the other uav's time might not be synchronized with ours
@@ -1818,6 +1983,7 @@ bool MpcCopyTracker::callbackWiggle(std_srvs::SetBool::Request& req, std_srvs::S
   return true;
 }
 
+//}
 
 void MpcCopyTracker::callbackOtherUavPosition(const mrs_msgs::FutureTrajectoryConstPtr& msg) {
   mrs_lib::Routine profiler_routine = profiler.createRoutine("callbackOtherUavPosition");
@@ -1849,9 +2015,10 @@ void MpcCopyTracker::dynamicReconfigureCallback(trackers_brubotics::mpc_copy_tra
 
 /* //{ checkCollision() */
 
-double MpcCopyTracker::checkCollision(const double ax, const double ay, const double az, const double bx, const double by, const double bz) {
+bool MpcCopyTracker::checkCollision(const double ax, const double ay, const double az, const double bx, const double by, const double bz) {
 
-  if (mrs_lib::geometry::dist(vec2_t(ax, ay), vec2_t(bx, by)) < _avoidance_radius_threshold_ && fabs(az - bz) < _avoidance_height_threshold_) {
+  if (mrs_lib::geometry::dist(vec2_t(ax, ay), vec2_t(bx, by)) < _avoidance_radius_threshold_ && fabs(az - bz) < _avoidance_z_threshold_) {
+
     return true;
 
   } else {
@@ -1864,9 +2031,10 @@ double MpcCopyTracker::checkCollision(const double ax, const double ay, const do
 
 /* //{ checkCollisionInflated() */
 
-double MpcCopyTracker::checkCollisionInflated(const double ax, const double ay, const double az, const double bx, const double by, const double bz) {
+bool MpcCopyTracker::checkCollisionInflated(const double ax, const double ay, const double az, const double bx, const double by, const double bz) {
 
-  if (mrs_lib::geometry::dist(vec2_t(ax, ay), vec2_t(bx, by)) < _avoidance_radius_threshold_ + 1.0 && fabs(az - bz) < _avoidance_height_threshold_ + 1.0) {
+  if (mrs_lib::geometry::dist(vec2_t(ax, ay), vec2_t(bx, by)) < _avoidance_radius_threshold_ + 1.0 && fabs(az - bz) < _avoidance_z_threshold_ + 1.0) {
+
     return true;
 
   } else {
@@ -1887,15 +2055,9 @@ double MpcCopyTracker::checkTrajectoryForCollisions(int& first_collision_index) 
   first_collision_index = INT_MAX;
   avoiding_collision_   = false;
 
-  // This variable is used for collision avoidance priority swapping, only the first detected collision is considered for priority swap, subsequent
-  // collisons are irrelevant
-  bool first_collision = true;
-
   std::map<std::string, mrs_msgs::FutureTrajectory>::iterator u = other_uav_avoidance_trajectories_.begin();
 
   while (u != other_uav_avoidance_trajectories_.end()) {
-
-    first_collision = true;
 
     // is the other's trajectory fresh enought?
     if ((ros::Time::now() - u->second.stamp).toSec() < _collision_trajectory_timeout_) {
@@ -1917,7 +2079,7 @@ double MpcCopyTracker::checkTrajectoryForCollisions(int& first_collision_index) 
 
             // we should be avoiding
             avoiding_collision_      = true;
-            double tmp_safe_altitude = u->second.points[v].z + _avoidance_height_correction_;
+            double tmp_safe_altitude = u->second.points[v].z + _avoidance_z_correction_;
 
             if (tmp_safe_altitude > collision_free_altitude_ && v <= _avoidance_collision_start_climbing_) {
               collision_free_altitude_ = tmp_safe_altitude;
@@ -1928,7 +2090,6 @@ double MpcCopyTracker::checkTrajectoryForCollisions(int& first_collision_index) 
           } else {
             // the other uav should avoid us
             ROS_WARN_STREAM_THROTTLE(1, "[MpcCopyTracker]: detected collision with uav" << other_uav_priority << ", not avoiding (my priority is higher)");
-            first_collision = false;
           }
         }
 
@@ -1944,15 +2105,18 @@ double MpcCopyTracker::checkTrajectoryForCollisions(int& first_collision_index) 
     }
     u++;
   }
-
   if (!avoiding_collision_) {
 
+    auto dt1 = mrs_lib::get_mutexed(mutex_dt1_, dt1_);
+
     // we are not avoiding any collisions, so we slowly reduce the collision avoidance offset to return to normal flight
-    collision_free_altitude_ -= 0.02;
+    collision_free_altitude_ -= 2.0 / (1.0 / dt1);
 
-    if (collision_free_altitude_ < common_handlers_->safety_area.getMinHeight()) {
+    double safety_area_min_z = common_handlers_->safety_area.getMinZ("");
 
-      collision_free_altitude_ = common_handlers_->safety_area.getMinHeight();
+    if (collision_free_altitude_ < safety_area_min_z) {
+
+      collision_free_altitude_ = safety_area_min_z;
     }
   }
 
@@ -1968,6 +2132,8 @@ double MpcCopyTracker::checkTrajectoryForCollisions(int& first_collision_index) 
 std::tuple<MatrixXd, MatrixXd> MpcCopyTracker::filterReferenceXY(const VectorXd& des_x_trajectory, const VectorXd& des_y_trajectory, double max_speed_x,
                                                              double max_speed_y) {
 
+  auto dt1 = mrs_lib::get_mutexed(mutex_dt1_, dt1_);
+
   auto mpc_x         = mrs_lib::get_mutexed(mutex_mpc_x_, mpc_x_);
   auto trajectory_dt = mrs_lib::get_mutexed(mutex_des_trajectory_, trajectory_dt_);
 
@@ -1982,8 +2148,8 @@ std::tuple<MatrixXd, MatrixXd> MpcCopyTracker::filterReferenceXY(const VectorXd&
   for (int i = 0; i < _mpc_horizon_len_; i++) {
 
     if (i == 0) {
-      max_sample_x = max_speed_x * _dt1_;
-      max_sample_y = max_speed_y * _dt1_;
+      max_sample_x = max_speed_x * dt1;
+      max_sample_y = max_speed_y * dt1;
       difference_x = des_x_trajectory(i, 0) - mpc_x(0, 0);
       difference_y = des_y_trajectory(i, 0) - mpc_x(4, 0);
     } else {
@@ -1993,27 +2159,30 @@ std::tuple<MatrixXd, MatrixXd> MpcCopyTracker::filterReferenceXY(const VectorXd&
       difference_y = des_y_trajectory(i, 0) - filtered_y_trajectory(i - 1, 0);
     }
 
-    double direction_angle  = atan2(difference_y, difference_x);
-    double max_dir_sample_x = abs(max_sample_x * cos(direction_angle));
-    double max_dir_sample_y = abs(max_sample_y * sin(direction_angle));
+    if (!trajectory_tracking_in_progress_) {
 
-    if (max_sample_x > max_dir_sample_x) {
-      max_sample_x = max_dir_sample_x;
+      double direction_angle  = atan2(difference_y, difference_x);
+      double max_dir_sample_x = abs(max_sample_x * cos(direction_angle));
+      double max_dir_sample_y = abs(max_sample_y * sin(direction_angle));
+
+      if (max_sample_x > max_dir_sample_x) {
+        max_sample_x = max_dir_sample_x;
+      }
+      if (max_sample_y > max_dir_sample_y) {
+        max_sample_y = max_dir_sample_y;
+      }
+
+      // saturate the difference
+      if (difference_x > max_sample_x)
+        difference_x = max_sample_x;
+      else if (difference_x < -max_sample_x)
+        difference_x = -max_sample_x;
+
+      if (difference_y > max_sample_y)
+        difference_y = max_sample_y;
+      else if (difference_y < -max_sample_y)
+        difference_y = -max_sample_y;
     }
-    if (max_sample_y > max_dir_sample_y) {
-      max_sample_y = max_dir_sample_y;
-    }
-
-    // saturate the difference
-    if (difference_x > max_sample_x)
-      difference_x = max_sample_x;
-    else if (difference_x < -max_sample_x)
-      difference_x = -max_sample_x;
-
-    if (difference_y > max_sample_y)
-      difference_y = max_sample_y;
-    else if (difference_y < -max_sample_y)
-      difference_y = -max_sample_y;
 
     if (i == 0) {
       filtered_x_trajectory(i, 0) = mpc_x(0, 0) + difference_x;
@@ -2036,7 +2205,7 @@ std::tuple<MatrixXd, MatrixXd> MpcCopyTracker::filterReferenceXY(const VectorXd&
       filtered_y_trajectory(i, 0) += wiggle_amplitude * sin(wiggle_frequency_ * 2 * M_PI * i * trajectory_dt + wiggle_phase_);
     }
 
-    wiggle_phase_ += wiggle_frequency_ * _dt1_ * 2 * M_PI;
+    wiggle_phase_ += wiggle_frequency_ * dt1 * 2 * M_PI;
 
     if (wiggle_phase_ > M_PI) {
       wiggle_phase_ -= 2 * M_PI;
@@ -2054,6 +2223,8 @@ MatrixXd MpcCopyTracker::filterReferenceZ(const VectorXd& des_z_trajectory, cons
 
   auto mpc_x = mrs_lib::get_mutexed(mutex_mpc_x_, mpc_x_);
 
+  auto dt1 = mrs_lib::get_mutexed(mutex_dt1_, dt1_);
+
   double difference_z;
   double max_sample_z;
 
@@ -2068,9 +2239,9 @@ MatrixXd MpcCopyTracker::filterReferenceZ(const VectorXd& des_z_trajectory, cons
       difference_z = des_z_trajectory(i, 0) - current_z;
 
       if (difference_z > 0) {
-        max_sample_z = max_ascending_speed * _dt1_;
+        max_sample_z = max_ascending_speed * dt1;
       } else {
-        max_sample_z = max_descending_speed * _dt1_;
+        max_sample_z = max_descending_speed * dt1;
       }
 
     } else {
@@ -2084,11 +2255,14 @@ MatrixXd MpcCopyTracker::filterReferenceZ(const VectorXd& des_z_trajectory, cons
       }
     }
 
-    // saturate the difference
-    if (difference_z > max_sample_z)
-      difference_z = max_sample_z;
-    else if (difference_z < -max_sample_z)
-      difference_z = -max_sample_z;
+    if (!trajectory_tracking_in_progress_) {
+
+      // saturate the difference
+      if (difference_z > max_sample_z)
+        difference_z = max_sample_z;
+      else if (difference_z < -max_sample_z)
+        difference_z = -max_sample_z;
+    }
 
     if (i == 0) {
       filtered_trajectory(i, 0) = current_z + difference_z;
@@ -2162,6 +2336,12 @@ void MpcCopyTracker::manageConstraints() {
 
 void MpcCopyTracker::calculateMPC() {
 
+  std::scoped_lock lock(mutex_mpc_calculation_);
+
+  auto dt1 = mrs_lib::get_mutexed(mutex_dt1_, dt1_);
+
+  ROS_DEBUG_STREAM_THROTTLE(1.0, "[MpcCopyTracker]: MPC calculation dt = " << dt1);
+
   auto constraints            = mrs_lib::get_mutexed(mutex_constraints_filtered_, constraints_filtered_);
   auto [mpc_x, mpc_x_heading] = mrs_lib::get_mutexed(mutex_mpc_x_, mpc_x_, mpc_x_heading_);
   auto uav_state              = mrs_lib::get_mutexed(mutex_uav_state_, uav_state_);
@@ -2180,8 +2360,7 @@ void MpcCopyTracker::calculateMPC() {
   int    first_collision_index = INT_MAX;
   double lowest_z              = std::numeric_limits<double>::max();
 
-  if (collision_avoidance_enabled_ &&
-      (uav_state.estimator_horizontal.type == mrs_msgs::EstimatorType::GPS || uav_state.estimator_horizontal.type == mrs_msgs::EstimatorType::RTK)) {
+  if (collision_avoidance_enabled_ && (uav_state.estimator_horizontal == "lat_gps" || uav_state.estimator_horizontal == "lat_rtk")) {
 
     // determine the lowest point in our trajectory
     for (int i = 0; i < _mpc_horizon_len_; i++) {
@@ -2190,12 +2369,12 @@ void MpcCopyTracker::calculateMPC() {
       }
     }
 
-    // Check other drone trajectories for collisions
+    // check other drone trajectories for collisions
     minimum_collison_free_altitude_ = checkTrajectoryForCollisions(first_collision_index);
 
   } else {
 
-    minimum_collison_free_altitude_ = common_handlers_->safety_area.getMinHeight();
+    minimum_collison_free_altitude_ = common_handlers_->safety_area.getMinZ("");
   }
 
   double max_speed_x = constraints.horizontal_speed;
@@ -2218,8 +2397,11 @@ void MpcCopyTracker::calculateMPC() {
   double max_jerk_z = constraints.vertical_ascending_jerk;
   double min_jerk_z = constraints.vertical_descending_jerk;
 
+  collision_avoidance_affecting_me_ = false;
+
   if (first_collision_index < _mpc_horizon_len_) {
 
+    collision_avoidance_affecting_me_ = true;
     // the tmp variable is used to scale the speed of our drone in collision avoidance, depending on how far away the collision is
     double tmp = 0;
 
@@ -2249,18 +2431,19 @@ void MpcCopyTracker::calculateMPC() {
       coef_scaler = tmp;
     }
 
-    // We are close to a possible collision, better slow down a bit to give everyone more time
+    // we are close to a possible collision, better slow down a bit to give everyone more time
     max_speed_x = constraints.horizontal_speed * ((_avoidance_collision_horizontal_speed_coef_ * coef_scaler) + (1.0 - coef_scaler));
     max_speed_y = constraints.horizontal_speed * ((_avoidance_collision_horizontal_speed_coef_ * coef_scaler) + (1.0 - coef_scaler));
   }
 
   if (collision_free_altitude_ > lowest_z) {
 
-    max_speed_x = constraints.horizontal_speed * (_avoidance_collision_horizontal_speed_coef_);
-    max_speed_y = constraints.horizontal_speed * (_avoidance_collision_horizontal_speed_coef_);
+    collision_avoidance_affecting_me_ = true;
+    max_speed_x                       = constraints.horizontal_speed * (_avoidance_collision_horizontal_speed_coef_);
+    max_speed_y                       = constraints.horizontal_speed * (_avoidance_collision_horizontal_speed_coef_);
   }
 
-  // First control input generated by MPC
+  // first control input generated by MPC
   VectorXd mpc_u         = VectorXd::Zero(_mpc_m_states_);
   double   mpc_u_heading = 0;
 
@@ -2285,19 +2468,20 @@ void MpcCopyTracker::calculateMPC() {
 
   // | -------------------- MPC solver z-axis ------------------- |
 
-  if (brake_) {
+  if (brake_ && !trajectory_tracking_in_progress_) {
     mpc_solver_z_->setVelQ(drs_params.q_vel_braking);
   } else {
     mpc_solver_z_->setVelQ(drs_params.q_vel_no_braking);
   }
 
-  MatrixXd initial_z = MatrixXd::Zero(_mpc_n_states_, 1);
+  MatrixXd initial_z = MatrixXd::Zero(4, 1);
 
   initial_z(0, 0) = mpc_x(8, 0);
   initial_z(1, 0) = mpc_x(9, 0);
   initial_z(2, 0) = mpc_x(10, 0);
   initial_z(3, 0) = mpc_x(11, 0);
 
+  mpc_solver_z_->setDt(dt1);
   mpc_solver_z_->setInitialState(initial_z);
   mpc_solver_z_->loadReference(des_z_filtered_offset_);
   mpc_solver_z_->setLimits(max_speed_z, min_speed_z, max_acc_z, min_acc_z, max_jerk_z, min_jerk_z, max_snap_z, min_snap_z);
@@ -2311,7 +2495,7 @@ void MpcCopyTracker::calculateMPC() {
 
   mpc_u(2) = mpc_solver_z_->getFirstControlInput();
 
-  // If we are climbing to avoid a collision, reduce or arrest our horizontal velocity
+  // if we are climbing to avoid a collision, reduce or arrest our horizontal velocity
   double ascend;
   {
     std::scoped_lock lock(mutex_predicted_trajectory_);
@@ -2328,7 +2512,7 @@ void MpcCopyTracker::calculateMPC() {
 
   // unwrap the heading reference
 
-  des_heading_trajectory(0, 0) = sradians::unwrap(des_heading_trajectory(0, 0), mpc_x_heading_(0));
+  des_heading_trajectory(0, 0) = sradians::unwrap(des_heading_trajectory(0, 0), mpc_x_heading(0));
 
   for (int i = 1; i < _mpc_horizon_len_; i++) {
     des_heading_trajectory(i, 0) = sradians::unwrap(des_heading_trajectory(i, 0), des_heading_trajectory(i - 1, 0));
@@ -2336,19 +2520,20 @@ void MpcCopyTracker::calculateMPC() {
 
   // | -------------------- MPC solver x-axis ------------------- |
 
-  if (brake_) {
+  if (brake_ && !trajectory_tracking_in_progress_) {
     mpc_solver_x_->setVelQ(drs_params.q_vel_braking);
   } else {
     mpc_solver_x_->setVelQ(drs_params.q_vel_no_braking);
   }
 
-  MatrixXd initial_x = MatrixXd::Zero(_mpc_n_states_, 1);
+  MatrixXd initial_x = MatrixXd::Zero(4, 1);
 
   initial_x(0, 0) = mpc_x(0, 0);
   initial_x(1, 0) = mpc_x(1, 0);
   initial_x(2, 0) = mpc_x(2, 0);
   initial_x(3, 0) = mpc_x(3, 0);
 
+  mpc_solver_x_->setDt(dt1);
   mpc_solver_x_->setInitialState(initial_x);
   mpc_solver_x_->loadReference(des_x_filtered);
   mpc_solver_x_->setLimits(max_speed_x, max_speed_x, max_acc_x, max_acc_x, max_jerk_x, max_jerk_x, max_snap_x, max_snap_x);
@@ -2364,19 +2549,20 @@ void MpcCopyTracker::calculateMPC() {
 
   // | -------------------- MPC solver y-axis ------------------- |
 
-  if (brake_) {
+  if (brake_ && !trajectory_tracking_in_progress_) {
     mpc_solver_y_->setVelQ(drs_params.q_vel_braking);
   } else {
     mpc_solver_y_->setVelQ(drs_params.q_vel_no_braking);
   }
 
-  MatrixXd initial_y = MatrixXd::Zero(_mpc_n_states_, 1);
+  MatrixXd initial_y = MatrixXd::Zero(4, 1);
 
   initial_y(0, 0) = mpc_x(4, 0);
   initial_y(1, 0) = mpc_x(5, 0);
   initial_y(2, 0) = mpc_x(6, 0);
   initial_y(3, 0) = mpc_x(7, 0);
 
+  mpc_solver_y_->setDt(dt1);
   mpc_solver_y_->setInitialState(initial_y);
   mpc_solver_y_->loadReference(des_y_filtered);
   mpc_solver_y_->setLimits(max_speed_y, max_speed_y, max_acc_y, max_acc_y, max_jerk_y, max_jerk_y, max_snap_y, max_snap_y);
@@ -2390,12 +2576,13 @@ void MpcCopyTracker::calculateMPC() {
 
   // | ------------------- MPC solver heading ------------------- |
 
-  if (brake_) {
+  if (brake_ && !trajectory_tracking_in_progress_) {
     mpc_solver_heading_->setVelQ(drs_params.q_vel_braking);
   } else {
     mpc_solver_heading_->setVelQ(drs_params.q_vel_no_braking);
   }
 
+  mpc_solver_heading_->setDt(dt1);
   mpc_solver_heading_->setInitialState(mpc_x_heading);
   mpc_solver_heading_->loadReference(des_heading_trajectory);
   mpc_solver_heading_->setLimits(constraints.heading_speed, constraints.heading_speed, constraints.heading_acceleration, constraints.heading_acceleration,
@@ -2409,31 +2596,42 @@ void MpcCopyTracker::calculateMPC() {
   mpc_u_heading = mpc_solver_heading_->getFirstControlInput();
 
   {
-    std::scoped_lock lock(mutex_constraints_);
+    bool saturating = false;
 
     if (mpc_u(0) > max_snap_x * 1.01) {
-      ROS_WARN_STREAM_THROTTLE(1.0, "[MpcCopyTracker]: saturating snap X: " << mpc_u(0));
-      mpc_u(0) = max_snap_x;
+      ROS_WARN_STREAM_THROTTLE(0.1, "[MpcCopyTracker]: saturating snap X: " << mpc_u(0));
+      mpc_u(0)   = max_snap_x;
+      saturating = true;
     }
     if (mpc_u(0) < -max_snap_x * 1.01) {
-      ROS_WARN_STREAM_THROTTLE(1.0, "[MpcCopyTracker]: saturating snap X: " << mpc_u(0));
-      mpc_u(0) = -max_snap_x;
+      ROS_WARN_STREAM_THROTTLE(0.1, "[MpcCopyTracker]: saturating snap X: " << mpc_u(0));
+      mpc_u(0)   = -max_snap_x;
+      saturating = true;
     }
     if (mpc_u(1) > max_snap_y * 1.01) {
-      ROS_WARN_STREAM_THROTTLE(1.0, "[MpcCopyTracker]: saturating snap Y: " << mpc_u(1));
-      mpc_u(1) = max_snap_y;
+      ROS_WARN_STREAM_THROTTLE(0.1, "[MpcCopyTracker]: saturating snap Y: " << mpc_u(1));
+      mpc_u(1)   = max_snap_y;
+      saturating = true;
     }
     if (mpc_u(1) < -max_snap_y * 1.01) {
-      ROS_WARN_STREAM_THROTTLE(1.0, "[MpcCopyTracker]: saturating snap Y: " << mpc_u(1));
-      mpc_u(1) = -max_snap_y;
+      ROS_WARN_STREAM_THROTTLE(0.1, "[MpcCopyTracker]: saturating snap Y: " << mpc_u(1));
+      mpc_u(1)   = -max_snap_y;
+      saturating = true;
     }
     if (mpc_u(2) > max_snap_z * 1.01) {
-      ROS_WARN_STREAM_THROTTLE(1.0, "[MpcCopyTracker]: saturating snap Z: " << mpc_u(2));
-      mpc_u(2) = max_snap_z;
+      ROS_WARN_STREAM_THROTTLE(0.1, "[MpcCopyTracker]: saturating snap Z: " << mpc_u(2));
+      mpc_u(2)   = max_snap_z;
+      saturating = true;
     }
     if (mpc_u(2) < -min_snap_z * 1.01) {
-      ROS_WARN_STREAM_THROTTLE(1.0, "[MpcCopyTracker]: saturating snap Z: " << mpc_u(2));
-      mpc_u(2) = -min_snap_z;
+      ROS_WARN_STREAM_THROTTLE(0.1, "[MpcCopyTracker]: saturating snap Z: " << mpc_u(2));
+      mpc_u(2)   = -min_snap_z;
+      saturating = true;
+    }
+
+    if (saturating) {
+      debugPrintState(0.1);
+      debugPrintMPCResult(0.1);
     }
   }
 
@@ -2445,7 +2643,7 @@ void MpcCopyTracker::calculateMPC() {
   }
 
   double mpc_solver_time = (ros::Time::now() - time_begin).toSec();
-  if (mpc_solver_time > _dt1_ || iters_x > _max_iters_xy_ || iters_y > _max_iters_xy_ || iters_z > _max_iters_z_ || iters_heading > _max_iters_heading_) {
+  if (mpc_solver_time > dt1 || iters_x > _max_iters_xy_ || iters_y > _max_iters_xy_ || iters_z > _max_iters_z_ || iters_heading > _max_iters_heading_) {
     ROS_DEBUG_STREAM_THROTTLE(1.0, "[MpcCopyTracker]: Total MPC solver time: " << mpc_solver_time << " iters X: " << iters_x << "/" << _max_iters_xy_
                                                                            << " iters Y:  " << iters_y << "/" << _max_iters_xy_ << " iters Z: " << iters_z
                                                                            << "/" << _max_iters_z_ << " iters heading: " << iters_heading << "/"
@@ -2463,6 +2661,7 @@ void MpcCopyTracker::calculateMPC() {
       (fabs(radians::diff(des_heading_trajectory(10), des_heading_trajectory(_mpc_horizon_len_ - 1))) <= 0.1 &&
        fabs(radians::diff(des_heading_trajectory(30), des_heading_trajectory(_mpc_horizon_len_ - 1))) <= 0.1)) {
     brake_ = true;
+    ROS_DEBUG_THROTTLE(1.0, "[MpcCopyTracker]: braking");
   } else {
     brake_ = false;
   }
@@ -2491,12 +2690,14 @@ void MpcCopyTracker::calculateMPC() {
       }
     }
 
-    try {
-      publisher_mpc_reference_debugging_.publish(debug_trajectory_out);
-    }
-    catch (...) {
-      ROS_ERROR("[MpcCopyTracker]: exception caught during publishing topic %s", publisher_mpc_reference_debugging_.getTopic().c_str());
-    }
+    ph_mpc_reference_debugging_.publish(debug_trajectory_out);
+    // TODO: check why old code had try catch statement
+    // try {
+    //   ph_mpc_reference_debugging_.publish(debug_trajectory_out);
+    // }
+    // catch (...) {
+    //   ROS_ERROR("[MpcCopyTracker]: exception caught during publishing topic %s", ph_mpc_reference_debugging_.getTopic().c_str());
+    // }
   }
 
   //}
@@ -2506,7 +2707,9 @@ void MpcCopyTracker::calculateMPC() {
 
 /* iterateModel() //{ */
 
-void MpcCopyTracker::iterateModel(void) {
+void MpcCopyTracker::iterateModel(const double& dt) {
+
+  auto dt1 = mrs_lib::get_mutexed(mutex_dt1_, dt1_);
 
   if (model_first_iteration_) {
 
@@ -2515,69 +2718,188 @@ void MpcCopyTracker::iterateModel(void) {
 
   } else {
 
-    double dt = (ros::Time::now() - model_iteration_last_time_).toSec();
+    dt1 = 0.9 * dt1 + 0.1 * dt;
 
-    if (dt > 0.001 && dt < 2.0) {
+    mrs_lib::set_mutexed(mutex_dt1_, dt1, dt1_);
+    timer_mpc_iteration_.setPeriod(ros::Duration(dt1), false);
 
-      // clang-format off
-        A_ << 1, dt, 0.5*dt*dt, 0,         0, 0,  0,         0,         0, 0,  0,         0,
-              0, 1,  dt,        0.5*dt*dt, 0, 0,  0,         0,         0, 0,  0,         0,
-              0, 0,  1,         dt,        0, 0,  0,         0,         0, 0,  0,         0,
-              0, 0,  0,         1,         0, 0,  0,         0,         0, 0,  0,         0,
-              0, 0,  0,         0,         1, dt, 0.5*dt*dt, 0,         0, 0,  0,         0,
-              0, 0,  0,         0,         0, 1,  dt,        0.5*dt*dt, 0, 0,  0,         0,
-              0, 0,  0,         0,         0, 0,  1,         dt,        0, 0,  0,         0,
-              0, 0,  0,         0,         0, 0,  0,         1,         0, 0,  0,         0,
-              0, 0,  0,         0,         0, 0,  0,         0,         1, dt, 0.5*dt*dt, 0,
-              0, 0,  0,         0,         0, 0,  0,         0,         0, 1,  dt,        0.5*dt*dt,
-              0, 0,  0,         0,         0, 0,  0,         0,         0, 0,  1,         dt,
-              0, 0,  0,         0,         0, 0,  0,         0,         0, 0,  0,         1;
+    // clang-format off
+    A_ << 1, dt1, 0.5*dt1*dt1, 0,           0, 0,   0,           0,           0, 0,   0,           0,
+          0, 1,   dt1,         0.5*dt1*dt1, 0, 0,   0,           0,           0, 0,   0,           0,
+          0, 0,   1,           dt1,         0, 0,   0,           0,           0, 0,   0,           0,
+          0, 0,   0,           1,           0, 0,   0,           0,           0, 0,   0,           0,
+          0, 0,   0,           0,           1, dt1, 0.5*dt1*dt1, 0,           0, 0,   0,           0,
+          0, 0,   0,           0,           0, 1,   dt1,         0.5*dt1*dt1, 0, 0,   0,           0,
+          0, 0,   0,           0,           0, 0,   1,           dt1,         0, 0,   0,           0,
+          0, 0,   0,           0,           0, 0,   0,           1,           0, 0,   0,           0,
+          0, 0,   0,           0,           0, 0,   0,           0,           1, dt1, 0.5*dt1*dt1, 0,
+          0, 0,   0,           0,           0, 0,   0,           0,           0, 1,   dt1,         0.5*dt1*dt1,
+          0, 0,   0,           0,           0, 0,   0,           0,           0, 0,   1,           dt1,
+          0, 0,   0,           0,           0, 0,   0,           0,           0, 0,   0,           1;
 
-        B_ << 0,  0,  0,
-              0,  0,  0,
-              0,  0,  0,
-              dt, 0,  0,
-              0,  0,  0,
-              0,  0,  0,
-              0,  0,  0,
-              0,  dt, 0,
-              0,  0,  0,
-              0,  0,  0,
-              0,  0,  0,
-              0,  0,  dt;
+      B_ << 0,   0,   0,
+            0,   0,   0,
+            0,   0,   0,
+            dt1, 0,   0,
+            0,   0,   0,
+            0,   0,   0,
+            0,   0,   0,
+            0,   dt1, 0,
+            0,   0,   0,
+            0,   0,   0,
+            0,   0,   0,
+            0,   0,   dt1;
 
-        A_heading_ << 1, dt, 0.5*dt*dt, 0,
-                      0, 1,  dt,        0.5*dt*dt,
-                      0, 0,  1,         dt,
-                      0, 0,  0,         1;
+      A_heading_ << 1, dt1, 0.5*dt1*dt1, 0,
+                    0, 1,   dt1,         0.5*dt1*dt1,
+                    0, 0,   1,           dt1,
+                    0, 0,   0,           1;
 
-        B_heading_ << 0,
-                      0,
-                      0,
-                      dt;
-
-      // clang-format on
-    } else {
-
-      // fallback for weird dt
-
-      A_ = _A_;
-      B_ = _B_;
-
-      A_heading_ = _A_heading_;
-      B_heading_ = _B_heading_;
-    }
+      B_heading_ << 0,
+                    0,
+                    0,
+                    dt1;
 
     model_iteration_last_time_ = ros::Time::now();
   }
 
   {
-    std::scoped_lock lock(mutex_mpc_x_, mutex_mpc_u_);
+    auto [mpc_x, mpc_x_heading] = mrs_lib::get_mutexed(mutex_mpc_x_, mpc_x_, mpc_x_heading_);
+    auto [mpc_u, mpc_u_heading] = mrs_lib::get_mutexed(mutex_mpc_u_, mpc_u_, mpc_u_heading_);
 
-    mpc_x_         = A_ * mpc_x_ + B_ * mpc_u_;
-    mpc_x_heading_ = A_heading_ * mpc_x_heading_ + B_heading_ * mpc_u_heading_;
+    MatrixXd new_mpc_x         = A_ * mpc_x + B_ * mpc_u;
+    MatrixXd new_mpc_x_heading = A_heading_ * mpc_x_heading + B_heading_ * mpc_u_heading;
 
-    mpc_x_heading_(0) = sradians::wrap(mpc_x_heading_(0));
+    // | --------------- check the state difference --------------- |
+    {
+      auto constraints = mrs_lib::get_mutexed(mutex_constraints_, constraints_);
+
+      bool problem = false;
+
+      // position
+
+      if (fabs((new_mpc_x(0) - mpc_x(0)) / dt1) > 1.05 * constraints.horizontal_speed) {
+        ROS_DEBUG("[MpcCopyTracker]: horizontal pos x update violates constraints: %.2f -> %.2f = %.2f, > %.2f", mpc_x(0), new_mpc_x(0),
+                  fabs((new_mpc_x(0) - mpc_x(0)) / dt1), constraints.horizontal_speed);
+        problem = true;
+      }
+
+      if (fabs((new_mpc_x(4) - mpc_x(4)) / dt1) > 1.05 * constraints.horizontal_speed) {
+        ROS_DEBUG("[MpcCopyTracker]: horizontal pos y update violates constraints: %.2f -> %.2f = %.2f, > %.2f", mpc_x(4), new_mpc_x(4),
+                  fabs((new_mpc_x(4) - mpc_x(4)) / dt1), constraints.horizontal_speed);
+        problem = true;
+    }
+
+      if (((new_mpc_x(8) - mpc_x(8)) / dt1) > 1.05 * constraints.vertical_ascending_speed) {
+        ROS_DEBUG("[MpcCopyTracker]: vertical pos z update violates constraints: %.2f -> %.2f = %.2f, > %.2f", mpc_x(8), new_mpc_x(8),
+                  ((new_mpc_x(8) - mpc_x(8)) / dt1), constraints.vertical_ascending_speed);
+        problem = true;
+      }
+
+      if (((new_mpc_x(8) - mpc_x(8)) / dt1) < 1.05 * -constraints.vertical_descending_speed) {
+        ROS_DEBUG("[MpcCopyTracker]: vertical pos z update violates constraints: %.2f -> %.2f = %.2f, < %.2f", mpc_x(8), new_mpc_x(8),
+                  ((new_mpc_x(8) - mpc_x(8)) / dt1), -constraints.vertical_descending_speed);
+        problem = true;
+      }
+
+      /* if (fabs(radians::diff(new_mpc_x_heading(0), mpc_x_heading(0)) / dt1) > 1.2 * constraints.heading_speed) { */
+      /*   ROS_DEBUG("[MpcCopyTracker]: heading update violates constraints: %.2f -> %.2f = %.2f, > %.2f", mpc_x_heading(0), new_mpc_x_heading(0), */
+      /*             fabs(radians::diff(new_mpc_x_heading(0), mpc_x_heading(0)) / dt1), constraints.heading_speed); */
+      /*   problem = true; */
+      /* } */
+
+      // velocity
+
+      if (fabs((new_mpc_x(1) - mpc_x(1)) / dt1) > 1.05 * constraints.horizontal_acceleration) {
+        ROS_DEBUG("[MpcCopyTracker]: horizontal vel x update violates constraints: %.2f -> %.2f = %.2f, > %.2f", mpc_x(1), new_mpc_x(1),
+                  fabs((new_mpc_x(1) - mpc_x(1)) / dt1), constraints.horizontal_acceleration);
+        problem = true;
+      }
+
+      if (fabs((new_mpc_x(5) - mpc_x(5)) / dt1) > 1.05 * constraints.horizontal_acceleration) {
+        ROS_DEBUG("[MpcCopyTracker]: horizontal vel y update violates constraints: %.2f -> %.2f = %.2f, > %.2f", mpc_x(5), new_mpc_x(5),
+                  fabs((new_mpc_x(5) - mpc_x(5)) / dt1), constraints.horizontal_acceleration);
+        problem = true;
+      }
+
+      if (((new_mpc_x(9) - mpc_x(9)) / dt1) > 1.05 * constraints.vertical_ascending_acceleration) {
+        ROS_DEBUG("[MpcCopyTracker]: vertical vel z update violates constraints: %.2f -> %.2f = %.2f, > %.2f", mpc_x(9), new_mpc_x(9),
+                  ((new_mpc_x(9) - mpc_x(9)) / dt1), constraints.vertical_ascending_acceleration);
+        problem = true;
+      }
+
+      if (((new_mpc_x(9) - mpc_x(9)) / dt1) < 1.05 * -constraints.vertical_descending_acceleration) {
+        ROS_DEBUG("[MpcCopyTracker]: vertical vel z update violates constraints: %.2f -> %.2f = %.2f, < %.2f", mpc_x(9), new_mpc_x(9),
+                  ((new_mpc_x(9) - mpc_x(9)) / dt1), -constraints.vertical_descending_acceleration);
+        problem = true;
+      }
+
+      // acceleration
+
+      if (fabs((new_mpc_x(2) - mpc_x(2)) / dt1) > 1.05 * constraints.horizontal_jerk) {
+        ROS_DEBUG("[MpcCopyTracker]: horizontal acc x update violates constraints: %.2f -> %.2f = %.2f, > %.2f", mpc_x(2), new_mpc_x(2),
+                  fabs((new_mpc_x(2) - mpc_x(2)) / dt1), constraints.horizontal_jerk);
+        problem = true;
+      }
+
+      if (fabs((new_mpc_x(6) - mpc_x(6)) / dt1) > 1.05 * constraints.horizontal_jerk) {
+        ROS_DEBUG("[MpcCopyTracker]: horizontal acc y update violates constraints: %.2f -> %.2f, = %.2f > %.2f", mpc_x(6), new_mpc_x(6),
+                  fabs((new_mpc_x(6) - mpc_x(6)) / dt1), constraints.horizontal_jerk);
+        problem = true;
+      }
+
+      if (((new_mpc_x(10) - mpc_x(10)) / dt1) > 1.05 * constraints.vertical_ascending_jerk) {
+        ROS_DEBUG("[MpcCopyTracker]: vertical acc z update violates constraints: %.2f -> %.2f = %.2f, > %.2f", mpc_x(10), new_mpc_x(10),
+                  ((new_mpc_x(10) - mpc_x(10)) / dt1), constraints.vertical_ascending_jerk);
+        problem = true;
+      }
+
+      if (((new_mpc_x(10) - mpc_x(10)) / dt1) < 1.05 * -constraints.vertical_descending_jerk) {
+        ROS_DEBUG("[MpcCopyTracker]: vertical acc z update violates constraints: %.2f -> %.2f = %.2f, < %.2f", mpc_x(10), new_mpc_x(10),
+                  ((new_mpc_x(10) - mpc_x(10)) / dt1), -constraints.vertical_descending_jerk);
+        problem = true;
+      }
+
+      // jerk
+
+      if (fabs((new_mpc_x(3) - mpc_x(3)) / dt1) > 1.05 * constraints.horizontal_snap) {
+        ROS_DEBUG("[MpcCopyTracker]: horizontal jerk x update violates constraints: %.2f -> %.2f = %.2f, > %.2f", mpc_x(3), new_mpc_x(3),
+                  fabs((new_mpc_x(3) - mpc_x(3)) / dt1), constraints.horizontal_snap);
+        problem = true;
+      }
+
+      if (fabs((new_mpc_x(7) - mpc_x(7)) / dt1) > 1.05 * constraints.horizontal_snap) {
+        ROS_DEBUG("[MpcCopyTracker]: horizontal jerk y update violates constraints: %.2f -> %.2f = %.2f, > %.2f", mpc_x(7), new_mpc_x(7),
+                  fabs((new_mpc_x(7) - mpc_x(7)) / dt1), constraints.horizontal_snap);
+        problem = true;
+      }
+
+      if (((new_mpc_x(11) - mpc_x(11)) / dt1) > 1.05 * constraints.vertical_ascending_snap) {
+        ROS_DEBUG("[MpcCopyTracker]: vertical jerk z update violates constraints: %.2f -> %.2f = %.2f, > %.2f", mpc_x(11), new_mpc_x(11),
+                  ((new_mpc_x(11) - mpc_x(11)) / dt1), constraints.vertical_ascending_snap);
+        problem = true;
+      }
+
+      if (((new_mpc_x(11) - mpc_x(11)) / dt1) < 1.05 * -constraints.vertical_descending_snap) {
+        ROS_DEBUG("[MpcCopyTracker]: vertical jerk z update violates constraints: %.2f -> %.2f = %.2f, < %.2f", mpc_x(11), new_mpc_x(11),
+                  ((new_mpc_x(11) - mpc_x(11)) / dt1), -constraints.vertical_descending_snap);
+        problem = true;
+      }
+
+      if (problem) {
+        debugPrintState(0.001);
+        debugPrintMPCResult(0.001);
+      }
+    }
+
+    {
+      std::scoped_lock lock(mutex_mpc_x_);
+
+      mpc_x_         = new_mpc_x;
+      mpc_x_heading_ = new_mpc_x_heading;
+
+      mpc_x_heading_(0) = sradians::wrap(mpc_x_heading_(0));
+    }
   }
 }
 
@@ -2589,6 +2911,8 @@ void MpcCopyTracker::iterateModel(void) {
 
 // method for setting desired trajectory
 std::tuple<bool, std::string, bool> MpcCopyTracker::loadTrajectory(const mrs_msgs::TrajectoryReference msg) {
+
+  auto dt1 = mrs_lib::get_mutexed(mutex_dt1_, dt1_);
 
   // copy the member variables
   auto x         = mrs_lib::get_mutexed(mutex_mpc_x_, mpc_x_);
@@ -2602,9 +2926,9 @@ std::tuple<bool, std::string, bool> MpcCopyTracker::loadTrajectory(const mrs_msg
   if (msg.dt <= 1e-4) {
     trajectory_dt = 0.2;
     ROS_WARN_THROTTLE(10.0, "[MpcCopyTracker]: the trajectory dt was not specified, assuming its the old 0.2 s");
-  } else if (msg.dt < _dt1_) {
+  } else if (msg.dt < dt1) {
     trajectory_dt = 0.2;
-    ss << std::setprecision(3) << "the trajectory dt (" << msg.dt << " s) is too small (smaller than the tracker's internal step size: " << _dt1_ << " s)";
+    ss << std::setprecision(3) << "the trajectory dt (" << msg.dt << " s) is too small (smaller than the tracker's internal step size: " << dt1 << " s)";
     ROS_ERROR_STREAM_THROTTLE(1.0, "[MpcCopyTracker]: " << ss.str());
     return std::tuple(false, ss.str(), false);
   } else {
@@ -2641,22 +2965,23 @@ std::tuple<bool, std::string, bool> MpcCopyTracker::loadTrajectory(const mrs_msg
       // just say it, but use it like its from the current time
       if (trajectory_time_offset < 0.0) {
 
-        ROS_WARN_THROTTLE(1.0, "[MpcCopyTracker]: received trajectory with timestamp in the future by %.2f s", -trajectory_time_offset);
+        ROS_WARN_THROTTLE(1.0, "[MpcCopyTracker]: received trajectory with timestamp in the future by %.3f s", -trajectory_time_offset);
 
         trajectory_time_offset = 0.0;
       }
     }
 
     // if the time offset is set, check if we need to "move the first idx"
-    if (trajectory_time_offset > 0) {
+    if (trajectory_time_offset > 0.0) {
 
       // calculate the offset in samples
       trajectory_sample_offset = int(floor(trajectory_time_offset / trajectory_dt));
 
       // and get the subsample offset, which will be used to initialize the interpolator
-      trajectory_subsample_offset = int(floor(fmod(trajectory_time_offset, trajectory_dt) / _dt1_));
+      trajectory_subsample_offset = int(floor(fmod(trajectory_time_offset, trajectory_dt) / dt1));
 
-      ROS_DEBUG_THROTTLE(1.0, "[MpcCopyTracker]: sanity check: %.3f", trajectory_dt * trajectory_sample_offset + _dt1_ * trajectory_subsample_offset);
+      ROS_DEBUG_THROTTLE(0.1, "[MpcCopyTracker]: received trajectory with timestamp in the past by %.3f s",
+                         trajectory_dt * trajectory_sample_offset + dt1 * trajectory_subsample_offset);
 
       // if the offset is larger than the number of points in the trajectory
       // the trajectory can not be used
@@ -2668,14 +2993,14 @@ std::tuple<bool, std::string, bool> MpcCopyTracker::loadTrajectory(const mrs_msg
 
       } else {
 
-        // If the offset is larger than one trajectory sample,
+        // if the offset is larger than one trajectory sample,
         // offset the start
         if (trajectory_time_offset >= trajectory_dt) {
 
           // decrease the trajectory size
           trajectory_size -= trajectory_sample_offset;
 
-          ROS_WARN_STREAM_THROTTLE(1.0, "[MpcCopyTracker]: got trajectory with timestamp '" << trajectory_time_offset << " s' in the past");
+          ROS_DEBUG_THROTTLE(0.1, "[MpcCopyTracker]: offsetting trajectory by %d samples", trajectory_sample_offset);
 
         } else {
 
@@ -2683,6 +3008,12 @@ std::tuple<bool, std::string, bool> MpcCopyTracker::loadTrajectory(const mrs_msg
         }
       }
     }
+
+  } else { // not fly_now
+
+      trajectory_tracking_in_progress_ = false;
+
+      timer_trajectory_tracking_.stop();
   }
 
   //}
@@ -2780,6 +3111,8 @@ std::tuple<bool, std::string, bool> MpcCopyTracker::loadTrajectory(const mrs_msg
   {
     std::scoped_lock lock(mutex_des_whole_trajectory_, mutex_des_trajectory_, mutex_trajectory_tracking_states_);
 
+    des_whole_trajectory_id_ = msg.input_id;
+
     auto mpc_x_heading = mrs_lib::get_mutexed(mutex_mpc_x_, mpc_x_heading_);
 
     trajectory_tracking_in_progress_ = msg.fly_now;
@@ -2807,13 +3140,13 @@ std::tuple<bool, std::string, bool> MpcCopyTracker::loadTrajectory(const mrs_msg
     // if we are tracking trajectory, copy the setpoint
     if (trajectory_tracking_in_progress_) {
 
-      toggleHover(false);
+      toggleHover(false);  // TODO check for deadlock through mutex_des_trajectory_
 
       /* interpolate the trajectory points and fill in the desired_trajectory vector //{ */
 
       for (int i = 0; i < _mpc_horizon_len_; i++) {
 
-        double first_time = _dt1_ + i * _dt2_ + trajectory_subsample_offset * _dt1_;
+        double first_time = dt1 + i * _dt2_ + trajectory_subsample_offset * dt1;
 
         int first_idx  = floor(first_time / trajectory_dt);
         int second_idx = first_idx + 1;
@@ -2867,7 +3200,7 @@ std::tuple<bool, std::string, bool> MpcCopyTracker::loadTrajectory(const mrs_msg
     timer_trajectory_tracking_.start();
   }
 
-  ROS_INFO_THROTTLE(1, "[MpcCopyTracker]: received trajectory with length %d", trajectory_size);
+  ROS_INFO_THROTTLE(1, "[MpcCopyTracker]: finished setting trajectory with length %d", trajectory_size);
 
   /* publish the debugging topics of the post-processed trajectory //{ */
 
@@ -2894,13 +3227,14 @@ std::tuple<bool, std::string, bool> MpcCopyTracker::loadTrajectory(const mrs_msg
       }
     }
 
-    try {
-      pub_debug_processed_trajectory_poses_.publish(debug_trajectory_out);
-    }
-    catch (...) {
-      ROS_ERROR("[MpcCopyTracker]: exception caught during publishing topic %s", pub_debug_processed_trajectory_poses_.getTopic().c_str());
-    }
-
+    pub_debug_processed_trajectory_poses_.publish(debug_trajectory_out);
+    // TODO check why old code had try catch statement
+    // try {
+    //   pub_debug_processed_trajectory_poses_.publish(debug_trajectory_out);
+    // }
+    // catch (...) {
+    //   ROS_ERROR("[MpcCopyTracker]: exception caught during publishing topic %s", pub_debug_processed_trajectory_poses_.getTopic().c_str());
+    // }
     visualization_msgs::MarkerArray msg_out;
 
     visualization_msgs::Marker marker;
@@ -2940,12 +3274,14 @@ std::tuple<bool, std::string, bool> MpcCopyTracker::loadTrajectory(const mrs_msg
 
     msg_out.markers.push_back(marker);
 
-    try {
-      pub_debug_processed_trajectory_markers_.publish(msg_out);
-    }
-    catch (...) {
-      ROS_ERROR("exception caught during publishing topic %s", pub_debug_processed_trajectory_markers_.getTopic().c_str());
-    }
+    pub_debug_processed_trajectory_markers_.publish(msg_out);
+    // TODO: check why old code had try catch statement
+    // try {
+    //   pub_debug_processed_trajectory_markers_.publish(msg_out);
+    // }
+    // catch (...) {
+    //   ROS_ERROR("exception caught during publishing topic %s", pub_debug_processed_trajectory_markers_.getTopic().c_str());
+    // }
   }
 
   //}
@@ -2978,7 +3314,6 @@ void MpcCopyTracker::setSinglePointReference(const double x, const double y, con
 void MpcCopyTracker::setGoal(const double pos_x, const double pos_y, const double pos_z, const double heading, const bool use_heading) {
 
   double desired_heading = sradians::wrap(heading);
-
   {
   std::scoped_lock lock(mutex_goal_);
 
@@ -2988,7 +3323,6 @@ void MpcCopyTracker::setGoal(const double pos_x, const double pos_y, const doubl
   goal_heading_ = desired_heading;
 
   }
-
 
   auto mpc_x_heading = mrs_lib::get_mutexed(mutex_mpc_x_, mpc_x_heading_);
 
@@ -3036,20 +3370,12 @@ void MpcCopyTracker::setRelativeGoal(const double pos_x, const double pos_y, con
 
 void MpcCopyTracker::toggleHover(bool in) {
 
+  // DON'T PUT MUTEX LOCK IN THIS FUNCTION
+  // it is called under mutex elsewhere
+
   if (in == false && hovering_in_progress_) {
 
     ROS_DEBUG("[MpcCopyTracker]: stoppping the hover timer");
-
-    while (hover_timer_runnning_) {
-
-      ROS_DEBUG("[MpcCopyTracker]: the hover is in the middle of an iteration, waiting for it to finish");
-      ros::Duration wait(0.001);
-      wait.sleep();
-      if (!hover_timer_runnning_) {
-        ROS_DEBUG("[ControlManager]: hover timer finished");
-        break;
-      }
-    }
 
     timer_hover_.stop();
 
@@ -3245,7 +3571,7 @@ void MpcCopyTracker::publishDiagnostics(void) {
   diagnostics.uav_name = _uav_name_;
 
   diagnostics.collision_avoidance_active = collision_avoidance_enabled_;
-  diagnostics.avoiding_collision         = avoiding_collision_;
+  diagnostics.avoiding_collision         = collision_avoidance_affecting_me_;
 
   diagnostics.setpoint.position.x = des_x_trajectory(0, 0);
   diagnostics.setpoint.position.y = des_y_trajectory(0, 0);
@@ -3281,42 +3607,85 @@ void MpcCopyTracker::publishDiagnostics(void) {
   if (ss.str().length() > 0) {
     ROS_DEBUG_STREAM_THROTTLE(5.0, "[MpcCopyTracker]: getting avoidance trajectories: " << ss.str());
   } else if (collision_avoidance_enabled_ &&
-             (uav_state.estimator_horizontal.type == mrs_msgs::EstimatorType::GPS || uav_state.estimator_horizontal.type == mrs_msgs::EstimatorType::RTK)) {
+      (uav_state.estimator_horizontal == "lat_gps" || uav_state.estimator_horizontal == "lat_rtk")) {
     ROS_DEBUG_THROTTLE(10.0, "[MpcCopyTracker]: missing avoidance trajectories!");
   }
 
-  try {
-    pub_diagnostics_.publish(diagnostics);
-  }
-  catch (...) {
-    ROS_ERROR("[MpcCopyTracker]: exception caught during publishing topic %s", pub_diagnostics_.getTopic().c_str());
-  }
+  pub_diagnostics_.publish(diagnostics);
+  // TODO: check why old code used try catch statement
+  // try {
+  //   pub_diagnostics_.publish(diagnostics);
+  // }
+  // catch (...) {
+  //   ROS_ERROR("[MpcCopyTracker]: exception caught during publishing topic %s", pub_diagnostics_.getTopic().c_str());
+  // }
+
 
   std_msgs::String string_msg;
 
   if (diagnostics.avoidance_active_uavs.empty()) {
 
-    string_msg.data = "I see: NOTHING";
+    string_msg.data = "-id col_avoid I see: NOTHING";
 
   } else {
 
-    string_msg.data = "I see: ";
+    string_msg.data = "-id col_avoid I see: ";
   }
 
-  for (size_t i = 0; i < diagnostics.avoidance_active_uavs.size(); i++) {
-    if (i == 0) {
-      string_msg.data += diagnostics.avoidance_active_uavs[i];
-    } else {
-      string_msg.data += ", " + diagnostics.avoidance_active_uavs[i];
+  if (diagnostics.avoidance_active_uavs.size() <= 3) {
+
+    for (size_t i = 0; i < diagnostics.avoidance_active_uavs.size(); i++) {
+      if (i == 0) {
+        string_msg.data += diagnostics.avoidance_active_uavs[i];
+      } else {
+        string_msg.data += ", " + diagnostics.avoidance_active_uavs[i];
+      }
     }
+
+  } else {
+
+    std::stringstream ss;
+    ss << diagnostics.avoidance_active_uavs.size();
+
+    string_msg.data += ss.str() + " UAVs";
   }
 
-  try {
-    pub_status_string_.publish(string_msg);
-  }
-  catch (...) {
-    ROS_ERROR("[MpcCopyTracker]: exception caught during publishing topic %s", pub_status_string_.getTopic().c_str());
-  }
+  pub_status_string_.publish(string_msg);
+  // TODO: check why old code used try catch statement
+  //   try {
+  //   pub_status_string_.publish(string_msg);
+  // }
+  // catch (...) {
+  //   ROS_ERROR("[MpcCopyTracker]: exception caught during publishing topic %s", pub_status_string_.getTopic().c_str());
+  // }
+}
+
+//}
+
+/* debugPrintState() //{ */
+
+void MpcCopyTracker::debugPrintState(const double throttle) {
+
+  auto [mpc_x, mpc_x_heading] = mrs_lib::get_mutexed(mutex_mpc_x_, mpc_x_, mpc_x_heading_);
+
+  ROS_DEBUG_THROTTLE(throttle, "[MpcCopyTracker]: MPC internal state: pos [%.2f, %.2f, %.2f, %.2f]", mpc_x(0), mpc_x(4), mpc_x(8), mpc_x_heading(0));
+  ROS_DEBUG_THROTTLE(throttle, "[MpcCopyTracker]: MPC internal state: vel [%.2f, %.2f, %.2f, %.2f]", mpc_x(1), mpc_x(5), mpc_x(9), mpc_x_heading(1));
+  ROS_DEBUG_THROTTLE(throttle, "[MpcCopyTracker]: MPC internal state: acc [%.2f, %.2f, %.2f, %.2f]", mpc_x(2), mpc_x(6), mpc_x(10), mpc_x_heading(2));
+  ROS_DEBUG_THROTTLE(throttle, "[MpcCopyTracker]: MPC internal state: jerk [%.2f, %.2f, %.2f, %.2f]", mpc_x(3), mpc_x(7), mpc_x(11), mpc_x_heading(3));
+}
+
+//}
+
+/* debugPrintMPCu() //{ */
+
+void MpcCopyTracker::debugPrintMPCResult(const double throttle) {
+
+  auto [mpc_u, mpc_u_heading] = mrs_lib::get_mutexed(mutex_mpc_u_, mpc_u_, mpc_u_heading_);
+  auto constraints            = mrs_lib::get_mutexed(mutex_constraints_, constraints_);
+
+  ROS_DEBUG_THROTTLE(throttle, "[MpcCopyTracker]: MPC result: [%.2f, %.2f, %.2f, %.2f]", mpc_u(0), mpc_u(1), mpc_u(2), mpc_u_heading);
+  ROS_DEBUG_THROTTLE(throttle, "[MpcCopyTracker]: snap constraint: hor: %.2f, ver asc: %.2f, vert desc: %.2f, heading: %.2f]", constraints.horizontal_snap,
+                     constraints.vertical_ascending_snap, constraints.vertical_descending_snap, constraints.heading_snap);
 }
 
 //}
@@ -3333,7 +3702,8 @@ void MpcCopyTracker::timerDiagnostics(const ros::TimerEvent& event) {
   if (!is_initialized_)
     return;
 
-  mrs_lib::Routine profiler_routine = profiler.createRoutine("timerDiagnostics", _diagnostics_rate_, 0.1, event);
+  mrs_lib::Routine    profiler_routine = profiler.createRoutine("timerDiagnostics", _diagnostics_rate_, 0.1, event);
+  mrs_lib::ScopeTimer timer = mrs_lib::ScopeTimer("MpcCopyTracker::timerDiagnostics", common_handlers_->scope_timer.logger, common_handlers_->scope_timer.enabled);
 
   publishDiagnostics();
 }
@@ -3349,6 +3719,8 @@ void MpcCopyTracker::timerMPC(const ros::TimerEvent& event) {
     return;
   }
 
+  auto dt1 = mrs_lib::get_mutexed(mutex_dt1_, dt1_);
+
   mrs_lib::AtomicScopeFlag unset_running(mpc_timer_running_);
 
   bool started_with_invalid = mpc_result_invalid_;
@@ -3361,10 +3733,12 @@ void MpcCopyTracker::timerMPC(const ros::TimerEvent& event) {
     return;
   }
 
-  mrs_lib::Routine profiler_routine = profiler.createRoutine("timerMPC", _mpc_rate_, 0.01, event);
+  mrs_lib::Routine    profiler_routine = profiler.createRoutine("timerMPC", 1.0 / dt1, 0.01, event);
+  mrs_lib::ScopeTimer timer = mrs_lib::ScopeTimer("MpcCopyTracker::timerMPC", common_handlers_->scope_timer.logger, common_handlers_->scope_timer.enabled);
 
   //-------------------
-  // added by bryan:
+  // TODO: improve this block
+  // added by Bryan:
   // Computational time:
   // // method Kelly:
   // start_pred_ = std::chrono::system_clock::now(); 
@@ -3381,17 +3755,18 @@ void MpcCopyTracker::timerMPC(const ros::TimerEvent& event) {
   std::clock_t c_start = std::clock();
   //----------------
 
-
   ros::Time     begin = ros::Time::now();
   ros::Time     end;
   ros::Duration interval;
+  int           trajectory_id;
 
   // if we are tracking trajectory, copy the setpoint
   if (trajectory_tracking_in_progress_) {
 
     MatrixXd des_x_trajectory, des_y_trajectory, des_z_trajectory, des_heading_trajectory;
     VectorXd des_x_whole_trajectory, des_y_whole_trajectory, des_z_whole_trajectory, des_heading_whole_trajectory;
-    double   trajectory_size, trajectory_dt;
+    double   trajectory_dt;
+    int      trajectory_size;
     {
       std::scoped_lock lock(mutex_des_trajectory_, mutex_des_whole_trajectory_);
 
@@ -3407,18 +3782,20 @@ void MpcCopyTracker::timerMPC(const ros::TimerEvent& event) {
 
       trajectory_size = trajectory_size_;
       trajectory_dt   = trajectory_dt_;
+
+      trajectory_id = des_whole_trajectory_id_;
     }
 
     /* interpolate the trajectory points and fill in the desired_trajectory vector //{ */
 
-    double trajectory_tracking_sub_idx = trajectory_tracking_sub_idx_;
-    double trajectory_tracking_idx     = trajectory_tracking_idx_;
+    int trajectory_tracking_sub_idx = trajectory_tracking_sub_idx_;
+    int trajectory_tracking_idx     = trajectory_tracking_idx_;
 
     for (int i = 0; i < _mpc_horizon_len_; i++) {
 
-      double first_time = _dt1_ + i * _dt2_ + trajectory_tracking_sub_idx * _dt1_;
+      double first_time = dt1 + i * _dt2_ + trajectory_tracking_sub_idx * dt1;
 
-      int first_idx  = trajectory_tracking_idx + floor(first_time / trajectory_dt);
+      int first_idx  = trajectory_tracking_idx + int(floor(first_time / trajectory_dt));
       int second_idx = first_idx + 1;
 
       double interp_coeff = std::fmod(first_time / trajectory_dt, 1.0);
@@ -3426,12 +3803,13 @@ void MpcCopyTracker::timerMPC(const ros::TimerEvent& event) {
       if (trajectory_tracking_loop_) {
 
         if (second_idx >= trajectory_size) {
-          second_idx -= trajectory_size;
+          second_idx = second_idx % trajectory_size;
         }
 
         if (first_idx >= trajectory_size) {
-          first_idx -= trajectory_size;
+          first_idx = first_idx % trajectory_size;
         }
+
       } else {
 
         if (second_idx >= trajectory_size) {
@@ -3467,6 +3845,11 @@ void MpcCopyTracker::timerMPC(const ros::TimerEvent& event) {
 
       trajectory_tracking_sub_idx_++;
     }
+  } else {
+
+    std::scoped_lock lock(mutex_des_whole_trajectory_);
+
+    trajectory_id = des_whole_trajectory_id_;
   }
 
   manageConstraints();
@@ -3477,6 +3860,7 @@ void MpcCopyTracker::timerMPC(const ros::TimerEvent& event) {
   interval = end - begin;
 
   // ---------------
+  // TODO: improve this block
   // added by bryan
   // Computational time:
   // // method Kelly:
@@ -3516,18 +3900,13 @@ void MpcCopyTracker::timerMPC(const ros::TimerEvent& event) {
   ComputationalTime_msg_.name_parts.clear();
   //---------------
 
-  // | ----------------- acumulate the MPC delay ---------------- |
-  if (interval.toSec() > _dt1_) {
+  // | ------------------ calculate the MPC RTF ----------------- |
 
-    mpc_total_delay_ += interval.toSec() - _dt1_;
-    double perc_slower = 100.0 * mpc_total_delay_ / (ros::Time::now() - mpc_start_time_).toSec();
+  mpc_rtf_ = 0.99 * mpc_rtf_ + 0.01 * (interval.toSec()/dt1);
 
-    if (perc_slower >= 1.0) {
-      ROS_WARN_THROTTLE(10.0, "[MpcCopyTracker] MPC is Running %.2f%% slower than it should", perc_slower);
-    }
+  if (mpc_rtf_ >= 1.0) {
+    ROS_WARN_THROTTLE(5.0, "[MpcCopyTracker] MPC Real Time Factor (%.3f) is slow", mpc_rtf_);
   }
-
-  mpc_computed_ = true;
 
   /* publish predicted future //{ */
 
@@ -3547,18 +3926,24 @@ void MpcCopyTracker::timerMPC(const ros::TimerEvent& event) {
         newPose.position.y = predicted_trajectory_(i * _mpc_n_states_ + 4);
         newPose.position.z = predicted_trajectory_(i * _mpc_n_states_ + 8);
 
-        newPose.orientation = mrs_lib::AttitudeConverter(0, 0, predicted_heading_trajectory_(i * _mpc_n_states_));
+        try {
+          newPose.orientation = mrs_lib::AttitudeConverter(0, 0, predicted_heading_trajectory_(i * _mpc_n_states_));
+        } catch (...) {
+          ROS_ERROR_THROTTLE(1.0, "[MpcCopyTracker]: failed to fill orientation into debug print trajectory");
+        }
 
         debug_trajectory_out.poses.push_back(newPose);
       }
     }
 
-    try {
-      publisher_predicted_trajectory_debugging_.publish(debug_trajectory_out);
-    }
-    catch (...) {
-      ROS_ERROR("[MpcCopyTracker]: exception caught during publishing topic %s", publisher_predicted_trajectory_debugging_.getTopic().c_str());
-    }
+    ph_predicted_trajectory_debugging_.publish(debug_trajectory_out);
+    // TODO: check why old code used try catch statement
+    // try {
+    //   ph_predicted_trajectory_debugging_.publish(debug_trajectory_out);
+    // }
+    // catch (...) {
+    //   ROS_ERROR("[MpcCopyTracker]: exception caught during publishing topic %s", ph_predicted_trajectory_debugging_.getTopic().c_str());
+    // }
   }
 
   //}
@@ -3570,10 +3955,22 @@ void MpcCopyTracker::timerMPC(const ros::TimerEvent& event) {
     prediction_fs_out.header.stamp    = ros::Time::now();
     prediction_fs_out.header.frame_id = uav_state_.header.frame_id;
 
+    ros::Time stamp = prediction_fs_out.header.stamp;
+
+    prediction_fs_out.input_id = trajectory_id;
+
     {
       std::scoped_lock lock(mutex_predicted_trajectory_);
 
       for (int i = 0; i < _mpc_horizon_len_; i++) {
+
+        if (i == 0) {
+          stamp += ros::Duration(0.01);
+        } else {
+          stamp += ros::Duration(0.2);
+        }
+
+        prediction_fs_out.stamps.push_back(stamp);
 
         {  // position
           geometry_msgs::Point point;
@@ -3626,20 +4023,30 @@ void MpcCopyTracker::timerMPC(const ros::TimerEvent& event) {
       }
     }
 
+    // added by us: -----
     try {
       publisher_prediction_full_state_.publish(prediction_fs_out);
     }
     catch (...) {
       ROS_ERROR("[MpcCopyTracker]: exception caught during publishing topic %s", publisher_prediction_full_state_.getTopic().c_str());
     }
+    // ----
+
+    {
+      std::scoped_lock lock(mutex_prediction_full_state_);
+      prediction_full_state_ = prediction_fs_out;
+    }
   }
 
   //}
 
+  mpc_computed_ = true;
+
   if (started_with_invalid) {
+
     mpc_result_invalid_ = false;
-    ROS_INFO("[MpcCopyTracker]: calculated first MPC result after invalidation, x %.2f, y %.2f, hor1x %.2f, hor1y %.2f", mpc_x_(0, 0), mpc_x_(4, 0),
-             des_x_trajectory_(0, 0), des_y_trajectory_(0, 0));
+
+    ROS_INFO("[MpcCopyTracker]: calculated the first MPC result after invalidation");
   }
 }
 
@@ -3652,17 +4059,21 @@ void MpcCopyTracker::timerTrajectoryTracking(const ros::TimerEvent& event) {
   auto trajectory_size = mrs_lib::get_mutexed(mutex_des_trajectory_, trajectory_size_);
   auto trajectory_dt   = mrs_lib::get_mutexed(mutex_trajectory_tracking_states_, trajectory_dt_);
 
-  mrs_lib::Routine profiler_routine = profiler.createRoutine("timerTrajectoryTracking", int(1.0 / trajectory_dt), 0.01, event);
+  mrs_lib::Routine    profiler_routine = profiler.createRoutine("timerTrajectoryTracking", int(1.0 / trajectory_dt), 0.01, event);
+  mrs_lib::ScopeTimer timer =
+      mrs_lib::ScopeTimer("MpcCopyTracker::timerTrajectoryTracking", common_handlers_->scope_timer.logger, common_handlers_->scope_timer.enabled);
 
   {
     std::scoped_lock lock(mutex_trajectory_tracking_states_);
 
+    // block added by us: -----------
     if(trajectory_tracking_idx_ == 0){
       //ROS_INFO_STREAM("[MpcCopyTracker]: trajectory_tracking_idx_ = \n" << trajectory_tracking_idx_);
       // set the global variable to keep track of the time when the trajectory was started
       time_at_start_point_ = (ros::Time::now()).toSec();
       // publish it below (add to msg) 
     }
+    // ---------------
 
     // do a step of the main tracking idx
 
@@ -3671,9 +4082,13 @@ void MpcCopyTracker::timerTrajectoryTracking(const ros::TimerEvent& event) {
 
     // INCREMENT THE TRACKING IDX
     trajectory_tracking_idx_++;
+
     ROS_INFO_STREAM_THROTTLE(1.0, "[MpcCopyTracker]: trajectory_tracking_idx_" << trajectory_tracking_idx_);
 
-    // !!!!! bryan, inspired by original timerMpc
+
+
+    // custom code added by as: --------------
+        // !!!!! bryan, inspired by original timerMpc
     // looping  
     if (trajectory_tracking_loop_) {
       if (trajectory_tracking_idx_ >= trajectory_size) {
@@ -3739,6 +4154,7 @@ void MpcCopyTracker::timerTrajectoryTracking(const ros::TimerEvent& event) {
         }
       }
     }
+    // ---------------
 
 
     // if the tracking idx hits the end of the trajectory
@@ -3770,6 +4186,81 @@ void MpcCopyTracker::timerTrajectoryTracking(const ros::TimerEvent& event) {
 
 //}
 
+/* timerVelocityTracking() //{ */
+
+void MpcCopyTracker::timerVelocityTracking(const ros::TimerEvent& event) {
+
+  if (!is_initialized_) {
+    return;
+  }
+
+  if (!velocity_tracking_active_) {
+    return;
+  }
+
+  mrs_lib::Routine    profiler_routine = profiler.createRoutine("timerVelocityTracking", int(30.0), 0.01, event);
+  mrs_lib::ScopeTimer timer =
+      mrs_lib::ScopeTimer("MpcCopyTracker::timerVelocityTracking", common_handlers_->scope_timer.logger, common_handlers_->scope_timer.enabled);
+
+  // stop the timer when timeout
+  if ((ros::Time::now() - velocity_reference_time_).toSec() > 0.5) {
+
+    ROS_WARN_THROTTLE(1.0, "[MpcCopyTracker]: velocity reference timeouted, hovering");
+    timer_velocity_tracking_.stop();
+
+    toggleHover(true);
+
+    velocity_tracking_active_ = false;
+
+    return;
+  }
+
+  auto [mpc_x, mpc_x_heading] = mrs_lib::get_mutexed(mutex_mpc_x_, mpc_x_, mpc_x_heading_);
+  auto velocity_reference     = mrs_lib::get_mutexed(mutex_velocity_reference_, velocity_reference_);
+
+  mrs_msgs::TrajectoryReference trajectory;
+
+  trajectory.fly_now         = true;
+  trajectory.use_heading     = true;
+  trajectory.dt              = 0.2;
+  trajectory.header.stamp    = ros::Time::now();
+  trajectory.header.frame_id = "";
+
+  double x       = mpc_x(0, 0);
+  double y       = mpc_x(4, 0);
+  double z       = mpc_x(8, 0);
+  double heading = mpc_x_heading(0, 0);
+
+  for (int i = 0; i < 50; i++) {
+
+    mrs_msgs::Reference reference;
+    reference.position.x = x;
+    reference.position.y = y;
+    reference.position.z = z;
+    reference.heading    = heading;
+
+    trajectory.points.push_back(reference);
+
+    x += velocity_reference.velocity.x * trajectory.dt;
+    y += velocity_reference.velocity.y * trajectory.dt;
+    z += velocity_reference.velocity.z * trajectory.dt;
+
+    if (velocity_reference.use_altitude) {
+      z = velocity_reference.altitude;
+    }
+
+    if (velocity_reference.use_heading_rate) {
+      heading += velocity_reference.heading_rate * trajectory.dt;
+    } else if (velocity_reference.use_heading) {
+      heading = velocity_reference.heading;
+    }
+  }
+
+  auto [success, message, modified] = loadTrajectory(trajectory);
+}
+
+//}
+
 /* //{ timerAvoidanceTrajectory() */
 
 void MpcCopyTracker::timerAvoidanceTrajectory(const ros::TimerEvent& event) {
@@ -3782,7 +4273,25 @@ void MpcCopyTracker::timerAvoidanceTrajectory(const ros::TimerEvent& event) {
     return;
   }
 
-  mrs_lib::Routine profiler_routine = profiler.createRoutine("timerAvoidanceTrajectory", _avoidance_trajectory_rate_, 0.1, event);
+  if (!sh_estimation_diag_.hasMsg()) {
+    return;
+  } else {
+    // we won't try to transform and publish the avoidance prediction if we cannot transform it
+
+    auto                     estimation_diag      = sh_estimation_diag_.getMsg();
+    std::vector<std::string> state_estimators = estimation_diag.get()->switchable_state_estimators;
+
+    bool got_gps_est = std::find(state_estimators.begin(), state_estimators.end(), "gps_garmin") != state_estimators.end() || std::find(state_estimators.begin(), state_estimators.end(), "gps_baro") != state_estimators.end();
+    bool got_rtk_est = std::find(state_estimators.begin(), state_estimators.end(), "rtk") != state_estimators.end();
+
+    if (!got_gps_est && !got_rtk_est) {
+      return;
+    }
+  }
+
+  mrs_lib::Routine    profiler_routine = profiler.createRoutine("timerAvoidanceTrajectory", _avoidance_trajectory_rate_, 0.1, event);
+  mrs_lib::ScopeTimer timer =
+      mrs_lib::ScopeTimer("MpcCopyTracker::timerAvoidanceTrajectory", common_handlers_->scope_timer.logger, common_handlers_->scope_timer.enabled);
 
   auto uav_state            = mrs_lib::get_mutexed(mutex_uav_state_, uav_state_);
   auto predicted_trajectory = mrs_lib::get_mutexed(mutex_predicted_trajectory_, predicted_trajectory_);
@@ -3795,16 +4304,13 @@ void MpcCopyTracker::timerAvoidanceTrajectory(const ros::TimerEvent& event) {
     avoidance_trajectory.stamp               = ros::Time::now();
     avoidance_trajectory.uav_name            = _uav_name_;
     avoidance_trajectory.priority            = avoidance_this_uav_priority_;
-    avoidance_trajectory.collision_avoidance = collision_avoidance_enabled_ && (uav_state.estimator_horizontal.type == mrs_msgs::EstimatorType::GPS ||
-                                                                                uav_state.estimator_horizontal.type == mrs_msgs::EstimatorType::RTK);
-
+    avoidance_trajectory.collision_avoidance = collision_avoidance_enabled_ && (uav_state.estimator_horizontal == "lat_gps" || uav_state.estimator_horizontal == "lat_rtk");
     avoidance_trajectory.points.clear();
     avoidance_trajectory.stamp               = ros::Time::now();
     avoidance_trajectory.uav_name            = _uav_name_;
     avoidance_trajectory.priority            = avoidance_this_uav_priority_;
     avoidance_trajectory.collision_avoidance = collision_avoidance_enabled_;
 
-    // transform it from utm_origin to the currently used frame
     auto res = common_handlers_->transformer->getTransform(uav_state.header.frame_id, "utm_origin", ros::Time::now());
 
     if (!res) {
@@ -3853,12 +4359,14 @@ void MpcCopyTracker::timerAvoidanceTrajectory(const ros::TimerEvent& event) {
       }
     }
 
-    try {
-      avoidance_trajectory_publisher_.publish(avoidance_trajectory);
-    }
-    catch (...) {
-      ROS_ERROR("[MpcCopyTracker]: exception caught during publishing topic %s", avoidance_trajectory_publisher_.getTopic().c_str());
-    }
+    ph_avoidance_trajectory_.publish(avoidance_trajectory);
+    // TODO: check why old code used try catch statement
+    // try {
+    //   ph_avoidance_trajectory_.publish(avoidance_trajectory);
+    // }
+    // catch (...) {
+    //   ROS_ERROR("[MpcCopyTracker]: exception caught during publishing topic %s", ph_avoidance_trajectory_.getTopic().c_str());
+    // }
   }
 }
 
@@ -3868,10 +4376,10 @@ void MpcCopyTracker::timerAvoidanceTrajectory(const ros::TimerEvent& event) {
 
 void MpcCopyTracker::timerHover(const ros::TimerEvent& event) {
 
-  mrs_lib::AtomicScopeFlag unset_running(mpc_timer_running_);
-  auto                     mpc_x = mrs_lib::get_mutexed(mutex_mpc_x_, mpc_x_);
+  MatrixXd mpc_x = mrs_lib::get_mutexed(mutex_mpc_x_, mpc_x_);
 
-  mrs_lib::Routine profiler_routine = profiler.createRoutine("timerHover", 10, 0.01, event);
+  mrs_lib::Routine    profiler_routine = profiler.createRoutine("timerHover", 10, 0.01, event);
+  mrs_lib::ScopeTimer timer = mrs_lib::ScopeTimer("MpcCopyTracker::timerHover", common_handlers_->scope_timer.logger, common_handlers_->scope_timer.enabled);
 
   setRelativeGoal(0, 0, 0, 0, false);
 
@@ -3887,7 +4395,7 @@ void MpcCopyTracker::timerHover(const ros::TimerEvent& event) {
 
 }  // namespace mpc_copy_tracker
 
-}  // namespace mrs_uav_trackers
+}  // namespace trackers_brubotics
 
 #include <pluginlib/class_list_macros.h>
-PLUGINLIB_EXPORT_CLASS(mrs_uav_trackers::mpc_copy_tracker::MpcCopyTracker, mrs_uav_managers::Tracker)
+PLUGINLIB_EXPORT_CLASS(trackers_brubotics::mpc_copy_tracker::MpcCopyTracker, mrs_uav_managers::Tracker)

@@ -1,16 +1,25 @@
-#define VERSION "0.0.5.0"
-
 /*includes//{*/
 #include <ros/ros.h>
+#include <ros/package.h>
+
 #include <mrs_uav_managers/tracker.h>
+#include <mrs_uav_managers/controller.h>
+
 #include <mrs_lib/profiler.h>
-#include <mrs_lib/param_loader.h>
-#include <mrs_lib/subscribe_handler.h>
+#include <mrs_lib/utils.h>
 #include <mrs_lib/mutex.h>
+#include <mrs_lib/attitude_converter.h>
+#include <mrs_lib/subscribe_handler.h>
+#include <mrs_lib/publisher_handler.h>
+#include <mrs_lib/geometry/cyclic.h>
+#include <mrs_lib/geometry/misc.h>
+#include <mrs_lib/param_loader.h>
+#include <mrs_lib/scope_timer.h>
 //#include <stack>
 // #include <iostream>
 /*begin includes added by bryan:*/
-#include <mrs_lib/attitude_converter.h>
+
+
 #include <geometry_msgs/PoseArray.h>
 #include <geometry_msgs/Pose.h>
 #include <mrs_msgs/MpcPredictionFullState.h>
@@ -18,8 +27,6 @@
 #include <mrs_msgs/FuturePoint.h>
 #include <ros/console.h>
 #include <trackers_brubotics/DSM.h> // custom ROS message
-#include <mrs_lib/geometry/cyclic.h>
-#include <mrs_lib/geometry/misc.h>
 #include <std_msgs/String.h>
 #include <std_msgs/Float32.h>
 #include <std_msgs/Float64.h>
@@ -45,17 +52,20 @@
 #include <geometry_msgs/Pose.h>   // for the position
 #include <geometry_msgs/Twist.h> //for the velocity
 #include <math.h>  
-#include <mrs_msgs/BacaProtocol.h>
+#include <mrs_modules_msgs/BacaProtocol.h>
 #include <std_msgs/UInt8.h>
 #include <stdlib.h> 
 // | ----------------2UAV LOAD model----------------- |
 #include <Eigen/Geometry>
 
 
+// TEST:
+// #include <common.h>
+// #include <pid.hpp>
+#include <se3_copy_controller/se3_copy_controller.h>
+//#include <controllers_brubotics/se3_copy_controller/se3_copy_controller.h>
 
-// #include <mrs_lib/utils.h>
-// #include <mrs_lib/geometry/cyclic.h>
-// #include <mrs_lib/geometry/misc.h>
+#include <mrs_msgs/MpcTrackerDiagnostics.h>
 
 //}
 #define OUTPUT_ATTITUDE_RATE 0
@@ -68,7 +78,7 @@ using sradians = mrs_lib::geometry::sradians;
 
 
 
-namespace mrs_uav_trackers
+namespace trackers_brubotics
 {
 
 namespace dergbryan_tracker
@@ -77,35 +87,41 @@ namespace dergbryan_tracker
 /*class DergbryanTracker//{*/
 class DergbryanTracker : public mrs_uav_managers::Tracker {
 public:
-  void                          initialize(const ros::NodeHandle &parent_nh, const std::string uav_name, std::shared_ptr<mrs_uav_managers::CommonHandlers_t> common_handlers);
-  std::tuple<bool, std::string> activate(const mrs_msgs::PositionCommand::ConstPtr &last_position_cmd);
+  bool initialize(const ros::NodeHandle& nh, std::shared_ptr<mrs_uav_managers::control_manager::CommonHandlers_t> common_handlers,
+                  std::shared_ptr<mrs_uav_managers::control_manager::PrivateHandlers_t> private_handlers);
+  
+  std::tuple<bool, std::string> activate(const std::optional<mrs_msgs::TrackerCommand>& last_tracker_cmd);
   void                          deactivate(void);
   bool                          resetStatic(void);
-  const mrs_msgs::PositionCommand::ConstPtr update(const mrs_msgs::UavState::ConstPtr &uav_state, const mrs_msgs::AttitudeCommand::ConstPtr &last_attitude_cmd);
+
+  std::optional<mrs_msgs::TrackerCommand>   update(const mrs_msgs::UavState& uav_state, const mrs_uav_managers::Controller::ControlOutput& last_control_output);
   const mrs_msgs::TrackerStatus             getStatus();
-  const std_srvs::SetBoolResponse::ConstPtr enableCallbacks(const std_srvs::SetBoolRequest::ConstPtr &cmd);
-  const std_srvs::TriggerResponse::ConstPtr switchOdometrySource(const mrs_msgs::UavState::ConstPtr &new_uav_state);
-  const mrs_msgs::ReferenceSrvResponse::ConstPtr           setReference(const mrs_msgs::ReferenceSrvRequest::ConstPtr &cmd);
-  const mrs_msgs::VelocityReferenceSrvResponse::ConstPtr setVelocityReference(const mrs_msgs::VelocityReferenceSrvRequest::ConstPtr &cmd);
-  const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr setTrajectoryReference(const mrs_msgs::TrajectoryReferenceSrvRequest::ConstPtr &cmd);
-  const mrs_msgs::DynamicsConstraintsSrvResponse::ConstPtr setConstraints(const mrs_msgs::DynamicsConstraintsSrvRequest::ConstPtr &cmd);
-  const std_srvs::TriggerResponse::ConstPtr hover(const std_srvs::TriggerRequest::ConstPtr &cmd);
-  const std_srvs::TriggerResponse::ConstPtr startTrajectoryTracking(const std_srvs::TriggerRequest::ConstPtr &cmd);
-  const std_srvs::TriggerResponse::ConstPtr stopTrajectoryTracking(const std_srvs::TriggerRequest::ConstPtr &cmd);
-  const std_srvs::TriggerResponse::ConstPtr resumeTrajectoryTracking(const std_srvs::TriggerRequest::ConstPtr &cmd);
-  const std_srvs::TriggerResponse::ConstPtr gotoTrajectoryStart(const std_srvs::TriggerRequest::ConstPtr &cmd);
+  const std_srvs::SetBoolResponse::ConstPtr enableCallbacks(const std_srvs::SetBoolRequest::ConstPtr& cmd);
+  const std_srvs::TriggerResponse::ConstPtr switchOdometrySource(const mrs_msgs::UavState& new_uav_state);
+  
+  const mrs_msgs::ReferenceSrvResponse::ConstPtr           setReference(const mrs_msgs::ReferenceSrvRequest::ConstPtr& cmd);
+  const mrs_msgs::VelocityReferenceSrvResponse::ConstPtr   setVelocityReference(const mrs_msgs::VelocityReferenceSrvRequest::ConstPtr& cmd);
+  const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr setTrajectoryReference(const mrs_msgs::TrajectoryReferenceSrvRequest::ConstPtr& cmd);
+  
+  const std_srvs::TriggerResponse::ConstPtr hover(const std_srvs::TriggerRequest::ConstPtr& cmd);
+  const std_srvs::TriggerResponse::ConstPtr startTrajectoryTracking(const std_srvs::TriggerRequest::ConstPtr& cmd);
+  const std_srvs::TriggerResponse::ConstPtr stopTrajectoryTracking(const std_srvs::TriggerRequest::ConstPtr& cmd);
+  const std_srvs::TriggerResponse::ConstPtr resumeTrajectoryTracking(const std_srvs::TriggerRequest::ConstPtr& cmd);
+  const std_srvs::TriggerResponse::ConstPtr gotoTrajectoryStart(const std_srvs::TriggerRequest::ConstPtr& cmd);
+  
+  const mrs_msgs::DynamicsConstraintsSrvResponse::ConstPtr setConstraints(const mrs_msgs::DynamicsConstraintsSrvRequest::ConstPtr& cmd);
   // other functions:
   // TODO: document these function I/O
-  void trajectory_prediction_general(mrs_msgs::PositionCommand position_cmd, double uav_heading, const mrs_msgs::AttitudeCommand::ConstPtr &last_attitude_cmd);
-  void trajectory_prediction_general_load_2UAV(mrs_msgs::PositionCommand position_cmd, double uav_heading, const mrs_msgs::AttitudeCommand::ConstPtr &last_attitude_cmd);
+  void trajectory_prediction_general(mrs_msgs::TrackerCommand position_cmd, double uav_heading, const mrs_uav_managers::Controller::ControlOutput& last_control_output);
+  void trajectory_prediction_general_load_2UAV(mrs_msgs::TrackerCommand position_cmd, double uav_heading, const mrs_uav_managers::Controller::ControlOutput& last_control_output);
   void computeERG();
   // Eigen::Matrix<double, 2, 2>
   Eigen::Vector3d calcCirculationField(double circ_gain, std::string type, double dist_x, double dist_y, double dist_z, double dist);
   double getLambda(Eigen::Vector3d &point_link_0, Eigen::Vector3d &point_link_1, Eigen::Vector3d &point_sphere, bool between_0_1);
   std::tuple< Eigen::Vector3d, Eigen::Vector3d> getMinDistDirLineSegments(Eigen::Vector3d &point0_link0, Eigen::Vector3d &point1_link0, Eigen::Vector3d &point0_link1, Eigen::Vector3d &point1_link1);
-  std::tuple< double, Eigen::Vector3d, double>  ComputeSe3CopyController(const mrs_msgs::UavState uavi_state, Eigen::Matrix3d uavi_R, Eigen::Vector3d Payloadposition_vector, Eigen::Vector3d Payloadvelocity_vector,mrs_msgs::PositionCommand uavi_position_cmd ,Eigen::Vector3d uavi_Rp,Eigen::Vector3d uavi_Rv,Eigen::Vector3d uavi_Rpl,Eigen::Vector3d uavi_Ra);
-  void publishFollowerDataForLeaderIn2uavs_payload(mrs_msgs::PositionCommand position_cmd);
-  void computePSCTrajectoryPredictions(mrs_msgs::PositionCommand position_cmd, double uav_heading, const mrs_msgs::AttitudeCommand::ConstPtr &last_attitude_cmd); //mother function that calls the correct prediction function depending on the cases.
+  std::tuple< double, Eigen::Vector3d, double>  ComputeSe3CopyController(const mrs_msgs::UavState uavi_state, Eigen::Matrix3d uavi_R, Eigen::Vector3d Payloadposition_vector, Eigen::Vector3d Payloadvelocity_vector,mrs_msgs::TrackerCommand uavi_position_cmd ,Eigen::Vector3d uavi_Rp,Eigen::Vector3d uavi_Rv,Eigen::Vector3d uavi_Rpl,Eigen::Vector3d uavi_Ra);
+  void publishFollowerDataForLeaderIn2uavs_payload(mrs_msgs::TrackerCommand position_cmd);
+  void computePSCTrajectoryPredictions(mrs_msgs::TrackerCommand position_cmd, double uav_heading, const mrs_uav_managers::Controller::ControlOutput& last_control_output); //mother function that calls the correct prediction function depending on the cases.
   double computeDSM_sT_trajpred(geometry_msgs::PoseArray predicted_thrust);
   double computeDSM_sw_trajpred(geometry_msgs::PoseArray predicted_attrate);
   double computeDSM_swing_trajpred(geometry_msgs::PoseArray predicted_swing_angle);
@@ -123,13 +139,23 @@ public:
   }
 
 private:
-  ros::NodeHandle                                     nh_;
-  ros::NodeHandle                                     nh2_;
-  std::shared_ptr<mrs_uav_managers::CommonHandlers_t> common_handlers_;
+  ros::NodeHandle                                     nh_;  // Se3CopyController
+  ros::NodeHandle                                     nh2_; // DergbryanTracker // TODO: choose better names
+
+  std::shared_ptr<mrs_uav_managers::control_manager::CommonHandlers_t>  common_handlers_;
+  std::shared_ptr<mrs_uav_managers::control_manager::PrivateHandlers_t> private_handlers_;
+
+
   std::string _uav_name_;
   std::string _leader_uav_name_;  // leader uavID for 2uavs payload transport
   std::string _follower_uav_name_;// follower uavID for 2uavs payload transport
   int update_routine_counter_; // counts number of times the update() routine was executed
+  
+
+  // | -------------------------- gains ------------------------- |
+  controllers_brubotics::se3_copy_controller::Gains_t gains_;
+  
+  
   // | ------------------- declaring env (session/bashrc) parameters ------------------- |
   std::string _run_type_;       // set to "simulation" (for Gazebo simulation) OR "uav" (for hardware testing) defined in bashrc or session.yaml. Used for payload transport as payload position comes from two different callbacks depending on how the test is ran (in sim or on real UAV).
   std::string _type_of_system_; // defines the dynamic system model to simulate in the prediction using the related controller: can be 1uav_no_payload, 1uav_payload or 2uavs_payload. Set in session.yaml file.
@@ -152,27 +178,10 @@ private:
   // Se3CopyController:
   std::string _version_;
   bool   _profiler_enabled_ = false;
-  double kpxy_;       // position xy gain
-  double kvxy_;       // velocity xy gain
-  double kplxy_;      // load position xy gain
-  double kvlxy_;      // load velocity xy gain
-  double kaxy_;       // acceleration xy gain (feed forward, =1)
-  double kiwxy_;      // world xy integral gain
-  double kibxy_;      // body xy integral gain
-  double kiwxy_lim_;  // world xy integral limit
-  double kibxy_lim_;  // body xy integral limit
-  double kpz_;        // position z gain
-  double kvz_;        // velocity z gain
-  double kplz_;       // load position z gain
-  double kvlz_;       // load velocity z gain
-  double kaz_;        // acceleration z gain (feed forward, =1)
-  double km_;         // mass estimator gain
-  double km_lim_;     // mass estimator limit
-  double kqxy_;       // pitch/roll attitude gain
-  double kqz_;        // yaw attitude gain
+
   bool   _tilt_angle_failsafe_enabled_;
   double _tilt_angle_failsafe_;
-  double _thrust_saturation_; // total thrust limit in [0,1]
+  double _throttle_saturation_; // total thrust limit in [0,1]
   int    output_mode_; // attitude_rate / quaternion
   double _Epl_min_;    // [m], below this payload error norm, the payload error is disabled
   bool _Epl_max_failsafe_enabled_;
@@ -377,6 +386,7 @@ private:
   // -------------
   //|-----------------------------UAV--------------------------------|//
   mrs_msgs::UavState uav_state_;       // array of UAV state
+  std::mutex         mutex_uav_state_; // now added by bryan
   mrs_msgs::UavState uav_state_prev_;  // array of UAV state at previous samle time
   //  - ERG trajectory predictions: 
   geometry_msgs::PoseArray predicted_poses_out_;             // array of predicted UAV poses
@@ -454,7 +464,11 @@ private:
   // --------------------------------------------------------------
   //|-----------------------------EXAMPLE--------------------------------|//
   std::vector<mrs_lib::SubscribeHandler<std_msgs::String>> other_uav_subscribers2_;
-  void chatterCallback(mrs_lib::SubscribeHandler<std_msgs::String>& sh_ptr);
+  void chatterCallback(const std_msgs::String::ConstPtr sh_ptr);
+  // backup
+  //  void chatterCallback(mrs_lib::SubscribeHandler<std_msgs::String>& sh_ptr);
+  
+  
   //|------------------------LOAD-----------------------------|//
   // TODO: the subscriber names below (load_state_sub_ & data_payload_sub_) are not chosen well. Why not using a common name and add simulation and uav?
   ros::Subscriber load_state_sub_;
@@ -470,7 +484,7 @@ private:
   Eigen::Vector3d anchoring_pt_pose_position_ = Eigen::Vector3d::Zero(3); // TODO why must it be inititliazed to zero here?
   Eigen::Vector3d anchoring_pt_lin_vel_ = Eigen::Vector3d::Zero(3); // TODO why must it be inititliazed to zero here?
   ros::Subscriber data_payload_sub_;
-  void BacaLoadStatesCallback(const mrs_msgs::BacaProtocolConstPtr& msg);            // TODO: document
+  void BacaLoadStatesCallback(const mrs_modules_msgs::BacaProtocolConstPtr& msg);            // TODO: document
   // TODO: unclear names used for these global variables, change names and add documentation
   float encoder_angle_1_;
   float encoder_angle_2_;
@@ -486,12 +500,12 @@ private:
   Eigen::Vector3d uav_velocity_follower_=Eigen::Vector3d::Zero(3); // TODO why must it be inititliazed to zero here?
   
   ros::Subscriber position_cmd_follower_for_leader_sub_; 
-  void position_cmd_follower_for_leader_callback(const mrs_msgs::PositionCommand::ConstPtr& msg);
-  mrs_msgs::PositionCommand position_cmd_follower_for_leader_;
+  void position_cmd_follower_for_leader_callback(const mrs_msgs::TrackerCommand::ConstPtr& msg);
+  mrs_msgs::TrackerCommand position_cmd_follower_for_leader_;
 
   ros::Subscriber goal_position_cmd_follower_for_leader_sub_; 
-  void goal_position_cmd_follower_for_leader_callback(const mrs_msgs::PositionCommand::ConstPtr& msg);
-  mrs_msgs::PositionCommand goal_position_cmd_follower_for_leader_;
+  void goal_position_cmd_follower_for_leader_callback(const mrs_msgs::TrackerCommand::ConstPtr& msg);
+  mrs_msgs::TrackerCommand goal_position_cmd_follower_for_leader_;
   
   ros::Subscriber anchoring_point_follower_for_leader_sub_;
   void anchoring_point_follower_for_leader_callback(const mrs_msgs::UavState::ConstPtr& msg);
@@ -504,12 +518,12 @@ private:
   double estimated_mass_follower_;
 
   ros::Subscriber position_cmd_follower_from_leader_sub_;
-  void position_cmd_follower_from_leader_callback(const mrs_msgs::PositionCommand::ConstPtr& msg);
-  mrs_msgs::PositionCommand position_cmd_follower_from_leader_;
+  void position_cmd_follower_from_leader_callback(const mrs_msgs::TrackerCommand::ConstPtr& msg);
+  mrs_msgs::TrackerCommand position_cmd_follower_from_leader_;
 
   ros::Subscriber goal_position_cmd_follower_from_leader_sub_;
-  void goal_position_cmd_follower_from_leader_callback(const mrs_msgs::PositionCommand::ConstPtr& msg);
-  mrs_msgs::PositionCommand goal_position_cmd_follower_from_leader_;
+  void goal_position_cmd_follower_from_leader_callback(const mrs_msgs::TrackerCommand::ConstPtr& msg);
+  mrs_msgs::TrackerCommand goal_position_cmd_follower_from_leader_;
 
   //|-----------------------------D-ERG--------------------------------|//
   //    - Multi-uav collision avoidance:
@@ -522,9 +536,11 @@ private:
   void callbackOtherUavTrajectory(const mrs_msgs::FutureTrajectoryConstPtr& msg);
   std::map<std::string, mrs_msgs::FutureTrajectory> other_uav_avoidance_trajectories_;
   std::vector<mrs_lib::SubscribeHandler<std_msgs::Float32>> other_uav_subscribers3_;
-  void callbackOtherUavTubeMinRadius(mrs_lib::SubscribeHandler<std_msgs::Float32>& sh_ptr);
+  void callbackOtherUavTubeMinRadius(const std_msgs::Float32::ConstPtr sh_ptr);
+  //   void callbackOtherUavTubeMinRadius(mrs_lib::SubscribeHandler<std_msgs::Float32>& sh_ptr);
   std::vector<mrs_lib::SubscribeHandler<trackers_brubotics::FutureTrajectoryTube>> other_uav_subscribers4_;
-  void callbackOtherUavFutureTrajectoryTube(mrs_lib::SubscribeHandler<trackers_brubotics::FutureTrajectoryTube>& sh_ptr);
+  void callbackOtherUavFutureTrajectoryTube(const trackers_brubotics::FutureTrajectoryTube::ConstPtr sh_ptr);
+  // void callbackOtherUavFutureTrajectoryTube(mrs_lib::SubscribeHandler<trackers_brubotics::FutureTrajectoryTube>& sh_ptr);
   std::map<std::string, trackers_brubotics::FutureTrajectoryTube> other_uav_tube_;
   // std::map<std::string, double> other_uav_tube_min_radius_; // TODO: not used anymore
   // TODO: from ctu MPC tracker
@@ -540,8 +556,8 @@ private:
   // TODO bryan: clean all below
   // | ------------------------ uav state ----------------------- |//
 
-  bool               got_uav_state_ = false; // now added by bryan
-  std::mutex         mutex_uav_state_; // now added by bryan
+  // bool               got_uav_state_ = false; // now added by bryan
+ 
   double uav_heading_; //
   double total_mass_;
   // float arm_radius=0.5; //Frank
@@ -684,13 +700,20 @@ private:
 
   ros::Timer timer_trajectory_tracking_;
   void       timerTrajectoryTracking(const ros::TimerEvent& event);
+ 
+
   // | ------------------------ hovering ------------------------ |
-  // ros::Timer timer_hover_;
-  // void       timerHover(const ros::TimerEvent& event);
-  std::atomic<bool> hover_timer_runnning_ = false;
+
+  ros::Timer        timer_hover_;
+  void              timerHover(const ros::TimerEvent& event);
   std::atomic<bool> hovering_in_progress_ = false;
   void              toggleHover(bool in);
+
+
+
   void setGoal(const double pos_x, const double pos_y, const double pos_z, const double heading, const bool use_heading);
+  //void setRelativeGoal(const double pos_x, const double pos_y, const double pos_z, const double heading, const bool use_heading); // TODO: add as in ctu code
+  //void setSinglePointReference(const double x, const double y, const double z, const double heading); // TODO: add as in ctu code
 
   bool consider_projection_NF_on_max_NF_a_co_ = false;
   double max_repulsion_other_uav_;
@@ -757,6 +780,16 @@ private:
   // debug:
   double ROS_INFO_THROTTLE_PERIOD; // = 10.0*_dt_;
   // double ROS_WARN_THROTTLE_PERIOD; // = 10.0*_dt_;//1.0*_dt_;
+
+
+  // TODO test for debugging SubscribeHandler issue-------------
+  // subscribing to the other UAV diagnostics'
+  void callbackOtherMavDiagnostics(const mrs_msgs::MpcTrackerDiagnostics::ConstPtr msg);
+  std::vector<mrs_lib::SubscribeHandler<mrs_msgs::MpcTrackerDiagnostics>> other_uav_diag_subscribers_;
+  std::map<std::string, mrs_msgs::MpcTrackerDiagnostics>                  other_uav_diagnostics_;
+  std::mutex mutex_other_uav_diagnostics_;
+  //---------------------
+
 };
 //}
 
@@ -764,17 +797,26 @@ private:
 
 
 /*initialize()//{*/
-void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unused]] const std::string uav_name,
-                             [[maybe_unused]] std::shared_ptr<mrs_uav_managers::CommonHandlers_t> common_handlers) {
+bool DergbryanTracker::initialize(const ros::NodeHandle& nh, std::shared_ptr<mrs_uav_managers::control_manager::CommonHandlers_t> common_handlers,
+                            std::shared_ptr<mrs_uav_managers::control_manager::PrivateHandlers_t> private_handlers) {
   ROS_INFO("[DergbryanTracker]: start of initialize");
-  common_handlers_ = common_handlers;                          
-  ros::NodeHandle nh_(parent_nh, "se3_copy_controller"); // NodeHandle 1 for Se3CopyController, used to load controller params
-  ros::NodeHandle nh2_(parent_nh, "dergbryan_tracker"); // NodeHandle 2 for DergbryanTracker, used to load tracker params
-  ros::NodeHandle nh3_(parent_nh, "mpc_tracker"); // NodeHandle 3
-  _uav_name_       = uav_name; // this UAV
+  
+  this->common_handlers_  = common_handlers;
+  this->private_handlers_ = private_handlers;
+
+  // TODO: make global vars of these as in examples ctu. First make local and then set global equal to local.
+  ros::NodeHandle nh_(nh, "se3_copy_controller"); // NodeHandle 1 for Se3CopyController, used to load controller params
+  ros::NodeHandle nh2_(nh, "dergbryan_tracker"); // NodeHandle 2 for DergbryanTracker, used to load tracker params
+  ros::NodeHandle nh3_(nh, "mpc_tracker"); // NodeHandle 3 // TODO: do we need this?
+
+  _uav_name_       = common_handlers->uav_name; // this UAV
+
   ros::Time::waitForValid();
 
-  // | ------------------- loading env (session/bashrc) parameters ------------------- |
+  // --------------------------------------------------------------
+  //            loading env (session/bashrc) parameters           |
+  // --------------------------------------------------------------
+
   ROS_INFO("[DergbryanTracker]: start loading environment (session/bashrc) parameters");
   _run_type_          = getenv("RUN_TYPE");
   _type_of_system_    = getenv("TYPE_OF_SYSTEM"); 
@@ -829,70 +871,178 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   }
   ROS_INFO("[DergbryanTracker]: finished loading environment (session/bashrc) parameters");
 
-  // | ------------------- loading .yaml parameters ------------------- |
+  // --------------------------------------------------------------
+  // |                     loading parameters                     |
+  // --------------------------------------------------------------
+
+  // | ---------- loading params using the parent's nh ---------- |
+
+  mrs_lib::ParamLoader param_loader_parent(common_handlers->parent_nh, "ControlManager");
+
+  param_loader_parent.loadParam("enable_profiler", _profiler_enabled_);
+
+  if (!param_loader_parent.loadedSuccessfully()) {
+    ROS_ERROR("[DergbryanTracker]: Could not load all parameters!");
+    return false;
+  }
+
+    // | -------------------- load param files -------------------- |
+  /* TODO: method below does not work as in https://github.com/ctu-mrs/mrs_uav_trackers/blob/master/src/mpc_tracker/mpc_tracker.cpp
+     private_handlers->param_loader->addYamlFile(ros::package::getPath("trackers_brubotics") + "/config/private/mpc_copy_tracker.yaml");
+     private_handlers->param_loader->addYamlFile(ros::package::getPath("trackers_brubotics") + "/config/public/mpc_copy_tracker.yaml");
+     use method as in https://github.com/ctu-mrs/example_tracker_plugin/blob/master/src/example_tracker.cpp
+  */
+  bool success = true;
+
+  // FYI
+  // This method will load the file using `rosparam get`
+  //   Pros: you can the full power of the official param loading
+  //   Cons: it is slower
+  //
+  // Alternatives:
+  //   You can load the file directly into the ParamLoader as shown below.
+  success *= private_handlers->loadConfigFile(ros::package::getPath("controllers_brubotics") + "/config/private/se3_copy_controller.yaml");
+  if (!success) {
+    return false;
+  }
+  success *= private_handlers->loadConfigFile(ros::package::getPath("controllers_brubotics") + "/config/public/se3_copy_controller.yaml");
+  if (!success) {
+    return false;
+  }
+
+  // TODO: how is the link between the yaml file choice and below??? now we don't have launch file anymore
+
   mrs_lib::ParamLoader param_loader(nh_, "Se3CopyController");
-  param_loader.loadParam("version", _version_);
-  /*TODO: this block triggers the error always, anyone knows solution to this? -> the version of the controller should be that of the tracker. Think how to smooth this.*/
-  // if (_version_ != VERSION) {
-  //   ROS_ERROR("[DergbryanTracker]: the version of the binary (%s) does not match the config file (%s), please build me!", VERSION, _version_.c_str());
-  //   ros::requestShutdown();
-  // }
-  
-  param_loader.loadParam("enable_profiler", _profiler_enabled_);
-  // lateral gains and limits:
-  param_loader.loadParam("default_gains/horizontal/kp", kpxy_);
-  param_loader.loadParam("default_gains/horizontal/kv", kvxy_);
-  param_loader.loadParam("default_gains/horizontal/ka", kaxy_);
-  param_loader.loadParam("default_gains/horizontal/kiw", kiwxy_);
-  param_loader.loadParam("default_gains/horizontal/kib", kibxy_);
-  param_loader.loadParam("default_gains/horizontal/kiw_lim", kiwxy_lim_);
-  param_loader.loadParam("default_gains/horizontal/kib_lim", kibxy_lim_);
-  // lateral gains for load damping part of the controller:
-  param_loader.loadParam("default_gains/horizontal/kpl", kplxy_);
-  param_loader.loadParam("default_gains/horizontal/kvl", kvlxy_);
-  // vertical gains:
-  param_loader.loadParam("default_gains/vertical/kp", kpz_);
-  param_loader.loadParam("default_gains/vertical/kv", kvz_);
-  param_loader.loadParam("default_gains/vertical/ka", kaz_);
-  // load gains vertical:
-  param_loader.loadParam("default_gains/vertical/kpl", kplz_);
-  param_loader.loadParam("default_gains/vertical/kvl", kvlz_);
-  // mass estimator (vertical) gains and limits:
-  param_loader.loadParam("default_gains/mass_estimator/km", km_);
-  param_loader.loadParam("default_gains/mass_estimator/km_lim", km_lim_);
+
+  std::string yaml_prefix = "controllers_brubotics/se3_copy_controller/"; // TODO: adapt code to make use of this prefix as in ctu examples
+ 
+  // lateral gains:
+  param_loader.loadParam(yaml_prefix + "se3/default_gains/horizontal/kp", gains_.kpxy);
+  param_loader.loadParam(yaml_prefix + "se3/default_gains/horizontal/kv", gains_.kvxy);
+  param_loader.loadParam(yaml_prefix + "se3/default_gains/horizontal/ka", gains_.kaxy);
+
+  param_loader.loadParam(yaml_prefix + "se3/default_gains/horizontal/kiw", gains_.kiwxy);
+  param_loader.loadParam(yaml_prefix + "se3/default_gains/horizontal/kib", gains_.kibxy);
+    
+  // | ------------------------- rampup ------------------------- |
+  // TODO: do we need this in tracker?
+  // param_loader.loadParam(yaml_prefix + "se3/rampup/enabled", _rampup_enabled_);
+  // param_loader.loadParam(yaml_prefix + "se3/rampup/speed", _rampup_speed_);
+
+  // height gains
+  param_loader.loadParam(yaml_prefix + "se3/default_gains/vertical/kp", gains_.kpz);
+  param_loader.loadParam(yaml_prefix + "se3/default_gains/vertical/kv", gains_.kvz);
+  param_loader.loadParam(yaml_prefix + "se3/default_gains/vertical/ka", gains_.kaz);
+
   // attitude gains:
-  param_loader.loadParam("default_gains/horizontal/attitude/kq", kqxy_);
-  param_loader.loadParam("default_gains/vertical/attitude/kq", kqz_);
+  param_loader.loadParam(yaml_prefix + "se3/default_gains/horizontal/attitude/kq", gains_.kq_roll_pitch);
+  param_loader.loadParam(yaml_prefix + "se3/default_gains/vertical/attitude/kq", gains_.kq_yaw);
+
+  // attitude rate gains
+  param_loader.loadParam(yaml_prefix + "se3/attitude_rate_gains/kw_roll_pitch", gains_.kw_roll_pitch);
+  param_loader.loadParam(yaml_prefix + "se3/attitude_rate_gains/kw_yaw", gains_.kw_yaw);
+
+  // mass estimator (vertical) gains and limits
+  param_loader.loadParam(yaml_prefix + "se3/default_gains/mass_estimator/km", gains_.km);
+  param_loader.loadParam(yaml_prefix + "se3/default_gains/mass_estimator/km_lim", gains_.km_lim);
+
+  // integrator limits
+  param_loader.loadParam(yaml_prefix + "se3/default_gains/horizontal/kiw_lim", gains_.kiwxy_lim);
+  param_loader.loadParam(yaml_prefix + "se3/default_gains/horizontal/kib_lim", gains_.kibxy_lim);
+  
   // constraints:
-  param_loader.loadParam("constraints/tilt_angle_failsafe/enabled", _tilt_angle_failsafe_enabled_);
-  param_loader.loadParam("constraints/tilt_angle_failsafe/limit", _tilt_angle_failsafe_);
+  param_loader.loadParam(yaml_prefix + "se3/constraints/tilt_angle_failsafe/enabled", _tilt_angle_failsafe_enabled_);
+  param_loader.loadParam(yaml_prefix + "se3/constraints/tilt_angle_failsafe/limit", _tilt_angle_failsafe_);
+  
+  _tilt_angle_failsafe_ = M_PI * (_tilt_angle_failsafe_ / 180.0);
+
   if (_tilt_angle_failsafe_enabled_ && fabs(_tilt_angle_failsafe_) < 1e-3) {
     ROS_ERROR("[DergbryanTracker]: constraints/tilt_angle_failsafe/enabled = 'TRUE' but the limit is too low");
-    ros::requestShutdown();
+    return false;
   }
-  param_loader.loadParam("constraints/thrust_saturation", _thrust_saturation_); // is further reduced by _thrust_saturation_ratio_
-  // output mode:
-  param_loader.loadParam("output_mode", output_mode_);
+
+  param_loader.loadParam(yaml_prefix + "se3/constraints/throttle_saturation", _throttle_saturation_); // is further reduced by _thrust_saturation_ratio_
+
+  // TODO: do we need these: ------
+  // // gain filtering
+  // param_loader.loadParam(yaml_prefix + "se3/gain_filtering/perc_change_rate", _gains_filter_change_rate_);
+  // param_loader.loadParam(yaml_prefix + "se3/gain_filtering/min_change_rate", _gains_filter_min_change_rate_);
+  // param_loader.loadParam(yaml_prefix + "se3/gain_filtering/rate", _gain_filtering_rate_);
+  // param_loader.loadParam(yaml_prefix + "se3/gain_filtering/gain_mute_coefficient", _gain_mute_coefficient_);
+
+  // // output mode
+  // param_loader.loadParam(yaml_prefix + "se3/preferred_output", drs_params_.preferred_output_mode);
+
+  // param_loader.loadParam(yaml_prefix + "se3/rotation_matrix", drs_params_.rotation_type);
+
+  // // angular rate feed forward
+  // param_loader.loadParam(yaml_prefix + "se3/angular_rate_feedforward/parasitic_pitch_roll",
+  //                                           drs_params_.pitch_roll_heading_rate_compensation);
+  // param_loader.loadParam(yaml_prefix + "se3/angular_rate_feedforward/jerk", drs_params_.jerk_feedforward);
+
+  // //| ------------------- position pid params ------------------ |
+  // param_loader.loadParam(yaml_prefix + "position_controller/translation_gains/p", _pos_pid_p_);
+  // param_loader.loadParam(yaml_prefix + "position_controller/translation_gains/i", _pos_pid_i_);
+  // param_loader.loadParam(yaml_prefix + "position_controller/translation_gains/d", _pos_pid_d_);
+
+  // param_loader.loadParam(yaml_prefix + "position_controller/heading_gains/p", _hdg_pid_p_);
+  // param_loader.loadParam(yaml_prefix + "position_controller/heading_gains/i", _hdg_pid_i_);
+  // param_loader.loadParam(yaml_prefix + "position_controller/heading_gains/d", _hdg_pid_d_);
+
+  //-------------
+
+  //TODO further clean below params
+  // lateral gains for load state feedback:
+  param_loader.loadParam(yaml_prefix + "se3/default_gains/horizontal/kpl", gains_.kplxy);
+  param_loader.loadParam(yaml_prefix + "se3/default_gains/horizontal/kvl", gains_.kvlxy);
+  // load gains vertical for load state feedback:
+  param_loader.loadParam(yaml_prefix + "se3/default_gains/vertical/kpl", gains_.kplz);
+  param_loader.loadParam(yaml_prefix + "se3/default_gains/vertical/kvl", gains_.kvlz);
   // payload:
-  param_loader.loadParam("payload/Epl_min", _Epl_min_);
-  param_loader.loadParam("payload/Epl_max/failsafe_enabled", _Epl_max_failsafe_enabled_);
-  param_loader.loadParam("payload/Epl_max/scaling", _Epl_max_scaling_);
-  // param_loader.loadParam("two_uavs_payload/callback_data_max_time_delay/follower", _max_time_delay_on_callback_data_follower_);
-  // param_loader.loadParam("two_uavs_payload/callback_data_max_time_delay/leader", _max_time_delay_on_callback_data_leader_);
-  param_loader.loadParam("two_uavs_payload/nimbro/emulate_nimbro", emulate_nimbro_);
-  param_loader.loadParam("two_uavs_payload/nimbro/emulate_nimbro_delay", emulate_nimbro_delay_);
-  param_loader.loadParam("ros_info_throttle_period", ROS_INFO_THROTTLE_PERIOD);
+  param_loader.loadParam(yaml_prefix + "payload/Epl_min", _Epl_min_);
+  param_loader.loadParam(yaml_prefix + "payload/Epl_max/failsafe_enabled", _Epl_max_failsafe_enabled_);
+  param_loader.loadParam(yaml_prefix + "payload/Epl_max/scaling", _Epl_max_scaling_);
+  // param_loader.loadParam(yaml_prefix + "payload/swing_angle/failsafe_enabled", max_swing_angle_failsafe_enabled_);  
+  // param_loader.loadParam(yaml_prefix + "payload/swing_angle/max", max_swing_angle_);
+
+  param_loader.loadParam(yaml_prefix + "two_uavs_payload/nimbro/emulate_nimbro", emulate_nimbro_);
+  param_loader.loadParam(yaml_prefix + "two_uavs_payload/nimbro/emulate_nimbro_delay", emulate_nimbro_delay_);
+  param_loader.loadParam(yaml_prefix + "ros_info_throttle_period", ROS_INFO_THROTTLE_PERIOD);
   // param_loader.loadParam("ros_warn_throttle_period", ROS_WARN_THROTTLE_PERIOD);
   // TODO: any other Se3CopyController params to load?
   if (!param_loader.loadedSuccessfully()) {
     ROS_ERROR("[DergbryanTracker]: could not load all Se3CopyController parameters!");
-    ros::requestShutdown();
+    return false;
   } 
   else{
     ROS_INFO("[DergbryanTracker]: correctly loaded all Se3CopyController parameters!");
   }
 
+  success = true;
+
+  // FYI
+  // This method will load the file using `rosparam get`
+  //   Pros: you can the full power of the official param loading
+  //   Cons: it is slower
+  //
+  // Alternatives:
+  //   You can load the file directly into the ParamLoader as shown below.
+
+  success *= private_handlers->loadConfigFile(ros::package::getPath("trackers_brubotics") + "/config/private/dergbryan_tracker.yaml");
+
+  if (!success) {
+    return false;
+  }
+
+  success *= private_handlers->loadConfigFile(ros::package::getPath("trackers_brubotics") + "/config/public/dergbryan_tracker.yaml");
+  if (!success) {
+    return false;
+  }
+
   mrs_lib::ParamLoader param_loader2(nh2_, "DergbryanTracker");
+
+  //std::string yaml_prefix = "trackers_brubotics/dergbryan_tracker/"; // TODO: adapt code to make use of this prefix as in ctu examples
+ 
   param_loader2.loadParam("use_derg", _use_derg_);
   param_loader2.loadParam("run_ERG_each_N_updates", _run_ERG_each_N_updates_);
   param_loader2.loadParam("network/robot_names", _avoidance_other_uav_names_);
@@ -966,7 +1116,7 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
 
   if (!param_loader2.loadedSuccessfully()) {
     ROS_ERROR("[DergbryanTracker]: could not load all DergbryanTracker parameters!");
-    ros::requestShutdown();
+    return false;
   } 
   else{
     ROS_INFO("[DergbryanTracker]: correctly loaded all DergbryanTracker parameters!");
@@ -1056,8 +1206,8 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
     }
     // for communication between the leader and follower uavs: follower publishes state feedback to leader and leader commands the reference to the follower
     if (_uav_name_ == _leader_uav_name_){  // leader
-      position_cmd_follower_from_leader_pub_ = nh2_.advertise<mrs_msgs::PositionCommand>("position_cmd_f_from_l", 1); 
-      goal_position_cmd_follower_from_leader_pub_ = nh2_.advertise<mrs_msgs::PositionCommand>("goal_pos_cmd_f_from_l", 1);
+      position_cmd_follower_from_leader_pub_ = nh2_.advertise<mrs_msgs::TrackerCommand>("position_cmd_f_from_l", 1); 
+      goal_position_cmd_follower_from_leader_pub_ = nh2_.advertise<mrs_msgs::TrackerCommand>("goal_pos_cmd_f_from_l", 1);
 
       time_delay_uav_state_follower_for_leader_pub_ = nh2_.advertise<std_msgs::Float64>("time_delay_uav_state_follower_for_leader", 1);
       time_delay_anchoring_point_follower_for_leader_pub_ = nh2_.advertise<std_msgs::Float64>("time_delay_anchoring_point_follower_for_leader", 1);
@@ -1067,8 +1217,8 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
     else if (_uav_name_ == _follower_uav_name_){ // follower
       uav_state_follower_for_leader_pub_ = nh2_.advertise<mrs_msgs::UavState>("uav_state_f_for_l", 1);
       anchoring_point_follower_for_leader_pub_ = nh2_.advertise<mrs_msgs::UavState>("anch_point_f_for_l", 1);
-      position_cmd_follower_for_leader_pub_ = nh2_.advertise<mrs_msgs::PositionCommand>("position_cmd_f_for_l", 1); 
-      goal_position_cmd_follower_for_leader_pub_ = nh2_.advertise<mrs_msgs::PositionCommand>("goal_pos_cmd_f_for_l", 1); 
+      position_cmd_follower_for_leader_pub_ = nh2_.advertise<mrs_msgs::TrackerCommand>("position_cmd_f_for_l", 1); 
+      goal_position_cmd_follower_for_leader_pub_ = nh2_.advertise<mrs_msgs::TrackerCommand>("goal_pos_cmd_f_for_l", 1); 
 
       if(_use_derg_){
         time_delay_position_cmd_follower_from_leader_pub_ = nh2_.advertise<std_msgs::Float64>("time_delay_position_cmd_follower_from_leader", 1);
@@ -1115,7 +1265,7 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
     }
     else{ // undefined
       ROS_ERROR("[DergbryanTracker]: undefined _run_type_ used for uav with payload!");
-      ros::requestShutdown();
+      return false;
     }
     if (_type_of_system_ == "2uavs_payload"){
       // for communication between the leader and follower uavs: leader subscribes to state feedback of follower and follower to the reference the leader commanded
@@ -1144,11 +1294,17 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
   shopts.queue_size         = 10;
   shopts.transport_hints    = ros::TransportHints().tcpNoDelay();
   for (int i = 0; i < int(_avoidance_other_uav_names_.size()); i++) {
+    // for debugging:----
+    std::string prediction_topic_name = std::string("/") + _avoidance_other_uav_names_[i] + "/control_manager/dergbryan_tracker/predicted_trajectory";
+    std::string diag_topic_name       = std::string("/") + _avoidance_other_uav_names_[i] + "/control_manager/dergbryan_tracker/diagnostics";
+    other_uav_diag_subscribers_.push_back(
+          mrs_lib::SubscribeHandler<mrs_msgs::MpcTrackerDiagnostics>(shopts, diag_topic_name, &DergbryanTracker::callbackOtherMavDiagnostics, this));
+    //-----
     // just an example:
     std::string chatter_topic_name = std::string("/") + _avoidance_other_uav_names_[i] + std::string("/") + std::string("control_manager/dergbryan_tracker/chatter");
     ROS_INFO("[DergbryanTracker]: subscribing to %s", chatter_topic_name.c_str());
     other_uav_subscribers2_.push_back(mrs_lib::SubscribeHandler<std_msgs::String>(shopts, chatter_topic_name, &DergbryanTracker::chatterCallback, this));
-
+    
     // subscribe to other uav topics for e.g., collision avoidance and cooperative load transport:
     std::string applied_ref_topic_name = std::string("/") + _avoidance_other_uav_names_[i] + std::string("/") + std::string("control_manager/dergbryan_tracker/uav_applied_ref");  
     ROS_INFO("[DergbryanTracker]: subscribing to %s", applied_ref_topic_name.c_str());
@@ -1171,10 +1327,10 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
     other_uav_subscribers4_.push_back(mrs_lib::SubscribeHandler<trackers_brubotics::FutureTrajectoryTube>(shopts, future_trajectory_tube_topic_name, &DergbryanTracker::callbackOtherUavFutureTrajectoryTube, this));
   }
   ROS_INFO("[DergbryanTracker]: linked all subscribers to their callbacks.");
-
+  
   // | ---------------- prepare stuff from params --------------- |
   _num_pred_samples_ = (int)(_pred_horizon_/_prediction_dt_); // double converted to int
-  _thrust_saturation_ = _extra_thrust_saturation_ratio_*_thrust_saturation_; // as to not trigger the emergency landing too quickly
+  _throttle_saturation_ = _extra_thrust_saturation_ratio_*_throttle_saturation_; // as to not trigger the emergency landing too quickly
 
   // ensure output_mode_ is defined well:
   if (!(output_mode_ == OUTPUT_ATTITUDE_RATE || output_mode_ == OUTPUT_ATTITUDE_QUATERNION)) {
@@ -1182,21 +1338,29 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
     ros::requestShutdown();
   }
 
-  // TODO: check unit _tilt_angle_failsafe_ and if used
-  // convert to radians
-  //_tilt_angle_failsafe_ = (_tilt_angle_failsafe_ / 180.0) * M_PI;
-  
-  // profiler:
-  profiler = mrs_lib::Profiler(nh2_, "DergbryanTracker", _profiler_enabled_);// TODO: why do we use a controller param to enable the tracker profiler?
+
+  // | ------------------------ profiler ------------------------ |
+
+  //profiler = mrs_lib::Profiler(common_handlers->parent_nh, "DergbryanTracker", _profiler_enabled_);
+  profiler = mrs_lib::Profiler(nh2_, "DergbryanTracker", _profiler_enabled_);
+
   // setTrajectory functions similar to mpc_tracker
   // TODO: do we use it? How to choose update rate of tracker?
   _dt1_ = _dt_0_; //1.0 / _mpc_rate_;
   // mpc_x_heading_ = MatrixXd::Zero(_mpc_n_states_heading_, 1); // TODO: used?
 
-  // timers:
+ 
+  // | ------------------------- timers ------------------------- |
+
+  //timer_avoidance_trajectory_ = nh_.createTimer(ros::Rate(_avoidance_trajectory_rate_), &DergbryanTracker::timerAvoidanceTrajectory, this, false, collision_avoidance_enabled_ || collision_avoidance_enabled_passively_);
+  //timer_diagnostics_          = nh_.createTimer(ros::Rate(_diagnostics_rate_), &DergbryanTracker::timerDiagnostics, this);
+  //timer_mpc_iteration_        = nh_.createTimer(ros::Rate(_mpc_asynchronous_rate_), &DergbryanTracker::timerMPC, this, false, false);
   timer_trajectory_tracking_  = nh_.createTimer(ros::Rate(1.0), &DergbryanTracker::timerTrajectoryTracking, this, false, false);
-  // timer_hover_                = nh_.createTimer(ros::Rate(10.0), &DergbryanTracker::timerHover, this, false, false); // TODO: do we need it?
-  
+  //timer_velocity_tracking_    = nh_.createTimer(ros::Rate(30.0), &DergbryanTracker::timerVelocityTracking, this, false, false);
+  timer_hover_                = nh_.createTimer(ros::Rate(10.0), &DergbryanTracker::timerHover, this, false, false);
+
+
+
   // counter:
   update_routine_counter_ = 0;
 
@@ -1209,29 +1373,60 @@ void DergbryanTracker::initialize(const ros::NodeHandle &parent_nh, [[maybe_unus
 
 
 /*activate()//{*/
-std::tuple<bool, std::string> DergbryanTracker::activate(const mrs_msgs::PositionCommand::ConstPtr &last_position_cmd) {
+std::tuple<bool, std::string> DergbryanTracker::activate(const std::optional<mrs_msgs::TrackerCommand>& last_tracker_cmd) {
   
   std::stringstream ss;
 
   if (!got_constraints_) {
+
     ss << "can not activate, missing constraints";
     ROS_ERROR_STREAM_THROTTLE(ROS_INFO_THROTTLE_PERIOD, "[DergbryanTracker]: " << ss.str());
+    
     return std::tuple(false, ss.str());
   }
 
-  if (!got_uav_state_) {
-    ss << "odometry not set";
-    ROS_ERROR_STREAM("[DergbryanTracker]: " << ss.str());
+  // if (!got_uav_state_) {
+  //   ss << "odometry not set";
+  //   ROS_ERROR_STREAM("[DergbryanTracker]: " << ss.str());
+  //   return std::tuple(false, ss.str());
+  // }
+
+  auto uav_state = mrs_lib::get_mutexed(mutex_uav_state_, uav_state_);
+
+  double uav_state_heading;
+
+  try {
+    uav_state_heading = mrs_lib::AttitudeConverter(uav_state.pose.orientation).getHeading();
+  }
+  catch (...) {
+    ss << "could not calculate the UAV heading";
+    ROS_ERROR_STREAM_THROTTLE(1.0, "[MpcCopyTracker]: " << ss.str());
     return std::tuple(false, ss.str());
   }
 
   trajectory_tracking_in_progress_ = false;
 
-  toggleHover(true);
+  timer_trajectory_tracking_.stop();
 
   ss << "Activated";
+  ROS_INFO_STREAM("[DergbryanTracker]: " << ss.str());
+ 
+
+  // TODO: update this function as in the MPC tracker ctu
+  // this is here to initialize the desired_trajectory vector
+  // if deleted (and I tried) the UAV will briefly fly to the
+  // origin after activation
+  //setRelativeGoal(0, 0, 0, 0, false);  // do not delete
+
+  toggleHover(true);
+
   is_active_ = true;
-  ROS_INFO("[DergbryanTracker]: activated");
+
+  // TODO: add this functionality
+  // if (!mpc_synchronous_) {
+  //   timer_mpc_iteration_.start();
+  // }
+
   return std::tuple(true, ss.str());
 }
 
@@ -1246,55 +1441,109 @@ void DergbryanTracker::deactivate(void) {
 
   is_active_ = false;
   trajectory_tracking_in_progress_ = false;
+  //model_first_iteration_           = true; // TODO: see ctu
 
   timer_trajectory_tracking_.stop();
   {
     std::scoped_lock lock(mutex_trajectory_tracking_states_);
 
     trajectory_tracking_idx_     = 0;
-    //trajectory_tracking_sub_idx_ = 0;
+    //trajectory_tracking_sub_idx_ = 0; // TODO: see ctu
   }
 
   ROS_INFO("[DergbryanTracker]: deactivated");
 
   
+  // timer_mpc_iteration_.stop(); // TODO: see ctu
 
-  //publishDiagnostics();
+  // publishDiagnostics(); // TODO: see ctu
 }
 
 
 /*resetStatic()//{*/
 bool DergbryanTracker::resetStatic(void) {
-  ROS_INFO("[DergbryanTracker]: no states to reset");
 
+  if (!is_initialized_) {
+    ROS_ERROR("[DergbryanTracker]: can not reset, not initialized");
+    return false;
+  }
 
+  if (!is_active_) {
+    ROS_ERROR("[DergbryanTracker]: can not reset, not active");
+    return false;
+  }
+
+  auto uav_state = mrs_lib::get_mutexed(mutex_uav_state_, uav_state_);
+
+  double uav_state_heading;
+
+  try {
+    uav_state_heading = mrs_lib::AttitudeConverter(uav_state.pose.orientation).getHeading();
+  }
+  catch (...) {
+    ROS_ERROR_THROTTLE(1.0, "[DergbryanTracker]: could not calculate the UAV heading");
+    return false;
+  }
+  
+  // TODO: extend reset {}
   // {
   // std::scoped_lock lock(mutex_mpc_x_);
-    trajectory_tracking_in_progress_ = false;
+
   // }
+  trajectory_tracking_in_progress_ = false;
+  ROS_INFO("[DergbryanTracker]: no states to reset");
+
+  // TODO: see ctu code
+  // this is here to initialize the desired_trajectory vector
+  // if deleted (and I tried) the UAV will briefly fly to the
+  // origin after activation
+  //setRelativeGoal(0, 0, 0, 0, false);  // do not delete
 
   return true;
 }
 //}
 
 /*update()//{*/
-const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msgs::UavState::ConstPtr &                        uav_state,
-                                                              [[maybe_unused]] const mrs_msgs::AttitudeCommand::ConstPtr &last_attitude_cmd) {
+std::optional<mrs_msgs::TrackerCommand> DergbryanTracker::update(const mrs_msgs::UavState& uav_state,
+                                                              [[maybe_unused]] const mrs_uav_managers::Controller::ControlOutput& last_control_output) {
                                                                   
   // ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: Start of update()");
-  mrs_lib::Routine profiler_routine = profiler.createRoutine("update");
-  {
-    std::scoped_lock lock(mutex_uav_state_);
-    uav_state_ = *uav_state;
-    got_uav_state_ = true;
-  }
 
-  /* TODO: make it compatible with DRS */
-  //auto drs_params = mrs_lib::get_mutexed(mutex_drs_params_, drs_params_);  
+  mrs_lib::Routine    profiler_routine = profiler.createRoutine("update");
+  mrs_lib::ScopeTimer timer            = mrs_lib::ScopeTimer("DergbryanTracker::update", common_handlers_->scope_timer.logger, common_handlers_->scope_timer.enabled);
+
+  auto old_uav_state = mrs_lib::get_mutexed(mutex_uav_state_, uav_state_);
+
+  // calculate dt
+  double dt = (uav_state.header.stamp - old_uav_state.header.stamp).toSec();
+
+  // save the uav state
+  mrs_lib::set_mutexed(mutex_uav_state_, uav_state, uav_state_);
+
+
+  // TODO: make this work as in MPC code
+  // if (dt > 0) {
+
+  //   double rate = 1.0 / dt;
+
+  //   update_rate_ = 0.9 * update_rate_ + 0.1 * rate;
+
+  //   if (mpc_synchronous_ && (update_rate_ > _mpc_synchronous_rate_limit_)) {
+  //     mpc_synchronous_ = false;
+  //     ROS_INFO("[MpcCopyTracker]: detecting high update date (%.1f Hz > %.1f Hz), switching to asynchronous mode.", rate, _mpc_synchronous_rate_limit_);
+  //     if (is_active_) {
+  //       timer_mpc_iteration_.start();
+  //     }
+  //   } else if (!mpc_synchronous_ && (update_rate_ <= _mpc_synchronous_rate_limit_)) {
+  //     mpc_synchronous_ = true;
+  //     ROS_INFO("[MpcCopyTracker]: detecting low update rate (%.1f Hz < %.1f Hz), switching to synchronous mode.", rate, _mpc_synchronous_rate_limit_);
+  //     timer_mpc_iteration_.stop();
+  //   }
+  // }
 
   // up to this part the update() method is evaluated even when the tracker is not active
   if (!is_active_) {
-    return mrs_msgs::PositionCommand::Ptr();
+    return {};
   }
 
   if(emulate_nimbro_){
@@ -1317,7 +1566,7 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
 
   // ROS_INFO_STREAM("[DergbryanTracker]: start of update function: uav_mass_"<< uav_mass_);
 
-  mrs_msgs::PositionCommand position_cmd;
+  mrs_msgs::TrackerCommand position_cmd;
   // set the header
   position_cmd.header.stamp    = uav_state_.header.stamp;
   position_cmd.header.frame_id = uav_state_.header.frame_id;
@@ -1361,7 +1610,7 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
     uav_state_prev_ = uav_state_; // required for computing derrivative of angular rate
 
     starting_bool_=false;
-    return mrs_msgs::PositionCommand::ConstPtr(new mrs_msgs::PositionCommand(position_cmd));
+    return {position_cmd};
   }
   /* begin copy of se3controller*/ // TO KEEP FOR BRYAN
   // | -------------------- calculate the dt -------------------- |
@@ -1395,9 +1644,9 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
 
   //   ROS_DEBUG("[DergbryanTracker]: the last odometry message came too close (%.2f s)!", dt);
 
-  //   if (last_attitude_cmd_ != mrs_msgs::AttitudeCommand::Ptr()) {
+  //   if (last_control_output_ != mrs_msgs::AttitudeCommand::Ptr()) {
 
-  //     return last_attitude_cmd_;
+  //     return last_control_output_;
 
   //   } else {
 
@@ -1527,7 +1776,7 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
 
     if (_use_derg_){
       //tictoc_stack.push(clock()); // TODO: clean if not used
-      computePSCTrajectoryPredictions(position_cmd, uav_heading, last_attitude_cmd);
+      computePSCTrajectoryPredictions(position_cmd, uav_heading, last_control_output);
       //ROS_INFO_STREAM("Prediction calculation took = \n "<< (double)(clock()- tictoc_stack.top())/CLOCKS_PER_SEC << "seconds.");
       //tictoc_stack.pop(); // TODO: clean if not used
       if(_type_of_system_=="1uav_no_payload" || (_type_of_system_=="1uav_payload" && payload_spawned_)){
@@ -1630,7 +1879,7 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
       position_cmd.heading        = goal_heading_;
 
       // but still compute the predictions
-      computePSCTrajectoryPredictions(position_cmd, uav_heading, last_attitude_cmd);
+      computePSCTrajectoryPredictions(position_cmd, uav_heading, last_control_output);
     }   
 
     // ROS_INFO_STREAM(" goal_x_ = " << goal_x_);
@@ -1791,7 +2040,7 @@ const mrs_msgs::PositionCommand::ConstPtr DergbryanTracker::update(const mrs_msg
 
 
   clearMsgsAfterUpdate();
-  return mrs_msgs::PositionCommand::ConstPtr(new mrs_msgs::PositionCommand(position_cmd));
+  return {position_cmd}; //mrs_msgs::TrackerCommand::ConstPtr(new mrs_msgs::TrackerCommand(position_cmd));
 }
 
 void DergbryanTracker::clearMsgsAfterUpdate(){
@@ -1849,17 +2098,17 @@ void DergbryanTracker::clearMsgsAfterUpdate(){
   ComputationalTime_msg_.name_parts.clear();
 }
 
-void DergbryanTracker::computePSCTrajectoryPredictions(mrs_msgs::PositionCommand position_cmd, double uav_heading, const mrs_msgs::AttitudeCommand::ConstPtr &last_attitude_cmd){ 
+void DergbryanTracker::computePSCTrajectoryPredictions(mrs_msgs::TrackerCommand position_cmd, double uav_heading, const mrs_uav_managers::Controller::ControlOutput& last_control_output){ 
   /* Mother function that computes the trajectory predictions of the PSC which will be used by the ERG. 
      It contains all the different cases that depend on the _type_of_system_ of which we want to predict the behavior.
   */
   erg_predictions_trusted_ = true; // initialize
 
   if(_type_of_system_=="2uavs_payload" && _uav_name_==_leader_uav_name_ && callback_data_follower_no_delay_){
-    trajectory_prediction_general_load_2UAV(position_cmd, uav_heading, last_attitude_cmd);  
+    trajectory_prediction_general_load_2UAV(position_cmd, uav_heading, last_control_output);  
   }
   else if(_type_of_system_=="1uav_no_payload" || (_type_of_system_=="1uav_payload" && payload_spawned_)){
-    trajectory_prediction_general(position_cmd, uav_heading, last_attitude_cmd);  
+    trajectory_prediction_general(position_cmd, uav_heading, last_control_output);  
   }  
   else{
     if(_run_type_!="uav"){
@@ -1873,7 +2122,7 @@ void DergbryanTracker::computePSCTrajectoryPredictions(mrs_msgs::PositionCommand
   }
 }
 
-void DergbryanTracker::publishFollowerDataForLeaderIn2uavs_payload(mrs_msgs::PositionCommand position_cmd){
+void DergbryanTracker::publishFollowerDataForLeaderIn2uavs_payload(mrs_msgs::TrackerCommand position_cmd){
 // TODO: add a case for hardware
 /*
 This function ensures that the data of the follower UAV (i.e., state of the uav, its anchoring point, and the position cmd) are published.
@@ -1974,8 +2223,8 @@ const std_srvs::SetBoolResponse::ConstPtr DergbryanTracker::enableCallbacks(cons
 //}
 
 /*switchOdometrySource()//{*/
-const std_srvs::TriggerResponse::ConstPtr DergbryanTracker::switchOdometrySource(const mrs_msgs::UavState::ConstPtr &new_uav_state) {
-
+const std_srvs::TriggerResponse::ConstPtr DergbryanTracker::switchOdometrySource(const mrs_msgs::UavState& new_uav_state) {
+   // TODO: implement as in ctu code
   std_srvs::TriggerResponse res;
 
   res.message = "Switching not implemented";
@@ -1986,7 +2235,7 @@ const std_srvs::TriggerResponse::ConstPtr DergbryanTracker::switchOdometrySource
 //}
 
 /*hover()//{*/
-const std_srvs::TriggerResponse::ConstPtr DergbryanTracker::hover([[maybe_unused]] const std_srvs::TriggerRequest::ConstPtr &cmd) {
+const std_srvs::TriggerResponse::ConstPtr DergbryanTracker::hover([[maybe_unused]] const std_srvs::TriggerRequest::ConstPtr& cmd) {
 
   toggleHover(true);
 
@@ -2099,6 +2348,21 @@ const mrs_msgs::ReferenceSrvResponse::ConstPtr DergbryanTracker::setReference(co
 }
 //}
 
+/* //{ setSinglePointReference() */
+
+// fill the des_*_trajectory based on a single point
+// void DergbryanTracker::setSinglePointReference(const double x, const double y, const double z, const double heading) {
+
+//   std::scoped_lock lock(mutex_des_trajectory_);
+
+//   des_x_trajectory_.fill(x);
+//   des_y_trajectory_.fill(y);
+//   des_z_trajectory_.fill(z);
+//   des_heading_trajectory_.fill(heading);
+// }
+
+//}
+
 /* //{ setGoal() */
 
 //set absolute goal
@@ -2160,7 +2424,7 @@ const mrs_msgs::TrajectoryReferenceSrvResponse::ConstPtr DergbryanTracker::setTr
 //}
 
 //--------------------------------------------------------------------------//
-void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand position_cmd, double uav_heading, const mrs_msgs::AttitudeCommand::ConstPtr &last_attitude_cmd){
+void DergbryanTracker::trajectory_prediction_general(mrs_msgs::TrackerCommand position_cmd, double uav_heading, const mrs_uav_managers::Controller::ControlOutput& last_control_output){
   
   // TODO: as this function is running the controller updated to a pre-stabilized system model, it would make sense to put these into a library so that ti can be used in both controller and tracker. Merge this with simulate se3 controller
 
@@ -2258,11 +2522,11 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
   // TODO Raphael : For me it's useless we can delete this as no integral action is predicted. I would have deleted it but it seems you added it for a reason ???
   // | --------------------- initialize body and world integrals --------------------- |
   /* NOTE: this part is added by Bryan, was originally in the controllers activate function */ 
-  // Ib_b_[0] = -last_attitude_cmd->disturbance_bx_b;
-  // Ib_b_[1] = -last_attitude_cmd->disturbance_by_b;
+  // Ib_b_[0] = -last_control_output->disturbance_bx_b;
+  // Ib_b_[1] = -last_control_output->disturbance_by_b;
 
-  // Iw_w_[0] = -last_attitude_cmd->disturbance_wx_w;
-  // Iw_w_[1] = -last_attitude_cmd->disturbance_wy_w;
+  // Iw_w_[0] = -last_control_output->disturbance_wx_w;
+  // Iw_w_[1] = -last_control_output->disturbance_wy_w;
 
     // ROS_INFO(
     //     "[DergbryanTracker]: setting the mass difference and integrals from the last AttitudeCmd: mass difference: %.2f kg, Ib_b_: %.2f, %.2f N, Iw_w_: "
@@ -3007,7 +3271,7 @@ void DergbryanTracker::trajectory_prediction_general(mrs_msgs::PositionCommand p
 } // end of the prediction_general function.
 
 //---------------------------------LOAD 2UAV---------------------------------//
-void DergbryanTracker::trajectory_prediction_general_load_2UAV(mrs_msgs::PositionCommand position_cmd, double uav_heading, const mrs_msgs::AttitudeCommand::ConstPtr &last_attitude_cmd){
+void DergbryanTracker::trajectory_prediction_general_load_2UAV(mrs_msgs::TrackerCommand position_cmd, double uav_heading, const mrs_uav_managers::Controller::ControlOutput& last_control_output){
     // --------------------------------------------------------------
     /* load the control reference and estimates --> the reference is assumed constant over the prediction
     Arguments: 
@@ -3887,7 +4151,7 @@ void DergbryanTracker::trajectory_prediction_general_load_2UAV(mrs_msgs::Positio
   }
 }
 
-std::tuple< double, Eigen::Vector3d,double> DergbryanTracker::ComputeSe3CopyController(const mrs_msgs::UavState uavi_state, Eigen::Matrix3d uavi_R, Eigen::Vector3d Payloadposition_vector, Eigen::Vector3d Payloadvelocity_vector,mrs_msgs::PositionCommand uavi_position_cmd ,Eigen::Vector3d uavi_Rp,Eigen::Vector3d uavi_Rv,Eigen::Vector3d uavi_Rpl,Eigen::Vector3d uavi_Ra){
+std::tuple< double, Eigen::Vector3d,double> DergbryanTracker::ComputeSe3CopyController(const mrs_msgs::UavState uavi_state, Eigen::Matrix3d uavi_R, Eigen::Vector3d Payloadposition_vector, Eigen::Vector3d Payloadvelocity_vector,mrs_msgs::TrackerCommand uavi_position_cmd ,Eigen::Vector3d uavi_Rp,Eigen::Vector3d uavi_Rv,Eigen::Vector3d uavi_Rpl,Eigen::Vector3d uavi_Ra){
   // Computes the Se3CopyController for 1 UAV with or without payload.
   // But since for 2 UAVs with payload, the control law is distributed, one can use this controller.
   // Make sure to put as argument the data of this UAV, and in the correct type, and it will return the force vector (in frame W) and the attitude rate vector (also in frame W).
@@ -3946,7 +4210,7 @@ std::tuple< double, Eigen::Vector3d,double> DergbryanTracker::ComputeSe3CopyCont
   Eigen::Vector3d Ra = uavi_Ra;
   Eigen::Vector3d Rw = Eigen::Vector3d::Zero(3); // TODO: add as input of function
 
-  mrs_msgs::PositionCommand position_cmd = uavi_position_cmd;
+  mrs_msgs::TrackerCommand position_cmd = uavi_position_cmd;
   // TODO: why don't we put the if cases to construct Rp, Rv, Ra based on a position_cmd here? 
 
   /* test streaming the references Rp, Rv, Ra when the uav is moving.*/
@@ -4038,45 +4302,45 @@ std::tuple< double, Eigen::Vector3d,double> DergbryanTracker::ComputeSe3CopyCont
     std::scoped_lock lock(mutex_gains_);
 
     if (position_cmd.use_position_horizontal) {
-      Kp[0] = kpxy_;
-      Kp[1] = kpxy_;
+      Kp[0] = gains_.kpxy;
+      Kp[1] = gains_.kpxy;
     } else {
       Kp[0] = 0;
       Kp[1] = 0;
     }
 
     if (position_cmd.use_position_vertical) {
-      Kp[2] = kpz_;
+      Kp[2] = gains_.kpz;
     } else {
       Kp[2] = 0;
     }
 
     if (position_cmd.use_velocity_horizontal) {
-      Kv[0] = kvxy_;
-      Kv[1] = kvxy_;
+      Kv[0] = gains_.kvxy;
+      Kv[1] = gains_.kvxy;
     } else {
       Kv[0] = 0;
       Kv[1] = 0;
     }
     
     if (position_cmd.use_velocity_vertical) {
-      Kv[2] = kvz_;
+      Kv[2] = gains_.kvz;
     } 
     else if (position_cmd.use_position_vertical) {  // special case: want to control z-pos but not the velocity => at least provide z dampening
-      Kv[2] = kvz_;
+      Kv[2] = gains_.kvz;
     } else {
       Kv[2] = 0;
     }
 
     if (position_cmd.use_acceleration) {
-      Ka << kaxy_, kaxy_, kaz_;
+      Ka << gains_.kaxy, gains_.kaxy, gains_.kaz;
     } else {
       Ka << 0, 0, 0;
     }
 
     // Those gains are set regardless of control_reference setting,
     // because we need to control the attitude.
-    Kq << kqxy_, kqxy_, kqz_;
+    Kq << gains_.kq_roll_pitch, gains_.kq_roll_pitch, gains_.kq_yaw;
   }
   // Print to test if the gains are loaded correctly:
   // ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: Ka_x = %f", Ka(0));
@@ -4099,32 +4363,32 @@ std::tuple< double, Eigen::Vector3d,double> DergbryanTracker::ComputeSe3CopyCont
 
   if(_type_of_system_ == "1uav_payload" ||_type_of_system_ == "2uavs_payload"){
     if (position_cmd.use_position_horizontal) { //TODO load them in global variables as for the other param.  
-      Kpl[0] = kplxy_;
-      Kpl[1] = kplxy_;
+      Kpl[0] = gains_.kplxy;
+      Kpl[1] = gains_.kplxy;
     } else {
       Kpl[0] = 0.0;
       Kpl[1] = 0.0;
     }
     
     if (position_cmd.use_position_vertical) {
-      Kpl[2] = kplz_;
+      Kpl[2] = gains_.kplz;
     } else {
       Kpl[2] = 0;
     }
 
     if (position_cmd.use_velocity_horizontal) {
-      Kdl[0] = kvlxy_;
-      Kdl[1] = kvlxy_;
+      Kdl[0] = gains_.kvlxy;
+      Kdl[1] = gains_.kvlxy;
     } else {
       Kdl[0] = 0.0;
       Kdl[1] = 0.0;
     }  
 
     if (position_cmd.use_velocity_vertical) {
-      Kdl[2] = kvlz_;
+      Kdl[2] = gains_.kvlz;
     } 
     else if (position_cmd.use_position_vertical) {  // special case: want to control z-pos but not the velocity => at least provide z dampening
-      Kdl[2] = kvlz_;
+      Kdl[2] = gains_.kvlz;
     } else {
       Kdl[2] = 0;
     }
@@ -4177,9 +4441,10 @@ std::tuple< double, Eigen::Vector3d,double> DergbryanTracker::ComputeSe3CopyCont
     }
     ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: total_mass (estimated)= %f", total_mass);
     
-    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: n_motors = %d", common_handlers_->motor_params.n_motors);
-    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: motor_params.A = %f", common_handlers_->motor_params.A);
-    ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: motor_params.B = %f", common_handlers_->motor_params.B);
+    // TODO: implement as before using throttle_model
+    // ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: n_motors = %d", common_handlers_->motor_params.n_motors);
+    // ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: motor_params.A = %f", common_handlers_->motor_params.A);
+    // ROS_INFO_THROTTLE(15.0,"[DergbryanTracker]: motor_params.B = %f", common_handlers_->motor_params.B);
   }
 
   // | --------------- desired orientation matrix --------------- |
@@ -4379,23 +4644,23 @@ std::tuple< double, Eigen::Vector3d,double> DergbryanTracker::ComputeSe3CopyCont
   /* output */
   double thrust_force = f.dot(R.col(2));
   double thrust = 0.0;
-  thrust_saturation_physical_ = mrs_lib::quadratic_thrust_model::thrustToForce(common_handlers_->motor_params, _thrust_saturation_);
+  thrust_saturation_physical_ = mrs_lib::quadratic_throttle_model::throttleToForce(common_handlers_->throttle_model, _throttle_saturation_);
   
-  if (!position_cmd.use_thrust) {
+  if (!position_cmd.use_throttle) {
     if (thrust_force >= 0) {
-      thrust = mrs_lib::quadratic_thrust_model::forceToThrust(common_handlers_->motor_params, thrust_force);
+      thrust = mrs_lib::quadratic_throttle_model::forceToThrottle(common_handlers_->throttle_model, thrust_force);
     } else {
       ROS_WARN_THROTTLE(ROS_INFO_THROTTLE_PERIOD, "[DergbryanTracker]: just so you know, the desired thrust force is negative (%.2f)", thrust_force);
     }
   }
   else {
     // the thrust is overriden from the tracker command
-    thrust = position_cmd.thrust;
+    thrust = position_cmd.throttle;
     if(_run_type_!="uav"){
-      ROS_INFO_STREAM("[DergbryanTracker]: position_cmd.use_thrust = \n" << position_cmd.use_thrust);
+      ROS_INFO_STREAM("[DergbryanTracker]: position_cmd.use_throttle = \n" << position_cmd.use_throttle);
     }
     else{
-      ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: position_cmd.use_thrust = %d",position_cmd.use_thrust);
+      ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: position_cmd.use_throttle = %d",position_cmd.use_throttle);
     }
   }
 
@@ -4408,10 +4673,10 @@ std::tuple< double, Eigen::Vector3d,double> DergbryanTracker::ComputeSe3CopyCont
     else{
       ROS_ERROR_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: NaN detected in variable 'thrust', setting it to 0 and returning!!!");
     }
-  } else if (thrust > _thrust_saturation_) {
+  } else if (thrust > _throttle_saturation_) {
 
-    thrust = _thrust_saturation_;
-    ROS_WARN_THROTTLE(ROS_INFO_THROTTLE_PERIOD, "[DergbryanTracker]: saturating thrust to %.2f", _thrust_saturation_);
+    thrust = _throttle_saturation_;
+    ROS_WARN_THROTTLE(ROS_INFO_THROTTLE_PERIOD, "[DergbryanTracker]: saturating thrust to %.2f", _throttle_saturation_);
 
   } else if (thrust < 0.0) {
 
@@ -4419,7 +4684,7 @@ std::tuple< double, Eigen::Vector3d,double> DergbryanTracker::ComputeSe3CopyCont
     ROS_WARN_THROTTLE(ROS_INFO_THROTTLE_PERIOD, "[DergbryanTracker]: saturating thrust to 0");
   }
 
-  thrust_force = mrs_lib::quadratic_thrust_model::thrustToForce(common_handlers_->motor_params, thrust);
+  thrust_force = mrs_lib::quadratic_throttle_model::throttleToForce(common_handlers_->throttle_model, thrust);
 
   // prepare the attitude feedback
   Eigen::Vector3d q_feedback = -Kq * Eq.array();
@@ -4631,12 +4896,12 @@ void DergbryanTracker::computeERG(){
     if (_Lyapunov_type_ == 1){
       // TODO compute analytic expression for kxy different from kz. The point is that the theory assumes the worst case (min Gamma) that works for arbitrary directions.
       // So one should compute for all xyz direction and take the worst case.
-      P_Lyap << kpxy_+_epsilon_*pow(kvxy_,2.0), 0.0, 0.0, _epsilon_*kvxy_, 0.0, 0.0,
-            0.0, kpxy_+_epsilon_*pow(kvxy_,2.0), 0.0, 0.0, _epsilon_*kvxy_, 0.0,
-            0.0, 0.0, kpz_+_epsilon_*pow(kvz_,2.0), 0.0, 0.0, _epsilon_*kvz_,
-            _epsilon_*kvxy_, 0.0, 0.0, 1.0, 0.0, 0.0,
-            0.0, _epsilon_*kvxy_, 0.0, 0.0, 1.0, 0.0,
-            0.0, 0.0, _epsilon_*kvz_, 0.0, 0.0, 1.0;
+      P_Lyap << gains_.kpxy+_epsilon_*pow(gains_.kvxy,2.0), 0.0, 0.0, _epsilon_*gains_.kvxy, 0.0, 0.0,
+            0.0, gains_.kpxy+_epsilon_*pow(gains_.kvxy,2.0), 0.0, 0.0, _epsilon_*gains_.kvxy, 0.0,
+            0.0, 0.0, gains_.kpz+_epsilon_*pow(gains_.kvz,2.0), 0.0, 0.0, _epsilon_*gains_.kvz,
+            _epsilon_*gains_.kvxy, 0.0, 0.0, 1.0, 0.0, 0.0,
+            0.0, _epsilon_*gains_.kvxy, 0.0, 0.0, 1.0, 0.0,
+            0.0, 0.0, _epsilon_*gains_.kvz, 0.0, 0.0, 1.0;
       P_Lyap = 0.5*P_Lyap;
       V_Lyap = state_vec_V_Lyap.transpose()*P_Lyap*state_vec_V_Lyap;
     }
@@ -4649,13 +4914,13 @@ void DergbryanTracker::computeERG(){
       double Gamma_sTmax;
       double Gamma_sTmin;
       double total_mass = common_handlers_->getMass(); // total estimated mass calculated by controller
-      thrust_saturation_physical_ = mrs_lib::quadratic_thrust_model::thrustToForce(common_handlers_->motor_params, _thrust_saturation_);
+      thrust_saturation_physical_ = mrs_lib::quadratic_throttle_model::throttleToForce(common_handlers_->throttle_model, _throttle_saturation_);
       
     if (_Lyapunov_type_ == 1){
       // TODO compute analytic expression for kxy different from kz. The point is that the theory assumes the worst case (min Gamma) that works for arbitrary directions.
       // So one should compute for all xyz direction and take the worst case.
-      Gamma_sTmax = 0.5*pow((thrust_saturation_physical_-total_mass*common_handlers_->g),2.0)/pow(total_mass,2.0)*(kpxy_+_epsilon_*(1-_epsilon_)*pow(kvxy_,2.0))/(pow(kpxy_,2.0)+pow(kvxy_,2.0)*(kpxy_+_epsilon_*pow(kvxy_,2.0)-2.0*_epsilon_*kpxy_));
-      Gamma_sTmin = 0.5*pow((_T_min_-total_mass*common_handlers_->g),2.0)/pow(total_mass,2.0)*(kpxy_+_epsilon_*(1.0-_epsilon_)*pow(kvxy_,2.0))/(pow(kpxy_,2.0)+pow(kvxy_,2.0)*(kpxy_+_epsilon_*pow(kvxy_,2.0)-2.0*_epsilon_*kpxy_));
+      Gamma_sTmax = 0.5*pow((thrust_saturation_physical_-total_mass*common_handlers_->g),2.0)/pow(total_mass,2.0)*(gains_.kpxy+_epsilon_*(1-_epsilon_)*pow(gains_.kvxy,2.0))/(pow(gains_.kpxy,2.0)+pow(gains_.kvxy,2.0)*(gains_.kpxy+_epsilon_*pow(gains_.kvxy,2.0)-2.0*_epsilon_*gains_.kpxy));
+      Gamma_sTmin = 0.5*pow((_T_min_-total_mass*common_handlers_->g),2.0)/pow(total_mass,2.0)*(gains_.kpxy+_epsilon_*(1.0-_epsilon_)*pow(gains_.kvxy,2.0))/(pow(gains_.kpxy,2.0)+pow(gains_.kvxy,2.0)*(gains_.kpxy+_epsilon_*pow(gains_.kvxy,2.0)-2.0*_epsilon_*gains_.kpxy));
     }
     else if (_Lyapunov_type_ == 2){ // Optimally aligned case:
       // TODO generalize, computed offline for kpxy=3, kdxy=2 and mass=3.5kg
@@ -5032,7 +5297,7 @@ void DergbryanTracker::computeERG(){
     double Gamma_a;
     if (_DSM_type_  == 1){ // Invariant level set based DSM: 
       if (_Lyapunov_type_ == 1){
-        Gamma_a = 0.5*(kpxy_ + _epsilon_*(1.0-_epsilon_)*pow(kvxy_,2.0))*pow(_Sa_max_,2.0); // TODO: compute analytic expression for kxy different rom kz
+        Gamma_a = 0.5*(gains_.kpxy + _epsilon_*(1.0-_epsilon_)*pow(gains_.kvxy,2.0))*pow(_Sa_max_,2.0); // TODO: compute analytic expression for kxy different rom kz
       }
       else if (_Lyapunov_type_ == 2){ // Optimally aligned case:
         // TODO generalize, computed offline for kpxy=3, kdxy=2 and mass=3.5kg
@@ -7575,7 +7840,7 @@ void DergbryanTracker::GazeboLoadStatesCallback(const gazebo_msgs::LinkStatesCon
 
 // TODO: document and test if this works on hardware
 // TODO: combine with BacaLoadStatesCallback of controller as (almost) same code
-void DergbryanTracker::BacaLoadStatesCallback(const mrs_msgs::BacaProtocolConstPtr& msg) {
+void DergbryanTracker::BacaLoadStatesCallback(const mrs_modules_msgs::BacaProtocolConstPtr& msg) {
   // TODO: similar to GazeboLoadStatesCallback, update the variable payload_spawned_ if this the data is correctly received from arduino
   // ROS_INFO_STREAM("[DergbryanTracker]: Started BacaLoadStatesCallback");
   int message_id;
@@ -7703,6 +7968,28 @@ void DergbryanTracker::BacaLoadStatesCallback(const mrs_msgs::BacaProtocolConstP
   }
 }
 
+/* //{ callbackOtherMavDiagnostics() */
+//TODO: for debugging
+void DergbryanTracker::callbackOtherMavDiagnostics(const mrs_msgs::MpcTrackerDiagnostics::ConstPtr msg) {
+
+  mrs_lib::Routine    profiler_routine = profiler.createRoutine("callbackOtherMavDiagnostics");
+  mrs_lib::ScopeTimer timer =
+      mrs_lib::ScopeTimer("DergbryanTracker::callbackOtherMavDiagnostics", common_handlers_->scope_timer.logger, common_handlers_->scope_timer.enabled);
+
+  std::scoped_lock lock(mutex_other_uav_diagnostics_);
+
+  mrs_msgs::MpcTrackerDiagnostics diagnostics = *msg;
+
+  // fill in the current time
+  // the other uav's time might not be synchronized with ours
+  diagnostics.header.stamp = ros::Time::now();
+
+  // update the diagnostics
+  other_uav_diagnostics_[diagnostics.uav_name] = diagnostics;
+}
+
+
+
 // TODO: update these callbacks which contain too hardcoded info as uav2
 void DergbryanTracker::uav_state_follower_for_leader_callback(const mrs_msgs::UavState::ConstPtr& msg){
   uav_state_follower_for_leader_ = *msg; //for the header stamp and other quantities that might be interesting
@@ -7731,12 +8018,12 @@ void DergbryanTracker::anchoring_point_follower_for_leader_callback(const mrs_ms
   // ROS_INFO_STREAM("Received anchoring point velocity of follower uav \n"<< anchoring_point_follower_velocity_);
 }
 
-void DergbryanTracker::position_cmd_follower_for_leader_callback(const mrs_msgs::PositionCommand::ConstPtr& msg){
+void DergbryanTracker::position_cmd_follower_for_leader_callback(const mrs_msgs::TrackerCommand::ConstPtr& msg){
   position_cmd_follower_for_leader_=*msg;
   position_cmd_follower_for_leader_.header.stamp = ros::Time::now(); // Time stamp given when last received
 }
 
-void DergbryanTracker::goal_position_cmd_follower_for_leader_callback(const mrs_msgs::PositionCommand::ConstPtr& msg){
+void DergbryanTracker::goal_position_cmd_follower_for_leader_callback(const mrs_msgs::TrackerCommand::ConstPtr& msg){
   goal_position_cmd_follower_for_leader_=*msg;
   goal_position_cmd_follower_for_leader_.header.stamp = ros::Time::now(); // Time stamp given when last received
   // ROS_INFO_STREAM("Received goal position cmd of follower for the leader: "<< goal_position_cmd_follower_for_leader_);
@@ -7748,13 +8035,13 @@ void DergbryanTracker::estimated_uav_mass_follower_for_leader_callback(const std
 }
 
   
-void DergbryanTracker::position_cmd_follower_from_leader_callback(const mrs_msgs::PositionCommand::ConstPtr& msg){
+void DergbryanTracker::position_cmd_follower_from_leader_callback(const mrs_msgs::TrackerCommand::ConstPtr& msg){
   position_cmd_follower_from_leader_=*msg;
   position_cmd_follower_from_leader_.header.stamp = ros::Time::now(); // Time stamp given when last received
   // ROS_INFO_STREAM("Received position cmd of follower from leader \n"<< position_cmd_follower_from_leader_);
 }
 
-void DergbryanTracker::goal_position_cmd_follower_from_leader_callback(const mrs_msgs::PositionCommand::ConstPtr& msg){
+void DergbryanTracker::goal_position_cmd_follower_from_leader_callback(const mrs_msgs::TrackerCommand::ConstPtr& msg){
   goal_position_cmd_follower_from_leader_=*msg;
   goal_position_cmd_follower_from_leader_.header.stamp = ros::Time::now(); // Time stamp given when last received
   // ROS_INFO_STREAM("Received position cmd of follower from leader \n"<< goal_position_cmd_follower_from_leader_);
@@ -7784,27 +8071,36 @@ void DergbryanTracker::callbackOtherUavTrajectory(const mrs_msgs::FutureTrajecto
   other_uav_avoidance_trajectories_[msg->uav_name] = temp_traj;
 }
 
-void DergbryanTracker::chatterCallback(mrs_lib::SubscribeHandler<std_msgs::String>& sh_ptr){
+void DergbryanTracker::chatterCallback(const std_msgs::String::ConstPtr sh_ptr){
   //ROS_INFO_STREAM("in chatterCallback!! \n");
   mrs_lib::Routine profiler_routine = profiler.createRoutine("chatterCallback");
   //// ROS_INFO("I heard: [%s]", sh_ptr->data.c_str()); DOES NOT WORK as in default tutorial ROS
   //ROS_INFO_STREAM("Received: '" << sh_ptr.getMsg()->data << "' from topic '" << sh_ptr.topicName() << "'"); // see examples SubscribeHandler mrs lib
 }
+// backup:
+// void DergbryanTracker::chatterCallback(mrs_lib::SubscribeHandler<std_msgs::String>& sh_ptr){
+//   //ROS_INFO_STREAM("in chatterCallback!! \n");
+//   mrs_lib::Routine profiler_routine = profiler.createRoutine("chatterCallback");
+//   //// ROS_INFO("I heard: [%s]", sh_ptr->data.c_str()); DOES NOT WORK as in default tutorial ROS
+//   //ROS_INFO_STREAM("Received: '" << sh_ptr.getMsg()->data << "' from topic '" << sh_ptr.topicName() << "'"); // see examples SubscribeHandler mrs lib
+// }
 
-void DergbryanTracker::callbackOtherUavTubeMinRadius(mrs_lib::SubscribeHandler<std_msgs::Float32>& sh_ptr) {
+void DergbryanTracker::callbackOtherUavTubeMinRadius(const std_msgs::Float32::ConstPtr sh_ptr) {
   mrs_lib::Routine profiler_routine = profiler.createRoutine("callbackOtherUavTubeMinRadius");
+  std_msgs::Float32 temp_radius_msg = *sh_ptr; // does not work!
+  double temp_radius = temp_radius_msg.data;
   // double temp_radius = *sh_ptr; // does not work!
   //ROS_INFO_STREAM("Received: '" << sh_ptr.getMsg()->data << "' from topic '" << sh_ptr.topicName() << "'");
-  double temp_radius = sh_ptr.getMsg()->data;
+  //double temp_radius = sh_ptr.getMsg()->data;
   //ROS_INFO_STREAM("temp_radius = \n" << temp_radius);
 }
 
-void DergbryanTracker::callbackOtherUavFutureTrajectoryTube(mrs_lib::SubscribeHandler<trackers_brubotics::FutureTrajectoryTube>& sh_ptr){
+void DergbryanTracker::callbackOtherUavFutureTrajectoryTube(trackers_brubotics::FutureTrajectoryTube::ConstPtr sh_ptr){
   mrs_lib::Routine profiler_routine = profiler.createRoutine("callbackOtherUavFutureTrajectoryTube");
   // ROS_INFO_STREAM("Received minimal radius: '" << sh_ptr.getMsg()->min_radius << "' from topic '" << sh_ptr.topicName() << "'");
-  trackers_brubotics::FutureTrajectoryTube temp_tube = *sh_ptr.getMsg(); // use *!
-  other_uav_tube_[sh_ptr.getMsg()->uav_name] = temp_tube;
-  other_uav_tube_[sh_ptr.getMsg()->uav_name].stamp = ros::Time::now();
+  trackers_brubotics::FutureTrajectoryTube temp_tube_msg = *sh_ptr; // use *!
+  other_uav_tube_[temp_tube_msg.uav_name] = temp_tube_msg;
+  other_uav_tube_[temp_tube_msg.uav_name].stamp = ros::Time::now();
   // double temp_radius = sh_ptr.getMsg()->min_radius;
   // other_uav_tube_min_radius_[sh_ptr.getMsg()->uav_name] = temp_radius;
 
@@ -8298,28 +8594,44 @@ std::tuple<bool, std::string> DergbryanTracker::gotoTrajectoryStartImpl(void) {
 
 
 
+/* //{ setRelativeGoal() */
 
-//
+// void DergbryanTracker::setRelativeGoal(const double pos_x, const double pos_y, const double pos_z, const double heading, const bool use_heading) {
+
+//   auto [mpc_x, mpc_x_heading] = mrs_lib::get_mutexed(mutex_mpc_x_, mpc_x_, mpc_x_heading_);
+
+//   double abs_x = mpc_x(0, 0) + pos_x;
+//   double abs_y = mpc_x(4, 0) + pos_y;
+//   double abs_z = mpc_x(8, 0) + pos_z;
+
+//   double abs_heading = mpc_x_heading(0, 0);
+
+//   if (use_heading) {
+//     abs_heading += heading;
+//   }
+
+//   trajectory_tracking_in_progress_ = false;
+//   timer_trajectory_tracking_.stop();
+
+//   // setSinglePointReference(abs_x, abs_y, abs_z, abs_heading);
+
+//   publishDiagnostics();
+// }
+
+//}
+
 /* toggleHover() //{ */
 
 void DergbryanTracker::toggleHover(bool in) {
+
+  // DON'T PUT MUTEX LOCK IN THIS FUNCTION
+  // it is called under mutex elsewhere
 
   if (in == false && hovering_in_progress_) {
 
     ROS_DEBUG("[DergbryanTracker]: stoppping the hover timer");
 
-    while (hover_timer_runnning_) {
-
-      ROS_DEBUG("[DergbryanTracker]: the hover is in the middle of an iteration, waiting for it to finish");
-      ros::Duration wait(0.001);
-      wait.sleep();
-    
-      if (!hover_timer_runnning_) {
-        ROS_DEBUG("[ControlManager]: hover timer finished");
-        break;
-      }
-    }
-    // timer_hover_.stop();
+    timer_hover_.stop();
 
     hovering_in_progress_ = false;
 
@@ -8329,7 +8641,7 @@ void DergbryanTracker::toggleHover(bool in) {
 
     hovering_in_progress_ = true;
 
-    // timer_hover_.start();
+    timer_hover_.start();
   }
 }
 
@@ -8588,7 +8900,7 @@ void DergbryanTracker::timerTrajectoryTracking(const ros::TimerEvent& event) {
 
 
 }  // namespace dergbryan_tracker
-}  // namespace mrs_uav_trackers
+}  // namespace trackers_brubotics
 
 #include <pluginlib/class_list_macros.h>
-PLUGINLIB_EXPORT_CLASS(mrs_uav_trackers::dergbryan_tracker::DergbryanTracker, mrs_uav_managers::Tracker)
+PLUGINLIB_EXPORT_CLASS(trackers_brubotics::dergbryan_tracker::DergbryanTracker, mrs_uav_managers::Tracker)

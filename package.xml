@@ -12,22 +12,26 @@
 
   <buildtool_depend>catkin</buildtool_depend>
   
-  
-  <build_depend>message_generation</build_depend> <!-- added by brubotics -->
+  <!-- <build_depend>message_generation</build_depend> 
+  //added by brubotics -->
 
-
-  <depend>pluginlib</depend>
+  <depend>cmake_modules</depend>
   <depend>roscpp</depend>
+  <depend>rospy</depend>
+  <depend>pluginlib</depend>
   <depend>geometry_msgs</depend>
-  <depend>nav_msgs</depend>
   <depend>tf</depend>
-  <depend>mrs_msgs</depend>
+  <depend>std_msgs</depend>
   <depend>mrs_lib</depend>
+  <depend>mrs_msgs</depend>
   <depend>mrs_uav_managers</depend>
-  <depend>mrs_uav_trackers</depend>
   <depend>dynamic_reconfigure</depend>
   <!-- added by brubotics: -->
-  <depend>std_msgs</depend>
+  <depend>nav_msgs</depend>
+  <depend>mrs_uav_trackers</depend>
+  <depend>message_generation</depend>
+  <depend>genmsg</depend>
+  <depend>controllers_brubotics</depend>
   <!-- added by Titouan and Jonathan: -->
   <depend>eigen_conversions</depend>
   <!-- added by brubotics: -->

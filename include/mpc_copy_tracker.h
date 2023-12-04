@@ -1,13 +1,13 @@
-#ifndef MPC_TRACKER_SOLVER
-#define MPC_TRACKER_SOLVER
+#ifndef MPC_COPY_TRACKER_SOLVER
+#define MPC_COPY_TRACKER_SOLVER
 
 #include <ros/ros.h>
 #include <eigen3/Eigen/Eigen>
 
-namespace mrs_mpc_solvers
+namespace brubotics_mpc_solvers
 {
 
-namespace mpc_tracker //mpc_copy_tracker
+namespace mpc_copy_tracker
 {
 
 class Solver {
@@ -23,6 +23,7 @@ public:
   int    solveMPC();
   void   getStates(Eigen::MatrixXd &future_traj);
   double getFirstControlInput();
+  void   setDt(const double &dt);
 
 private:
   static const int _horizon_len_ = 40;
@@ -32,8 +33,8 @@ private:
   std::vector<double> myQ_;
 };
 
-}  // namespace mpc_tracker //mpc_copy_tracker
+}  // namespace mpc_copy_tracker
 
-}  // namespace mrs_mpc_solvers
+}  // namespace brubotics_mpc_solvers
 
 #endif
