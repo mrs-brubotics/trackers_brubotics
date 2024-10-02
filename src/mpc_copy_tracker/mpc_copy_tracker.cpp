@@ -568,16 +568,18 @@ bool MpcCopyTracker::initialize(const ros::NodeHandle& nh, std::shared_ptr<mrs_u
 
   param_loader.loadParam(yaml_prefix + "model/translation/n_states", _mpc_n_states_);
   param_loader.loadParam(yaml_prefix + "model/translation/n_inputs", _mpc_m_states_);
-  param_loader.loadMatrixStatic(yaml_prefix + "model/translation/A", _mat_A_, _mpc_n_states_, _mpc_n_states_); // Build Error
-  param_loader.loadMatrixStatic(yaml_prefix + "model/translation/B", _mat_B_, _mpc_n_states_, _mpc_m_states_); // Build Error
+  
+  param_loader.loadMatrixDynamic(yaml_prefix + "model/translation/A", _mat_A_, _mpc_n_states_, _mpc_n_states_);
+  param_loader.loadMatrixDynamic(yaml_prefix + "model/translation/B", _mat_B_, _mpc_n_states_, _mpc_m_states_);
 
   A_ = _mat_A_;
   B_ = _mat_B_;
 
   param_loader.loadParam(yaml_prefix + "model/heading/n_states", _mpc_n_states_heading_);
   param_loader.loadParam(yaml_prefix + "model/heading/n_inputs", _mpc_n_inputs_heading_);
-  param_loader.loadMatrixStatic(yaml_prefix + "model/heading/A", _mat_A_heading_, _mpc_n_states_heading_, _mpc_n_states_heading_); // Build Error
-  param_loader.loadMatrixStatic(yaml_prefix + "model/heading/B", _mat_B_heading_, _mpc_n_states_heading_, _mpc_n_inputs_heading_); // Build Error
+  
+  param_loader.loadMatrixDynamic(yaml_prefix + "model/heading/A", _mat_A_heading_, _mpc_n_states_heading_, _mpc_n_states_heading_);
+  param_loader.loadMatrixDynamic(yaml_prefix + "model/heading/B", _mat_B_heading_, _mpc_n_states_heading_, _mpc_n_inputs_heading_);
 
   A_heading_ = _mat_A_heading_;
   B_heading_ = _mat_B_heading_;
