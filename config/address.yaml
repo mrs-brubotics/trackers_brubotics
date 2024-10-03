@@ -1,0 +1,11 @@
+MpcCopyTracker:
+  address: "trackers_brubotics/MpcCopyTracker"
+
+BypassTracker:
+  address: "trackers_brubotics/BypassTracker"
+
+DergbryanTracker:
+  address: "trackers_brubotics/DergbryanTracker"
+
+DergPmTracker:
+  address: "trackers_brubotics/DergPmTracker"
