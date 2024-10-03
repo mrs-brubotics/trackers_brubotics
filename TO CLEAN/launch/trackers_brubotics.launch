@@ -16,8 +16,8 @@
 <!-- mpc_copy_tracker -->
 <rosparam ns="$(env UAV_NAME)/control_manager/mpc_copy_tracker" file="$(find trackers_brubotics)/config/default/mpc_copy_tracker.yaml" />
 <rosparam ns="$(env UAV_NAME)/control_manager/mpc_copy_tracker" file="$(find trackers_brubotics)/config/$(arg RUN_TYPE)/$(arg UAV_TYPE)/mpc_copy_tracker.yaml" />
-<rosparam if="$(eval arg('RUN_TYPE') == 'uav')" ns="$(env UAV_NAME)/control_manager/mpc_copy_tracker" file="$(find mrs_uav_general)/config/uav_names.yaml" />
-<rosparam if="$(eval arg('RUN_TYPE') == 'simulation')" ns="$(env UAV_NAME)/control_manager/mpc_copy_tracker" file="$(find mrs_uav_general)/config/uav_names_simulation.yaml" />
+<rosparam if="$(eval arg('RUN_TYPE') == 'uav')" ns="$(env UAV_NAME)/control_manager/mpc_copy_tracker" file="$(find testing_brubotics)/config/uav_names.yaml" />
+<rosparam if="$(eval arg('RUN_TYPE') == 'simulation')" ns="$(env UAV_NAME)/control_manager/mpc_copy_tracker" file="$(find testing_brubotics)/config/uav_names_simulation.yaml" />
 <rosparam if="$(eval not arg('custom_config_mpc_copy_tracker') == '')" ns="$(env UAV_NAME)/control_manager/mpc_copy_tracker" file="$(arg custom_config_mpc_copy_tracker)" />
 <rosparam if="$(eval not arg('custom_config_uav_names') == '')" ns="$(env UAV_NAME)/control_manager/mpc_copy_tracker" file="$(arg custom_config_uav_names)" />
 <param name="$(env UAV_NAME)/control_manager/mpc_copy_tracker/enable_profiler" type="bool" value="$(arg PROFILER)" />
