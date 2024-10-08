@@ -1,5 +1,8 @@
 # issue: why can't we use the dergbryantracker.yaml in testing package? it shshould be loaded in the session.yaml
 use_derg: true # if false it bypasses the desired goal reference directly, but still computes the trajectory predictions
+
+run_ERG_each_N_updates: 1 # run ERG and trajectroy predictions after calling the update() routine N times
+
 network:
   robot_names: [
     uav1, uav2, uav3, uav4 , uav5, uav6, uav7, uav8, uav9 , uav10, uav11, uav12, uav13, uav14, uav15, uav16, uav17, uav18, uav19, uav20, uav21, uav22, uav23, uav24, uav25, uav26, uav27, uav28, uav29, uav30
@@ -14,11 +17,59 @@ constraints:
     min: 0.0
     # max thrust can be changed via _thrust_saturation_ ratio [0, 1] in the se3_brubotics.yaml
     extra_saturation_ratio: 0.92 #0.90 # ratio [0, 1] allows some overshoot over the hard thrust limit _thrust_saturation_ to reduce the chance of triggering the emergency controller after 1s of saturation
+  payload:
+    swing: deg(84.8) # rad, max swing angle
+  static_obstacles: # disable by setting rows: 0
+    # spheres:
+    cylinder:
+      # [name1,
+      #  name2]
+      name:           ["cylinder1", 
+                       "cylinder2",
+                       "cylinder3",
+                       "cylinder4",
+                       "cylinder5",
+                       "cylinder6"] 
+      # cylinder center position
+      # [x1, y1, z1,
+      #  x2, y2, z2]
+      position:       [9.0, 4.5, 2.0, 
+                      13.0, 6.5, 2.0,
+                      18.0, 7.5, 2.0,
+                      21.0, 11.0, 2.0,
+                      19.0, 15.0, 2.0,
+                       9.0, 9.0, 5.0]
+      # [x1, y1, z1, w1,
+      #  x2, y2, z2, w2]
+      orientation:    [0.0, 0.0, 0.0, 1.0, 
+                       0.0, 0.0, 0.0, 1.0,
+                       0.0, 0.0, 0.0, 1.0,
+                       0.0, 0.0, 0.0, 1.0,
+                       0.0, 0.0, 0.0, 1.0,
+                       0.0, 0.0, 0.0, 1.0]
+      # [height1, radius1,
+      #  height2, radius2]
+      dimensions:     [4.0, 0.14, 
+                       4.0, 0.14,
+                       4.0, 0.14,
+                       4.0, 0.14,
+                       4.0, 0.14,
+                       4.0, 0.14]
+      # [color1,
+      #  color2]
+      color:          [1.0, 0.2, 0.2, 0.9,
+                       1.0, 0.2, 0.2, 0.9,
+                       1.0, 0.2, 0.2, 0.9,
+                       1.0, 0.2, 0.2, 0.9,
+                       1.0, 0.2, 0.2, 0.9,
+                       1.0, 0.2, 0.2, 0.9]
+      # number of cylinders (rows) to use from start to #rows
+      rows:           6 
   # other constraints need to be set in the constraint_manager.yaml
 
 #TODO bring strategy_id inside agent collision constraints under constraints
 strategy_id: 4 #1 #4 #0 / 1 / 2 / 3 / 4TODO / 5
-use_distance_xy: true # if enabled the distance ebtween tubes along z will be ignored. Only horizontal xy plane distance is used.
+use_distance_xy: true # if enabled the distance ebtween tubes and cylinders along z will be ignored. Only horizontal xy plane distance is used.
 agent_collision_volumes:
   sphere:
     radius: 5.0 # a step of 4.5m in xy does not lead to instability.
@@ -38,6 +89,9 @@ dynamic_safety_margin: # BE CAREFUL!
     a: 27 #27 # 10 15 20 25 # agent collision avoidance
     w: 27
     o: 27 
+    swing_c: 15.0
+    Tc: 15.0
+    sc: 15.0
   enable_dsm:
     constant_dsm: -1.0 # 10 # used dsm if all dsms below are disabled or if the value is >= 0.0
     sT: true
@@ -45,6 +99,9 @@ dynamic_safety_margin: # BE CAREFUL!
     a: true
     w: false
     o: false
+    swing_c: true
+    Tc: true
+    sc: true
 navigation_field:
   attraction:
     smoothing_ratio: 0.10 # smoothing factor
@@ -61,15 +118,22 @@ navigation_field:
       influence_margin: 4.0 # called before sigma, now zeta
       static_safety_margin: 2.0 # d_w
       wall_position_x : 100000 # //Frank : Very big so don't disturb usual tests... TODO : link this yaml with world file
-    static_obstacle: #Frank : TO BE ADDED IN DERGTRACKER.CPP
+    static_obstacle:
       enabled: false
-      influence_margin: 4.0 # called before sigma, now zeta
-      static_safety_margin: 1.0 # delta_w
+      influence_margin: 4.0 
+      static_safety_margin: 0.07
       circulation_gain: 0.05 
-      circulation_type: "xy" # "xy", "xz", "yz", "xyz"
-      obstacle_position_x : 100000
-      obstacle_position_y: 10000
-      radius : 1 #0.5 +0.5 of security (see /worlds/...)
+      circulation_type: "xy" # only works for "xy" 
+      combination_type: "sum" # "max"
+    self_collision:
+      enabled: false
+      influence_margin: deg(70) 
+      static_safety_margin: deg(7)
+
+two_uavs_payload:
+  rotation_scaling: 0.1 # keep it small
+  max_time_delay_communication_tracker: 0.2 #[s]
+  max_time_delay_eland: 0.4 # [s]
 
 
 enable_visualization: false   # RVIZ
