@@ -1507,6 +1507,8 @@ bool DergbryanTracker::resetStatic(void) {
 std::optional<mrs_msgs::TrackerCommand> DergbryanTracker::update(const mrs_msgs::UavState& uav_state,
                                                               [[maybe_unused]] const mrs_uav_managers::Controller::ControlOutput& last_control_output) {
                                                                   
+  ROS_INFO("[DERGTracker]: I am in DERGTracker");
+  
   // ROS_INFO_THROTTLE(ROS_INFO_THROTTLE_PERIOD,"[DergbryanTracker]: Start of update()");
 
   mrs_lib::Routine    profiler_routine = profiler.createRoutine("update");
