@@ -705,7 +705,7 @@ private:
   // | ------------------------ hovering ------------------------ |
 
   ros::Timer        timer_hover_;
-  void              timerHover(const ros::TimerEvent& event);
+  // void              timerHover(const ros::TimerEvent& event); // Eliminating timer_hover_ 
   std::atomic<bool> hovering_in_progress_ = false;
   void              toggleHover(bool in);
 
@@ -1357,7 +1357,7 @@ bool DergbryanTracker::initialize(const ros::NodeHandle& nh, std::shared_ptr<mrs
   //timer_mpc_iteration_        = nh_.createTimer(ros::Rate(_mpc_asynchronous_rate_), &DergbryanTracker::timerMPC, this, false, false);
   timer_trajectory_tracking_  = nh_.createTimer(ros::Rate(1.0), &DergbryanTracker::timerTrajectoryTracking, this, false, false);
   //timer_velocity_tracking_    = nh_.createTimer(ros::Rate(30.0), &DergbryanTracker::timerVelocityTracking, this, false, false);
-  timer_hover_                = nh_.createTimer(ros::Rate(10.0), &DergbryanTracker::timerHover, this, false, false);
+  // timer_hover_                = nh_.createTimer(ros::Rate(10.0), &DergbryanTracker::timerHover, this, false, false); // Eliminating timer_hover_ 
 
 
 
@@ -8633,7 +8633,7 @@ void DergbryanTracker::toggleHover(bool in) {
 
     ROS_DEBUG("[DergbryanTracker]: stoppping the hover timer");
 
-    timer_hover_.stop();
+    // timer_hover_.stop(); // Eliminating timer_hover_ 
 
     hovering_in_progress_ = false;
 
@@ -8643,7 +8643,7 @@ void DergbryanTracker::toggleHover(bool in) {
 
     hovering_in_progress_ = true;
 
-    timer_hover_.start();
+    // timer_hover_.start(); // Eliminating timer_hover_ 
   }
 }
 
