@@ -886,6 +886,10 @@ bool DergbryanTracker::initialize(const ros::NodeHandle& nh, std::shared_ptr<mrs
     return false;
   }
 
+  else {
+    ROS_INFO("[DergbryanTracker]: Could DO load all parameters!");
+  }
+
     // | -------------------- load param files -------------------- |
   /* TODO: method below does not work as in https://github.com/ctu-mrs/mrs_uav_trackers/blob/master/src/mpc_tracker/mpc_tracker.cpp
      private_handlers->param_loader->addYamlFile(ros::package::getPath("trackers_brubotics") + "/config/private/mpc_copy_tracker.yaml");
@@ -903,16 +907,30 @@ bool DergbryanTracker::initialize(const ros::NodeHandle& nh, std::shared_ptr<mrs
   //   You can load the file directly into the ParamLoader as shown below.
   success *= private_handlers->loadConfigFile(ros::package::getPath("controllers_brubotics") + "/config/private/se3_copy_controller.yaml");
   if (!success) {
+    ROS_ERROR("[DergbryanTracker]: Error in loading config file: controllers_brubotics/config/private/se3_copy_controller.yaml");    
     return false;
   }
+  ROS_INFO("[DergbryanTracker]: Successfully loading config file: controllers_brubotics/config/private/se3_copy_controller.yaml");
+
   success *= private_handlers->loadConfigFile(ros::package::getPath("controllers_brubotics") + "/config/public/se3_copy_controller.yaml");
   if (!success) {
+    ROS_ERROR("[DergbryanTracker]: Error in loading config file: controllers_brubotics/config/public/se3_copy_controller.yaml");    
     return false;
   }
+  ROS_INFO("[DergbryanTracker]: Successfully loading config file: controllers_brubotics/config/public/se3_copy_controller.yaml");
 
   // TODO: how is the link between the yaml file choice and below??? now we don't have launch file anymore
 
   mrs_lib::ParamLoader param_loader(nh_, "Se3CopyController");
+
+  ROS_INFO("[DergbryanTracker]: Loading Private Yaml File of the Controller using addYamlFile...");
+  param_loader.addYamlFile(ros::package::getPath("controllers_brubotics") + "/config/private/se3_copy_controller.yaml");
+  ROS_INFO("[DergbryanTracker]: Successfully loaded Private Yaml File of the Controller using addYamlFile.");
+
+  ROS_INFO("[DergbryanTracker]: Loading Public Yaml File of the Controller using addYamlFile...");
+  param_loader.addYamlFile(ros::package::getPath("controllers_brubotics") + "/config/public/se3_copy_controller.yaml");
+  ROS_INFO("[DergbryanTracker]: Successfully loaded Public Yaml File of the Controller using addYamlFile.");
+
 
   std::string yaml_prefix = "controllers_brubotics/se3_copy_controller/"; // TODO: adapt code to make use of this prefix as in ctu examples
  
@@ -1031,15 +1049,28 @@ bool DergbryanTracker::initialize(const ros::NodeHandle& nh, std::shared_ptr<mrs
   success *= private_handlers->loadConfigFile(ros::package::getPath("trackers_brubotics") + "/config/private/dergbryan_tracker.yaml");
 
   if (!success) {
+    ROS_ERROR("[DergbryanTracker]: Error in loading config file: trackers_brubotics/config/private/dergbryan_tracker.yaml");
     return false;
   }
+  ROS_INFO("[DergbryanTracker]: Successfully loaded config file: trackers_brubotics/config/private/dergbryan_tracker.yaml");
 
   success *= private_handlers->loadConfigFile(ros::package::getPath("trackers_brubotics") + "/config/public/dergbryan_tracker.yaml");
   if (!success) {
+    ROS_ERROR("[DergbryanTracker]: Error in loading config file: trackers_brubotics/config/public/dergbryan_tracker.yaml");
     return false;
   }
+  ROS_INFO("[DergbryanTracker]: Successfully loaded config file: trackers_brubotics/config/public/dergbryan_tracker.yaml");
 
   mrs_lib::ParamLoader param_loader2(nh2_, "DergbryanTracker");
+
+  ROS_INFO("[DergbryanTracker]: Loading Private Yaml File of the Tracker using addYamlFile...");
+  param_loader2.addYamlFile(ros::package::getPath("trackers_brubotics") + "/config/private/dergbryan_tracker.yaml");
+  ROS_INFO("[DergbryanTracker]: Successfully loaded Private Yaml File of the Tracker using addYamlFile.");
+
+  ROS_INFO("[DergbryanTracker]: Loading Public Yaml File of the Tracker using addYamlFile...");
+  param_loader2.addYamlFile(ros::package::getPath("trackers_brubotics") + "/config/public/dergbryan_tracker.yaml");
+  ROS_INFO("[DergbryanTracker]: Successfully loaded Public Yaml File of the Tracker using addYamlFile.");
+
 
   //std::string yaml_prefix = "trackers_brubotics/dergbryan_tracker/"; // TODO: adapt code to make use of this prefix as in ctu examples
  
